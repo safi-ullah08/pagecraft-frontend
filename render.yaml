@@ -1,0 +1,22 @@
+# Render Blueprint for the frontend repo: the Vite SPA as a free Static Site.
+# /api/* is rewritten to the backend service (same-origin -> no CORS).
+# Connect this repo to Render once; every push redeploys.
+
+services:
+  - type: web
+    name: pagecraft-frontend
+    runtime: static
+    rootDir: .
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    routes:
+      # proxy API calls to the backend web service.
+      # NOTE: confirm the exact backend URL in Render after first deploy and
+      # update it here (Render appends a suffix if the name is taken).
+      - type: rewrite
+        source: /api/*
+        destination: https://pagecraft-backend.onrender.com/api/*
+      # SPA fallback
+      - type: rewrite
+        source: /*
+        destination: /index.html
