@@ -1,0 +1,36 @@
+/* Base structural stylesheet. Token layer (CSS custom properties) is injected
+   per-theme by @pagecraft/model themeCss() — the SAME CSS feeds this live
+   preview AND the Gotenberg render. One engine, both ends. */
+
+@page {
+  size: var(--page-size, A5);
+  margin: var(--page-margin, 18mm);
+  @bottom-center { content: counter(page); }
+}
+
+.page-content {
+  font-family: var(--font-body);
+  color: var(--color-text);
+  line-height: var(--leading);
+  max-width: var(--measure);
+}
+
+h1, h2, h3 { font-family: var(--font-display); }
+
+.dropcap::first-letter {
+  float: left;
+  font-family: var(--font-display);
+  font-size: 3.2em;
+  line-height: 0.8;
+  padding-right: 0.06em;
+}
+
+/* 12-col grid. Multi-block rows are ATOMIC: a columns row that doesn't fit
+   moves wholesale to the next page. This one line is the atomicity guarantee. */
+.columns {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 1rem;
+  break-inside: avoid;
+}
+.column { grid-column: span var(--span, 6); }
