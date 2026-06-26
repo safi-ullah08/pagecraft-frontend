@@ -10,8 +10,8 @@
   },
   "dependencies": {
     "@pagecraft/model": "file:./model",
-    "@tiptap/pm": "2.11.5",
-    "@tiptap/react": "2.11.5",
+    "@tiptap/pm": "2.27.2",
+    "@tiptap/react": "2.27.2",
     "pagedjs": "0.4.3",
     "react": "19.0.0",
     "react-dom": "19.0.0"
