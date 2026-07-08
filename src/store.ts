@@ -1,11 +1,10 @@
 import { create } from "zustand";
-import type { JSONContent } from "@tiptap/react";
 import { DEFAULT_THEME } from "./themes.ts";
 import { type PageSize } from "./pages.ts";
 import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
-import { createDocument, getDocument, getSection, saveSection } from "./api.ts";
+import { createDocument, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
 
-export type Section = { id: string; content: JSONContent; version: number };
+export type Section = { id: string; content: SectionContent; version: number };
 
 type Store = {
   theme: string;
@@ -17,7 +16,7 @@ type Store = {
   setPageSize: (p: PageSize) => void;
   setActive: (id: string) => void;
   load: () => Promise<void>;
-  edit: (id: string, content: JSONContent) => void;
+  edit: (id: string, content: SectionContent) => void;
 };
 
 // Load the doc named by ?doc=<id> (with ALL its sections), or create a fresh

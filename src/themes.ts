@@ -5,7 +5,7 @@
 // this produce byte-identical CSS, preserving the 1-to-1 WYSIWYG guarantee.
 // ponytail: exists ONLY because fs can't run in the browser; delete if the model
 // ever ships a bundler-safe skin loader.
-import { baseCss, type LayoutMode, type ThemeName } from "@pagecraft/model";
+import { baseCss, gridBaseCss, type LayoutMode, type ThemeName } from "@pagecraft/model";
 
 export { DEFAULT_THEME } from "@pagecraft/model";
 
@@ -25,8 +25,11 @@ export function themeNames(): ThemeName[] {
 }
 
 export function documentCss(theme: ThemeName, layoutMode: LayoutMode = "flow"): string {
-  if (layoutMode === "grid") throw new Error("grid layout not implemented (P2)");
-  return `${baseCss}\n${themeSkinCss(theme)}`;
+  // Match the model's ordering: grid = skin first then gridBaseCss (grid @page +
+  // layout win); flow = base first then skin (skin typography wins).
+  return layoutMode === "grid"
+    ? `${themeSkinCss(theme)}\n${gridBaseCss}`
+    : `${baseCss}\n${themeSkinCss(theme)}`;
 }
 
 // Just the theme skin (no structural baseCss) — the editing surface scopes THIS

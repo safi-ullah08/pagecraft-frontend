@@ -1,8 +1,12 @@
 // Thin fetch wrapper to the backend (/api is proxied to :4000 in dev).
 import type { JSONContent } from "@tiptap/react";
 import { DEFAULT_THEME } from "./themes.ts";
+import type { GridSection } from "./grid/types.ts";
 
-export type Section = { id: string; content: JSONContent; version: number };
+// A section's content is a Tiptap doc (flow) or a GridSection (grid); the shape
+// self-describes (grid = { type:"grid", … }). Both round-trip through the same PUT.
+export type SectionContent = JSONContent | GridSection;
+export type Section = { id: string; content: SectionContent; version: number };
 export type Document = { id: string; title: string; theme: string; sections: Section[] };
 
 export async function createDocument(title = "Untitled") {
@@ -28,7 +32,7 @@ export async function getSection(id: string) {
 
 // Returns the new version. Throws "version_conflict" on 409 so the caller can
 // re-read and retry (optimistic concurrency).
-export async function saveSection(id: string, content: JSONContent, version: number) {
+export async function saveSection(id: string, content: SectionContent, version: number) {
   const res = await fetch(`/api/sections/${id}`, {
     method: "PUT",
     headers: { "content-type": "application/json" },

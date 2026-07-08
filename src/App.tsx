@@ -1,6 +1,7 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChapterNav } from "./components/ChapterNav.tsx";
 import { Editor } from "./components/Editor.tsx";
+import { Preview } from "./components/Preview.tsx";
 import { Toolbar } from "./components/Toolbar.tsx";
 import { ExportButton } from "./components/ExportButton.tsx";
 import { ImportBar } from "./components/ImportBar.tsx";
@@ -8,41 +9,37 @@ import { useStore } from "./store.ts";
 import { themeSkinCss } from "./themes.ts";
 import { scopeThemeCss } from "./scope-css.ts";
 import { PAGE_SIZES, PAGE_MARGIN_MM } from "./pages.ts";
+import { isGridSection, emptyGridSection } from "./grid/types.ts";
+import { GridCanvas } from "./grid/GridCanvas.tsx";
+import { PlaceholderView } from "./grid/PlaceholderView.tsx";
+import type { JSONContent } from "@tiptap/react";
 
-// Flow editor on real data: ALL sections rendered at once in one continuously
-// scrollable column (one Tiptap instance per section, per-section autosave),
-// with a live paged preview of the whole document. ChapterNav scrolls to a
-// section. min-height:0 down the flex chain is what actually lets the columns
-// scroll (flex defaults min-height:auto, which blocks overflow:auto).
+type Tab = "editor" | "placeholder" | "pdf";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "editor", label: "Editor" },
+  { id: "placeholder", label: "Placeholder preview" },
+  { id: "pdf", label: "PDF preview" },
+];
+
+// Shell = sections layout (ChapterNav | editor area). A 3-tab bar above the editor
+// area switches the VIEW of the same document: Editor (flow sheets / grid canvas),
+// Placeholder preview (wireframe), PDF preview (paged.js 1:1). All read one store.
 export function App() {
   const load = useStore((s) => s.load);
   const documentId = useStore((s) => s.documentId);
   const theme = useStore((s) => s.theme);
+  const pageSize = useStore((s) => s.pageSize);
   const edit = useStore((s) => s.edit);
   const setActive = useStore((s) => s.setActive);
   const sections = useStore((s) => s.sections);
-  const pageSize = useStore((s) => s.pageSize);
-  const dim = PAGE_SIZES[pageSize];
+  const activeId = useStore((s) => s.activeId);
 
-  // Each section is a distinct page sheet (configurable size) on a grey canvas.
-  // The themed .editor-surface FILLS the sheet — page-height minimum, with the
-  // page margin as its OWN padding — so the theme background covers the whole
-  // page, not just the content box. ponytail ceiling: a section longer than one
-  // page grows the sheet; auto-splitting a section into N page sheets is the
-  // deferred pagination problem, and the margin is a fixed value not the theme's
-  // @page (P4).
-  const sheetCss = `
-.page-sheet { width: ${dim.w}mm; box-sizing: border-box; margin: 0 auto 24px; box-shadow: 0 1px 10px rgba(0,0,0,.28); overflow: hidden; background: #fff; }
-.page-sheet > .editor-surface { min-height: ${dim.h}mm; box-sizing: border-box; padding: ${PAGE_MARGIN_MM}mm; }
-`;
+  const [tab, setTab] = useState<Tab>("editor");
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  // One scoped skin for every section editor (all share the active theme), so we
-  // inject it once here instead of per-editor. Unknown theme -> unstyled surface
-  // beats a thrown render.
   const surfaceCss = useMemo(() => {
     try {
       return scopeThemeCss(themeSkinCss(theme), ".editor-surface");
@@ -50,6 +47,22 @@ export function App() {
       return "";
     }
   }, [theme]);
+
+  const dim = PAGE_SIZES[pageSize];
+  const sheetCss = `
+.page-sheet { width: ${dim.w}mm; box-sizing: border-box; margin: 0 auto 24px; box-shadow: 0 1px 10px rgba(0,0,0,.28); overflow: hidden; background: #fff; }
+.page-sheet > .editor-surface { min-height: ${dim.h}mm; box-sizing: border-box; padding: ${PAGE_MARGIN_MM}mm; }
+`;
+
+  const contents = useMemo(() => sections.map((s) => s.content), [sections]);
+
+  const active = sections.find((s) => s.id === activeId) ?? null;
+  const toggleLayout = () => {
+    if (!active) return;
+    const toGrid = !isGridSection(active.content);
+    if (!confirm(`Convert this section to ${toGrid ? "grid" : "flow"}? Its current content will be replaced.`)) return;
+    edit(active.id, toGrid ? emptyGridSection() : { type: "doc", content: [{ type: "paragraph" }] });
+  };
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
@@ -60,23 +73,53 @@ export function App() {
           <ImportBar />
           {documentId && <ExportButton documentId={documentId} theme={theme} />}
         </div>
+
+        {/* view tabs + active-section layout toggle */}
+        <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "0 8px", borderBottom: "1px solid #ddd", background: "#fafafa" }}>
+          {TABS.map((t) => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              style={{ padding: "8px 12px", fontSize: 13, border: "none", background: "transparent", cursor: "pointer",
+                borderBottom: tab === t.id ? "2px solid #E07A5F" : "2px solid transparent",
+                fontWeight: tab === t.id ? 600 : 400, color: tab === t.id ? "#111" : "#666" }}>
+              {t.label}
+            </button>
+          ))}
+          <div style={{ flex: 1 }} />
+          {active && (
+            <button onClick={toggleLayout} title="convert the active section's layout"
+              style={{ fontSize: 12, padding: "3px 8px", border: "1px solid #ccc", borderRadius: 4, background: "#fff", cursor: "pointer" }}>
+              {isGridSection(active.content) ? "▦ Grid → ¶ Flow" : "¶ Flow → ▦ Grid"}
+            </button>
+          )}
+        </div>
+
         <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
-          {sections.length > 0 ? (
-            // editor column: distinct page sheets stacked on a grey canvas, scrollable
+          {sections.length === 0 ? (
+            <div style={{ padding: 16 }}>Loading…</div>
+          ) : tab === "pdf" ? (
+            <Preview sections={contents} theme={theme} />
+          ) : tab === "placeholder" ? (
+            <PlaceholderView sections={contents} pageSize={pageSize} />
+          ) : (
+            // Editor: sections stacked; flow -> page sheet, grid -> canvas
             <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: 32, background: "#e6e6e6" }}>
               <style>{surfaceCss + sheetCss}</style>
-              {sections.map((s) => (
-                <section key={s.id} id={`sec-${s.id}`} className="page-sheet">
-                  <Editor
-                    content={s.content}
-                    onChange={(c) => edit(s.id, c)}
-                    onFocus={() => setActive(s.id)}
-                  />
-                </section>
-              ))}
+              {sections.map((s) =>
+                isGridSection(s.content) ? (
+                  <div key={s.id} id={`sec-${s.id}`} onPointerDown={() => setActive(s.id)}>
+                    <GridCanvas section={s.content} onChange={(next) => edit(s.id, next)} pageSize={pageSize} />
+                  </div>
+                ) : (
+                  <section key={s.id} id={`sec-${s.id}`} className="page-sheet">
+                    <Editor
+                      content={s.content as JSONContent}
+                      onChange={(c) => edit(s.id, c)}
+                      onFocus={() => setActive(s.id)}
+                    />
+                  </section>
+                ),
+              )}
             </div>
-          ) : (
-            <div style={{ padding: 16 }}>Loading…</div>
           )}
         </div>
       </div>
