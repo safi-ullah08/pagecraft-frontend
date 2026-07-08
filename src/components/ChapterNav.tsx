@@ -2,7 +2,8 @@ import type { JSONContent } from "@tiptap/react";
 import { useStore } from "../store.ts";
 
 // Section list for the loaded document (chapters/subsections from import). Click
-// to switch the active section. Titles derive from each section's first heading.
+// scrolls that section into view in the continuous editor column. Titles derive
+// from each section's first heading.
 function titleOf(content: JSONContent, i: number): string {
   const h = (content.content ?? []).find((n) => n.type === "heading");
   const text = h ? (h.content ?? []).map((c) => c.text ?? "").join("") : "";
@@ -12,7 +13,12 @@ function titleOf(content: JSONContent, i: number): string {
 export function ChapterNav() {
   const sections = useStore((s) => s.sections);
   const activeId = useStore((s) => s.activeId);
-  const selectSection = useStore((s) => s.selectSection);
+  const setActive = useStore((s) => s.setActive);
+
+  const go = (id: string) => {
+    setActive(id);
+    document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   return (
     <nav style={{ width: 220, borderRight: "1px solid #ddd", padding: 12, overflow: "auto" }}>
@@ -21,7 +27,7 @@ export function ChapterNav() {
         {sections.map((s, i) => (
           <li
             key={s.id}
-            onClick={() => selectSection(s.id)}
+            onClick={() => go(s.id)}
             title={titleOf(s.content, i)}
             style={{
               padding: "6px 8px", borderRadius: 4, cursor: "pointer", fontSize: 13,

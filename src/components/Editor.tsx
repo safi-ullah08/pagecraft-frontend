@@ -1,37 +1,29 @@
 import { useEditor, EditorContent, BubbleMenu, type JSONContent } from "@tiptap/react";
 import { extensions } from "@pagecraft/model";
-import { useMemo } from "react";
 import { SlashCommands } from "../slash.ts";
-import { themeSkinCss } from "../themes.ts";
-import { scopeThemeCss } from "../scope-css.ts";
 import { setBlockAttr, deleteBlock, moveBlock } from "../node-controls.ts";
 
-// Tiptap on the SHARED schema. The editing surface is skinned with the active
-// theme (scoped so it styles only this container) so editing looks like output.
-// "/" opens the insert menu; selecting text opens node controls (the override
-// attrs that already serialize to utility classes). Edits stream up to autosave.
-export function Editor({ content, theme, onChange }: { content: JSONContent; theme: string; onChange: (doc: JSONContent) => void }) {
+// One Tiptap instance per section, on the SHARED schema. The editing surface is
+// skinned by the App-level scoped theme CSS (.editor-surface), so all sections
+// share one <style> and this component is not its own scroll container — the
+// section column scrolls. "/" inserts nodes; selecting text opens the override
+// controls. Edits stream up to per-section autosave; focus marks the active one.
+export function Editor({ content, onChange, onFocus }: {
+  content: JSONContent;
+  onChange: (doc: JSONContent) => void;
+  onFocus?: () => void;
+}) {
   const editor = useEditor({
     extensions: [...extensions, SlashCommands],
     content,
     onUpdate: ({ editor }) => onChange(editor.getJSON()),
+    onFocus: () => onFocus?.(),
   });
-
-  const surfaceCss = useMemo(() => {
-    // unknown/legacy theme name (e.g. a renamed skin): an unstyled surface beats
-    // a thrown render that white-screens the whole editor pane.
-    try {
-      return scopeThemeCss(themeSkinCss(theme), ".editor-surface");
-    } catch {
-      return "";
-    }
-  }, [theme]);
 
   const btn = { padding: "2px 6px", border: "1px solid #ccc", background: "#fff", borderRadius: 3, cursor: "pointer", fontSize: 12 } as const;
 
   return (
-    <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
-      <style>{surfaceCss}</style>
+    <div className="editor-surface">
       {editor && (
         <BubbleMenu editor={editor} tippyOptions={{ duration: 100 }}>
           <div style={{ display: "flex", gap: 3, padding: 4, background: "#fff", border: "1px solid #ddd", borderRadius: 6, boxShadow: "0 2px 8px rgba(0,0,0,.12)" }}>
@@ -52,9 +44,7 @@ export function Editor({ content, theme, onChange }: { content: JSONContent; the
           </div>
         </BubbleMenu>
       )}
-      <div className="editor-surface">
-        <EditorContent editor={editor} />
-      </div>
+      <EditorContent editor={editor} />
     </div>
   );
 }

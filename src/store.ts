@@ -1,27 +1,30 @@
 import { create } from "zustand";
 import type { JSONContent } from "@tiptap/react";
 import { DEFAULT_THEME } from "./themes.ts";
+import { type PageSize } from "./pages.ts";
+import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
 import { createDocument, getDocument, getSection, saveSection } from "./api.ts";
 
 export type Section = { id: string; content: JSONContent; version: number };
 
 type Store = {
   theme: string;
+  pageSize: PageSize; // editor page-sheet size (configurable)
   documentId: string | null;
-  sections: Section[]; // ordered; imports produce many (one per chapter/subsection)
-  activeId: string | null;
+  sections: Section[]; // ordered; ALL rendered at once (continuous scroll)
+  activeId: string | null; // section in focus/view — ChapterNav highlight, toolbar target
   setTheme: (t: string) => void;
+  setPageSize: (p: PageSize) => void;
+  setActive: (id: string) => void;
   load: () => Promise<void>;
-  selectSection: (id: string) => void;
-  edit: (content: JSONContent) => void;
+  edit: (id: string, content: JSONContent) => void;
 };
 
 // Load the doc named by ?doc=<id> (with ALL its sections), or create a fresh
 // single-section doc and pin it in the URL. ponytail: dev bootstrap, not a
-// document picker (P1+).
+// document picker (later phase).
 export const useStore = create<Store>((set, get) => {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let pendingId: string | null = null; // the section the debounced save belongs to
+  const timers = new Map<string, ReturnType<typeof setTimeout>>(); // one debounce per section
   let loadStarted = false; // StrictMode mounts twice; only bootstrap once
 
   // Autosave one section: PUT content+version. On 409 the row moved under us —
@@ -31,13 +34,14 @@ export const useStore = create<Store>((set, get) => {
     if (!s) return;
     const setVersion = (version: number) =>
       set((st) => ({ sections: st.sections.map((x) => (x.id === id ? { ...x, version } : x)) }));
+    const content = assetsToCanonical(s.content); // display URLs -> asset:// before persisting
     try {
       try {
-        setVersion((await saveSection(s.id, s.content, s.version)).version);
+        setVersion((await saveSection(s.id, content, s.version)).version);
       } catch (e) {
         if (!String(e).includes("version_conflict")) throw e;
         const fresh = await getSection(s.id);
-        setVersion((await saveSection(s.id, s.content, fresh.version)).version);
+        setVersion((await saveSection(s.id, content, fresh.version)).version);
       }
     } catch (e) {
       // ponytail: autosave is best-effort — a second conflict or a network/500
@@ -49,6 +53,7 @@ export const useStore = create<Store>((set, get) => {
 
   return {
     theme: DEFAULT_THEME,
+    pageSize: "A4",
     documentId: null,
     sections: [],
     activeId: null,
@@ -56,34 +61,30 @@ export const useStore = create<Store>((set, get) => {
     // switching is NOT persisted back yet (export/preview honour it live). DB
     // theme persistence lands with the theme/template builder phase.
     setTheme: (theme) => set({ theme }),
+    setPageSize: (pageSize) => set({ pageSize }),
+    setActive: (activeId) => set({ activeId }),
     load: async () => {
       if (loadStarted) return;
       loadStarted = true;
       const id = new URLSearchParams(location.search).get("doc");
       if (id) {
         const doc = await getDocument(id);
-        set({ documentId: id, sections: doc.sections, activeId: doc.sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME });
+        // asset:// -> resolver URL so the editor can display imported images
+        const sections = doc.sections.map((s) => ({ ...s, content: assetsToDisplay(s.content) }));
+        set({ documentId: id, sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME });
       } else {
         const { document, section } = await createDocument();
         history.replaceState(null, "", `?doc=${document.id}`);
         set({ documentId: document.id, sections: [section], activeId: section.id });
       }
     },
-    selectSection: (id) => {
-      if (id === get().activeId) return;
-      clearTimeout(timer);
-      if (pendingId) { const p = pendingId; pendingId = null; void flush(p); } // save outgoing edit first
-      set({ activeId: id });
-    },
-    edit: (content) => {
-      const id = get().activeId;
-      if (!id) return;
+    // Edit ONE section (each mounted editor owns its own id). Per-section 800ms
+    // debounce so editing section B never drops a pending save for section A.
+    edit: (id, content) => {
       set((st) => ({ sections: st.sections.map((x) => (x.id === id ? { ...x, content } : x)) }));
-      // ponytail: 800ms debounce; in-flight saves aren't coalesced — a fast
-      // typist just triggers a follow-up save. Add a dirty flag if it matters.
-      clearTimeout(timer);
-      pendingId = id;
-      timer = setTimeout(() => { pendingId = null; void flush(id); }, 800); // clear so a later switch won't re-save
+      const t = timers.get(id);
+      if (t) clearTimeout(t);
+      timers.set(id, setTimeout(() => { timers.delete(id); void flush(id); }, 800));
     },
   };
 });
