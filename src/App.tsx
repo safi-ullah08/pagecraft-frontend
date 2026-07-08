@@ -33,8 +33,11 @@ export function App() {
   const setActive = useStore((s) => s.setActive);
   const sections = useStore((s) => s.sections);
   const activeId = useStore((s) => s.activeId);
+  const convertToGrid = useStore((s) => s.convertToGrid);
 
   const [tab, setTab] = useState<Tab>("editor");
+  const [converting, setConverting] = useState(false);
+  const hasFlow = sections.some((s) => !isGridSection(s.content));
 
   useEffect(() => {
     void load();
@@ -85,6 +88,24 @@ export function App() {
             </button>
           ))}
           <div style={{ flex: 1 }} />
+          {hasFlow && (
+            <button
+              disabled={converting}
+              onClick={async () => {
+                if (!confirm("Convert this imported document to editable grid pages? Flowing chapters are paginated into grid pages you can edit block-by-block.")) return;
+                setConverting(true);
+                try {
+                  await convertToGrid();
+                } catch (e) {
+                  alert(`Convert failed: ${e}`);
+                } finally {
+                  setConverting(false);
+                }
+              }}
+              style={{ fontSize: 12, padding: "3px 8px", marginRight: 4, border: "1px solid #E07A5F", borderRadius: 4, background: "#E07A5F", color: "#fff", cursor: converting ? "wait" : "pointer" }}>
+              {converting ? "Converting…" : "¶→▦ Convert to grid"}
+            </button>
+          )}
           {active && (
             <button onClick={toggleLayout} title="convert the active section's layout"
               style={{ fontSize: 12, padding: "3px 8px", border: "1px solid #ccc", borderRadius: 4, background: "#fff", cursor: "pointer" }}>

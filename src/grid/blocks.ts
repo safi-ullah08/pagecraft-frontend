@@ -16,6 +16,11 @@ export type BlockReg = {
 const doc = (node: object) => ({ type: "doc", content: [node] });
 
 export const BLOCKS: Record<BlockType, BlockReg> = {
+  textFrame: {
+    label: "Text frame", icon: "▦", text: true,
+    defaultArea: { rowStart: 1, colStart: 1, rowEnd: 13, colEnd: 13 }, // full page
+    defaultContent: doc({ type: "paragraph" }), min: { cols: 2, rows: 2 },
+  },
   heading: {
     label: "Heading", icon: "H", text: true,
     defaultArea: { rowStart: 1, colStart: 1, rowEnd: 3, colEnd: 9 },
@@ -53,4 +58,4 @@ export const BLOCKS: Record<BlockType, BlockReg> = {
   },
 };
 
-export const BLOCK_ORDER: BlockType[] = ["heading", "paragraph", "pullQuote", "callout", "image", "divider", "spacer"];
+export const BLOCK_ORDER: BlockType[] = ["textFrame", "heading", "paragraph", "pullQuote", "callout", "image", "divider", "spacer"];

@@ -18,6 +18,8 @@ function mapSrc(node: any, fn: (src: string) => string): any {
     out.attrs = { ...out.attrs, src: fn(out.attrs.src) };
   }
   if (Array.isArray(out.content)) out.content = out.content.map((c: unknown) => mapSrc(c, fn));
+  // grid sections: descend into each block's content (a Tiptap doc in a text frame)
+  if (Array.isArray(out.blocks)) out.blocks = out.blocks.map((b: any) => ({ ...b, content: mapSrc(b.content, fn) }));
   return out;
 }
 

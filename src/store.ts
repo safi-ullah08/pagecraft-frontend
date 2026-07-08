@@ -2,7 +2,10 @@ import { create } from "zustand";
 import { DEFAULT_THEME } from "./themes.ts";
 import { type PageSize } from "./pages.ts";
 import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
-import { addSection, createDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
+import type { JSONContent } from "@tiptap/react";
+import { addSection, convertDocument, createDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
+import { isGridSection } from "./grid/types.ts";
+import { flowToGrid } from "./grid/flowToGrid.ts";
 
 export type Section = { id: string; content: SectionContent; version: number };
 
@@ -19,6 +22,7 @@ type Store = {
   edit: (id: string, content: SectionContent) => void;
   addPage: () => Promise<void>;
   removePage: (id: string) => Promise<void>;
+  convertToGrid: () => Promise<void>;
 };
 
 // Load the doc named by ?doc=<id> (with ALL its sections), or create a fresh
@@ -99,6 +103,23 @@ export const useStore = create<Store>((set, get) => {
       set((st) => {
         const sections = st.sections.filter((s) => s.id !== id);
         return { sections, activeId: st.activeId === id ? (sections[0]?.id ?? null) : st.activeId };
+      });
+    },
+    // flow → grid (model A): measure/paginate the flow chapters in the browser,
+    // then atomically replace the doc's sections with the resulting grid pages.
+    convertToGrid: async () => {
+      const { documentId, sections, theme, pageSize } = get();
+      if (!documentId) return;
+      const chapters = sections
+        .map((s) => s.content)
+        .filter((c) => !isGridSection(c))
+        .map((c) => assetsToCanonical(c) as JSONContent); // asset:// so the render can bundle
+      if (chapters.length === 0) return; // already all grid
+      const pages = flowToGrid(chapters, theme, pageSize).map((p) => assetsToCanonical(p));
+      const { sections: fresh } = await convertDocument(documentId, pages);
+      set({
+        sections: fresh.map((s) => ({ ...s, content: assetsToDisplay(s.content) })),
+        activeId: fresh[0]?.id ?? null,
       });
     },
   };

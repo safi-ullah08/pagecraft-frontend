@@ -7,7 +7,9 @@ export const ROWS = 12;
 
 export type GridArea = { rowStart: number; colStart: number; rowEnd: number; colEnd: number };
 
-export type BlockType = "paragraph" | "heading" | "image" | "callout" | "pullQuote" | "divider" | "spacer";
+// textFrame = a flowing rich-text region (a chapter chunk); the flow→grid
+// paginator fills these. paragraph/heading are smaller single-node text blocks.
+export type BlockType = "textFrame" | "paragraph" | "heading" | "image" | "callout" | "pullQuote" | "divider" | "spacer";
 
 // Text blocks carry a Tiptap doc; non-text blocks carry typed props.
 export type GridBlock = { id: string; area: GridArea; block: BlockType; content: JSONContent | Record<string, unknown> };

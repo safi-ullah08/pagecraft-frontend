@@ -40,6 +40,17 @@ export async function deleteSection(id: string) {
   if (!res.ok) throw new Error(`delete page failed: ${res.status}`);
 }
 
+// replace a document's sections with the flow→grid paginated pages
+export async function convertDocument(documentId: string, pages: SectionContent[]) {
+  const res = await fetch(`/api/documents/${documentId}/convert`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ pages }),
+  });
+  if (!res.ok) throw new Error(`convert failed: ${res.status}`);
+  return res.json() as Promise<{ sections: Section[] }>;
+}
+
 export async function getSection(id: string) {
   const res = await fetch(`/api/sections/${id}`);
   if (!res.ok) throw new Error(`section load failed: ${res.status}`);
