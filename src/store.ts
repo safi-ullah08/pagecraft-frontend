@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { DEFAULT_THEME } from "./themes.ts";
 import { type PageSize } from "./pages.ts";
 import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
-import { createDocument, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
+import { addSection, createDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
 
 export type Section = { id: string; content: SectionContent; version: number };
 
@@ -17,6 +17,8 @@ type Store = {
   setActive: (id: string) => void;
   load: () => Promise<void>;
   edit: (id: string, content: SectionContent) => void;
+  addPage: () => Promise<void>;
+  removePage: (id: string) => Promise<void>;
 };
 
 // Load the doc named by ?doc=<id> (with ALL its sections), or create a fresh
@@ -84,6 +86,20 @@ export const useStore = create<Store>((set, get) => {
       const t = timers.get(id);
       if (t) clearTimeout(t);
       timers.set(id, setTimeout(() => { timers.delete(id); void flush(id); }, 800));
+    },
+    addPage: async () => {
+      const docId = get().documentId;
+      if (!docId) return;
+      const section = await addSection(docId);
+      set((st) => ({ sections: [...st.sections, section], activeId: section.id }));
+    },
+    removePage: async (id) => {
+      if (get().sections.length <= 1) return; // always keep at least one page
+      await deleteSection(id);
+      set((st) => {
+        const sections = st.sections.filter((s) => s.id !== id);
+        return { sections, activeId: st.activeId === id ? (sections[0]?.id ?? null) : st.activeId };
+      });
     },
   };
 });

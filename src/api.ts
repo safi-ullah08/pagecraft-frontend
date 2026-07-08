@@ -24,6 +24,22 @@ export async function getDocument(id: string) {
   return res.json() as Promise<Document>;
 }
 
+// add a new page (empty grid section) at the end of a document
+export async function addSection(documentId: string) {
+  const res = await fetch(`/api/documents/${documentId}/sections`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  if (!res.ok) throw new Error(`add page failed: ${res.status}`);
+  return res.json() as Promise<Section>;
+}
+
+export async function deleteSection(id: string) {
+  const res = await fetch(`/api/sections/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`delete page failed: ${res.status}`);
+}
+
 export async function getSection(id: string) {
   const res = await fetch(`/api/sections/${id}`);
   if (!res.ok) throw new Error(`section load failed: ${res.status}`);
