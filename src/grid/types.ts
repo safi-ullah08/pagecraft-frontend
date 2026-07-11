@@ -1,7 +1,7 @@
 import type { JSONContent } from "@tiptap/react";
-import type { BlockStyleTokens } from "@pagecraft/model";
+import type { BlockStyleTokens, BlockType } from "@pagecraft/model";
 
-export type { BlockStyleTokens };
+export type { BlockStyleTokens, BlockType };
 
 // Mirrors @pagecraft/model's grid types (the worker + gridSerialize consume the
 // same shape). A grid SECTION is one page of placed blocks on a 12×12 grid.
@@ -10,19 +10,7 @@ export const ROWS = 12;
 
 export type GridArea = { rowStart: number; colStart: number; rowEnd: number; colEnd: number };
 
-// textFrame = a flowing rich-text region (a chapter chunk); the flow→grid
-// paginator fills these. Text blocks carry a Tiptap doc (schema-backed, inline
-// editable, themed + PDF-correct via serialize); typed blocks carry plain props
-// rendered by renderTypedBlock. Non-text primitives: image/divider/spacer.
-export type BlockType =
-  // schema-backed text blocks
-  | "textFrame" | "paragraph" | "heading" | "callout" | "pullQuote" | "sidebarNote"
-  | "list" | "table" | "codeBlock" | "checkboxList"
-  // primitives
-  | "image" | "divider" | "spacer"
-  // custom typed-prop blocks (renderTypedBlock)
-  | "authorBio" | "chapterOpener" | "ctaBlock" | "statHighlight" | "verse"
-  | "footnote" | "embed" | "linedWritingArea" | "promptBlock" | "gallery" | "trackerGrid";
+// BlockType now lives in @pagecraft/model (re-exported above).
 
 // Text blocks carry a Tiptap doc; non-text blocks carry typed props. `style` holds
 // per-block visual overrides from the inspector (undefined = inherit theme).
