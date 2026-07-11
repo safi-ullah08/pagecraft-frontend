@@ -4,7 +4,8 @@ import { type PageSize } from "./pages.ts";
 import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
 import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, createDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
-import { isGridSection } from "./grid/types.ts";
+import { isGridSection, type BlockType } from "./grid/types.ts";
+import { addBlock as opsAddBlock } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
 
 export type Section = { id: string; content: SectionContent; version: number };
@@ -21,6 +22,7 @@ type Store = {
   setPageSize: (p: PageSize) => void;
   setActive: (id: string) => void;
   selectBlock: (id: string | null) => void;
+  addBlock: (type: BlockType) => void;
   load: () => Promise<void>;
   edit: (id: string, content: SectionContent) => void;
   addPage: () => Promise<void>;
@@ -74,6 +76,16 @@ export const useStore = create<Store>((set, get) => {
     setPageSize: (pageSize) => set({ pageSize }),
     setActive: (activeId) => set({ activeId }),
     selectBlock: (selectedBlockId) => set({ selectedBlockId }),
+    // add a palette block to the active grid section and select it (palette lives
+    // in the right bar now — see ControlsPanel/BlocksPanel).
+    addBlock: (type) => {
+      const { activeId, sections } = get();
+      const sec = sections.find((s) => s.id === activeId);
+      if (!sec || !isGridSection(sec.content)) return;
+      const { section, id } = opsAddBlock(sec.content, type);
+      get().edit(activeId!, section);
+      set({ selectedBlockId: id });
+    },
     load: async () => {
       if (loadStarted) return;
       loadStarted = true;

@@ -11,7 +11,7 @@ import { scopeThemeCss } from "./scope-css.ts";
 import { PAGE_SIZES, PAGE_MARGIN_MM } from "./pages.ts";
 import { isGridSection, emptyGridSection } from "./grid/types.ts";
 import { GridCanvas } from "./grid/GridCanvas.tsx";
-import { Inspector } from "./grid/Inspector.tsx";
+import { ControlsPanel } from "./grid/ControlsPanel.tsx";
 import { PlaceholderView } from "./grid/PlaceholderView.tsx";
 import type { JSONContent } from "@tiptap/react";
 
@@ -134,7 +134,7 @@ export function App() {
                   ),
                 )}
               </div>
-              {active && isGridSection(active.content) && <Inspector />}
+              {active && isGridSection(active.content) && <ControlsPanel />}
             </>
           )}
         </div>

@@ -1,9 +1,9 @@
 import { useRef, useState } from "react";
 import { useEditor, EditorContent, type JSONContent } from "@tiptap/react";
 import { extensions, blockStyleProps, renderTypedBlock } from "@pagecraft/model";
-import { COLS, ROWS, type BlockType, type GridArea, type GridBlock, type GridSection } from "./types.ts";
-import { BLOCKS, BLOCK_ORDER } from "./blocks.ts";
-import { addBlock, moveBlock, resizeBlock, updateBlockContent, removeBlock, clampArea } from "./ops.ts";
+import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./types.ts";
+import { BLOCKS } from "./blocks.ts";
+import { moveBlock, resizeBlock, updateBlockContent, removeBlock, clampArea } from "./ops.ts";
 import { PAGE_SIZES, PAGE_MARGIN_MM, type PageSize } from "../pages.ts";
 
 // Recreated grid designer on OUR stack (temp/src is the visual reference only):
@@ -22,12 +22,6 @@ export function GridCanvas({ section, onChange, pageSize, selected, onSelect }: 
   // Live drag/resize preview — kept LOCAL so a drag only re-renders this canvas,
   // not the whole app + every Tiptap editor. Committed to the store on release.
   const [drag, setDrag] = useState<{ id: string; area: GridArea } | null>(null);
-
-  const add = (block: BlockType) => {
-    const { section: next, id } = addBlock(section, block);
-    onChange(next);
-    onSelect(id);
-  };
 
   // Pointer drag: move the whole area (mode "move") or the end edges (mode "resize"),
   // snapping to grid cells from the pointer delta measured against the grid box.
@@ -73,16 +67,7 @@ export function GridCanvas({ section, onChange, pageSize, selected, onSelect }: 
 
   return (
     <div style={{ marginBottom: 24 }}>
-      {/* block palette */}
-      <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 12, flexWrap: "wrap" }}>
-        {BLOCK_ORDER.map((t) => (
-          <button key={t} onClick={() => add(t)} title={`Add ${BLOCKS[t].label}`}
-            style={{ display: "flex", gap: 4, alignItems: "center", padding: "4px 10px", background: "#fff", border: "1px solid #ccc", borderRadius: 4, cursor: "pointer", fontSize: 12 }}>
-            <span style={{ fontWeight: 600 }}>{BLOCKS[t].icon}</span>{BLOCKS[t].label}
-          </button>
-        ))}
-      </div>
-
+      {/* palette lives in the right bar now (ControlsPanel › Blocks) */}
       <div className="editor-surface" style={sheet} onPointerDown={() => onSelect(null)}>
         <div ref={gridRef} style={{ height: "100%", display: "grid",
           gridTemplateColumns: `repeat(${COLS}, 1fr)`, gridTemplateRows: `repeat(${ROWS}, 1fr)`, gap: "4mm" }}>

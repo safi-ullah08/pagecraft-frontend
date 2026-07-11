@@ -22,22 +22,22 @@ export function Inspector() {
   const section = active && isGridSection(active.content) ? active.content : null;
   const block = section?.blocks.find((b) => b.id === selectedBlockId) ?? null;
 
-  const panel: React.CSSProperties = {
-    width: 264, flexShrink: 0, borderLeft: `1px solid ${PALETTE.BORDER}`, background: "#fff",
-    overflowY: "auto", fontSize: 12, color: PALETTE.TEXT,
-  };
-
+  // Rendered inside the right bar's Blocks tab (ControlsPanel), so no panel chrome
+  // of its own — just the header + editor sections. BlocksPanel shows this only
+  // when a block is selected (otherwise it shows the palette tiles).
   if (!section || !block) {
-    return <div style={{ ...panel, padding: 14, color: PALETTE.MUTED }}>Select a block to edit its position, style, and content.</div>;
+    return <div style={{ padding: 14, fontSize: 12, color: PALETTE.MUTED }}>Select a block to edit it.</div>;
   }
 
   const apply = (next: GridSection) => edit(active!.id, next);
   const reg = BLOCKS[block.block];
 
   return (
-    <div style={panel}>
-      <div style={{ padding: "12px 14px", borderBottom: `1px solid ${PALETTE.BORDER}`, fontWeight: 600 }}>
-        {reg.icon} {reg.label}
+    <div style={{ fontSize: 12, color: PALETTE.TEXT }}>
+      <div style={{ padding: "12px 14px", borderBottom: `1px solid ${PALETTE.BORDER}`, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span>{reg.icon} {reg.label}</span>
+        <button onClick={() => selectBlock(null)} title="back to palette"
+          style={{ background: "transparent", border: "none", color: PALETTE.MUTED, cursor: "pointer", fontSize: 12 }}>← Palette</button>
       </div>
 
       <PositionSection block={block} onArea={(a) => apply(moveBlock(section, block.id, { ...block.area, ...a }))} />
