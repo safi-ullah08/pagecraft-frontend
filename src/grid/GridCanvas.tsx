@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useEditor, EditorContent, type JSONContent } from "@tiptap/react";
 import { extensions, blockStyleProps, renderTypedBlock } from "@pagecraft/model";
 import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./types.ts";
@@ -7,14 +8,19 @@ import { moveBlock, resizeBlock, updateBlockContent, removeBlock, clampArea } fr
 import { PAGE_SIZES, PAGE_MARGIN_MM, type PageSize } from "../pages.ts";
 
 // Recreated grid designer with temp/src's interaction feel on OUR stack:
-// single click = SELECT (outline + handles), double click = EDIT (inline Tiptap);
-// the whole block is the drag surface (smooth translate, snap on drop); only the
-// selected block shows chrome; resize from right / bottom / corner. See UX-PARITY.md.
+// single click = SELECT, double click = EDIT (inline Tiptap); the whole block is
+// the drag surface. Moving lifts the block into a FLOATING drag layer (a fixed
+// portal above every page) so it travels across page boundaries seamlessly, with a
+// live landing footprint on the page under the cursor and edge auto-scroll. Resize
+// from right / bottom / corner. See UX-PARITY.md.
 const ACCENT = "#E07A5F";
 const DRAG_THRESHOLD = 4; // px before a press becomes a drag (else it's a click)
+const EDGE = 48; // px from the scroll edge that triggers auto-scroll
+const SCROLL_SPEED = 14; // px/frame while auto-scrolling
 
+type Rect = { left: number; top: number; width: number; height: number };
 type Drag =
-  | { id: string; kind: "move"; dx: number; dy: number }
+  | { id: string; kind: "move"; x: number; y: number; grabX: number; grabY: number; w: number; h: number; html: string; fp: Rect | null }
   | { id: string; kind: "resize"; area: GridArea };
 
 export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSize, selected, onSelect, editingId, onEdit, showGrid }: {
@@ -31,70 +37,87 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
 }) {
   const dim = PAGE_SIZES[pageSize];
   const gridRef = useRef<HTMLDivElement>(null);
-  // Live preview kept LOCAL so a drag re-renders only this canvas, not every
-  // Tiptap editor. move → pixel translate (smooth follow); resize → snapped area.
+  // Live preview kept LOCAL so a drag re-renders only this canvas, not every Tiptap
+  // editor. The ghost + footprint render into a body-level portal (above all pages).
   const [drag, setDrag] = useState<Drag | null>(null);
 
-  const cells = () => {
-    const r = gridRef.current!.getBoundingClientRect();
-    return { r, cellW: r.width / COLS, cellH: r.height / ROWS };
-  };
-  const otherGridAt = (x: number, y: number): HTMLElement | null => {
-    const g = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest("[data-sec]") as HTMLElement | null;
-    return g && g.getAttribute("data-sec") !== sectionId ? g : null;
-  };
-
-  // Whole-block move: press anywhere on the block (when not editing). A press with
-  // no movement is a plain select; movement past the threshold becomes a drag.
+  // Whole-block move. A press with no movement is a plain select; past the threshold
+  // it becomes a drag: the block floats in the portal and drops onto whatever page
+  // grid is under the cursor (same page → moveBlock, other page → moveBlockToPage).
   const startMove = (e: React.PointerEvent, b: GridBlock) => {
     if (editingId === b.id) return; // editing → let Tiptap handle the pointer
-    const grid = gridRef.current;
-    if (!grid) return;
-    const { cellW, cellH } = cells();
-    const startX = e.clientX, startY = e.clientY, orig = b.area, min = BLOCKS[b.block].min;
-    let moved = false;
-    let hot: HTMLElement | null = null;
-    const clearHot = () => { if (hot) { hot.style.outline = ""; hot.style.outlineOffset = ""; hot = null; } };
+    const blockEl = e.currentTarget as HTMLElement;
+    const rect = blockEl.getBoundingClientRect();
+    const grabX = e.clientX - rect.left, grabY = e.clientY - rect.top; // where inside the block we grabbed
+    const w = rect.width, h = rect.height;
+    const html = (blockEl.firstElementChild as HTMLElement | null)?.outerHTML ?? ""; // snapshot the content box
+    const scrollEl = blockEl.closest("[data-scroll]") as HTMLElement | null;
+    const orig = b.area, min = BLOCKS[b.block].min;
+    const startX = e.clientX, startY = e.clientY;
+    let moved = false, lastX = startX, lastY = startY, raf = 0, scrollDir = 0;
+
+    // The page grid under a point (ghost/footprint are pointer-events:none so
+    // elementFromPoint sees through them to the page).
+    const gridAt = (x: number, y: number) => (document.elementFromPoint(x, y) as HTMLElement | null)?.closest("[data-sec]") as HTMLElement | null;
+    // Snap the block (kept under the grab point) to the target grid's cells.
+    const resolve = (x: number, y: number) => {
+      const grid = gridAt(x, y);
+      if (!grid) return null;
+      const r = grid.getBoundingClientRect();
+      const cw = r.width / COLS, ch = r.height / ROWS;
+      const bw = orig.colEnd - orig.colStart, bh = orig.rowEnd - orig.rowStart;
+      const colStart = Math.round((x - grabX - r.left) / cw) + 1;
+      const rowStart = Math.round((y - grabY - r.top) / ch) + 1;
+      const area = clampArea({ colStart, rowStart, colEnd: colStart + bw, rowEnd: rowStart + bh }, min);
+      const fp: Rect = { left: r.left + (area.colStart - 1) * cw, top: r.top + (area.rowStart - 1) * ch, width: (area.colEnd - area.colStart) * cw, height: (area.rowEnd - area.rowStart) * ch };
+      return { sec: grid.getAttribute("data-sec")!, area, fp };
+    };
+
+    const tick = () => {
+      if (scrollDir && scrollEl) { scrollEl.scrollTop += scrollDir * SCROLL_SPEED; apply(lastX, lastY); raf = requestAnimationFrame(tick); }
+      else raf = 0;
+    };
+    const apply = (x: number, y: number) => {
+      const res = resolve(x, y);
+      setDrag({ id: b.id, kind: "move", x, y, grabX, grabY, w, h, html, fp: res?.fp ?? null });
+      if (scrollEl) {
+        const sr = scrollEl.getBoundingClientRect();
+        scrollDir = y < sr.top + EDGE ? -1 : y > sr.bottom - EDGE ? 1 : 0;
+        if (scrollDir && !raf) raf = requestAnimationFrame(tick);
+      }
+    };
 
     const onMove = (ev: PointerEvent) => {
-      const dx = ev.clientX - startX, dy = ev.clientY - startY;
-      if (!moved && Math.abs(dx) + Math.abs(dy) < DRAG_THRESHOLD) return;
+      if (!moved && Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return;
       moved = true;
       ev.preventDefault();
-      const other = otherGridAt(ev.clientX, ev.clientY);
-      if (other) { if (hot !== other) { clearHot(); other.style.outline = `2px solid ${ACCENT}`; other.style.outlineOffset = "-2px"; hot = other; } }
-      else clearHot();
-      setDrag({ id: b.id, kind: "move", dx, dy });
+      lastX = ev.clientX; lastY = ev.clientY;
+      apply(lastX, lastY);
     };
     const onUp = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      clearHot();
+      if (raf) cancelAnimationFrame(raf);
       setDrag(null);
       onSelect(b.id); // press always selects (drag or click)
       if (!moved) return;
-      const other = otherGridAt(ev.clientX, ev.clientY);
-      if (other) { // dropped on another page → transfer
-        const r = other.getBoundingClientRect();
-        const w = orig.colEnd - orig.colStart, h = orig.rowEnd - orig.rowStart;
-        const colStart = Math.floor((ev.clientX - r.left) / (r.width / COLS)) + 1;
-        const rowStart = Math.floor((ev.clientY - r.top) / (r.height / ROWS)) + 1;
-        onMoveAcross(b.id, other.getAttribute("data-sec")!, clampArea({ colStart, rowStart, colEnd: colStart + w, rowEnd: rowStart + h }, min));
-        return;
-      }
-      const dc = Math.round((ev.clientX - startX) / cellW), dr = Math.round((ev.clientY - startY) / cellH);
-      onChange(moveBlock(section, b.id, clampArea({ rowStart: orig.rowStart + dr, colStart: orig.colStart + dc, rowEnd: orig.rowEnd + dr, colEnd: orig.colEnd + dc }, min)));
+      const res = resolve(ev.clientX, ev.clientY);
+      if (!res) return; // dropped outside any page → cancel (block stays put)
+      if (res.sec === sectionId) onChange(moveBlock(section, b.id, res.area));
+      else onMoveAcross(b.id, res.sec, res.area);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
   };
 
-  // Resize from an edge/corner handle (snapped live preview).
+  // Resize from an edge/corner handle (snapped live preview, in-place).
   const startResize = (e: React.PointerEvent, b: GridBlock, side: "right" | "bottom" | "corner") => {
     e.preventDefault();
     e.stopPropagation();
-    if (!gridRef.current) return;
-    const { cellW, cellH } = cells();
+    const grid = gridRef.current;
+    if (!grid) return;
+    const gr = grid.getBoundingClientRect();
+    const cellW = gr.width / COLS, cellH = gr.height / ROWS;
     const startX = e.clientX, startY = e.clientY, orig = b.area, min = BLOCKS[b.block].min;
     let last = orig;
     const onMove = (ev: PointerEvent) => {
@@ -127,15 +150,13 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
       <div className="editor-surface" style={sheet} onPointerDown={() => { onSelect(null); onEdit(null); }}>
         <div ref={gridRef} data-sec={sectionId} style={{ height: "100%", display: "grid",
           gridTemplateColumns: `repeat(${COLS}, 1fr)`, gridTemplateRows: `repeat(${ROWS}, 1fr)`, gap: "4mm" }}>
-          {/* faint grid guides */}
           {showGrid && <div style={{ gridArea: `1 / 1 / ${ROWS + 1} / ${COLS + 1}`, pointerEvents: "none",
             background: "repeating-linear-gradient(to right, transparent 0, transparent calc(100%/12 - 1px), rgba(0,0,0,.05) calc(100%/12 - 1px), rgba(0,0,0,.05) calc(100%/12))" }} />}
           {section.blocks.map((b) => {
             const d = drag?.id === b.id ? drag : null;
             const area = d?.kind === "resize" ? d.area : b.area;
-            const translate = d?.kind === "move" ? `translate(${d.dx}px, ${d.dy}px)` : undefined;
             return (
-              <BlockView key={b.id} b={{ ...b, area }} translate={translate}
+              <BlockView key={b.id} b={{ ...b, area }} ghosting={d?.kind === "move"}
                 selected={selected === b.id} editing={editingId === b.id}
                 onStartMove={(e) => startMove(e, b)}
                 onStartResize={(e, side) => startResize(e, b, side)}
@@ -147,13 +168,25 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
           })}
         </div>
       </div>
+      {/* floating drag layer: the block travels above every page; footprint shows
+          where it will land on the page under the cursor */}
+      {drag?.kind === "move" && createPortal(
+        <>
+          {drag.fp && <div style={{ position: "fixed", left: drag.fp.left, top: drag.fp.top, width: drag.fp.width, height: drag.fp.height,
+            pointerEvents: "none", background: `${ACCENT}22`, border: `2px dashed ${ACCENT}`, borderRadius: 2, zIndex: 9998 }} />}
+          <div className="editor-surface" style={{ position: "fixed", left: drag.x - drag.grabX, top: drag.y - drag.grabY, width: drag.w, height: drag.h,
+            pointerEvents: "none", opacity: 0.85, background: "#fff", overflow: "hidden", outline: `2px solid ${ACCENT}`,
+            boxShadow: "0 8px 24px rgba(0,0,0,.3)", zIndex: 9999 }} dangerouslySetInnerHTML={{ __html: drag.html }} />
+        </>,
+        document.body,
+      )}
     </div>
   );
 }
 
-function BlockView({ b, translate, selected, editing, onStartMove, onStartResize, onSelect, onEdit, onContent, onDelete }: {
+function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize, onSelect, onEdit, onContent, onDelete }: {
   b: GridBlock;
-  translate?: string;
+  ghosting: boolean;
   selected: boolean;
   editing: boolean;
   onStartMove: (e: React.PointerEvent) => void;
@@ -164,7 +197,6 @@ function BlockView({ b, translate, selected, editing, onStartMove, onStartResize
   onDelete: () => void;
 }) {
   const { rowStart, colStart, rowEnd, colEnd } = b.area;
-  const dragging = !!translate;
   const reg = BLOCKS[b.block];
   // overflow affordance: dashed bar when the content is taller than its box
   const contentRef = useRef<HTMLDivElement>(null);
@@ -186,21 +218,20 @@ function BlockView({ b, translate, selected, editing, onStartMove, onStartResize
       onDragStart={(e) => e.preventDefault()} // kill native drag (images etc.) so our pointer drag wins
       style={{
         gridArea: `${rowStart} / ${colStart} / ${rowEnd} / ${colEnd}`, position: "relative",
-        cursor: editing ? "text" : dragging ? "grabbing" : "grab",
+        cursor: editing ? "text" : "grab",
         outline: selected ? `2px solid ${ACCENT}` : "none", outlineOffset: 1,
-        transform: translate, opacity: dragging ? 0.6 : 1, zIndex: selected ? 5 : 1,
-        // while not editing, a press-drag must move the block — never select text
+        opacity: ghosting ? 0.3 : 1, zIndex: selected ? 5 : 1,
         userSelect: editing ? "auto" : "none", WebkitUserSelect: editing ? "auto" : "none",
       }}
     >
       <div ref={contentRef} style={{ height: "100%", overflow: "hidden", ...(blockStyleProps(b.style) as React.CSSProperties) }}>
         <BlockBody b={b} editing={editing} onContent={onContent} />
       </div>
-      {overflow && !dragging && (
+      {overflow && !ghosting && (
         <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 20, pointerEvents: "none",
           background: `linear-gradient(transparent, ${ACCENT}40)`, borderBottom: `2px dashed ${ACCENT}` }} />
       )}
-      {selected && !dragging && (
+      {selected && !ghosting && (
         <>
           <ResizeHandle side="right" onStart={onStartResize} />
           <ResizeHandle side="bottom" onStart={onStartResize} />

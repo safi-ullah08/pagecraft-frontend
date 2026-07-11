@@ -147,7 +147,7 @@ export function App() {
             // Editor: sections stacked (flow -> page sheet, grid -> canvas) with the
             // block Inspector docked right when the active section is a grid.
             <>
-              <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: 32, background: "#e6e6e6" }}>
+              <div data-scroll style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: 32, background: "#e6e6e6" }}>
                 <style>{surfaceCss + sheetCss}</style>
                 <div style={{ zoom }}>
                 {sections.map((s) =>
