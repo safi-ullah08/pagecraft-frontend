@@ -63,9 +63,13 @@ export function Inspector() {
           style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER}`, color: PALETTE.TEXT, padding: "8px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
           ↕ Fit height to content
         </button>
-        <Field label="Padding">
+        <Field label="Padding (inset content)">
           <Slider value={block.style?.padding ?? 0} min={0} max={40} unit="px"
             onChange={(v) => apply(updateBlockStyle(section, block.id, { padding: v || undefined }))} />
+        </Field>
+        <Field label="Margin (space around block)">
+          <Slider value={block.style?.margin ?? 0} min={0} max={40} unit="px"
+            onChange={(v) => apply(updateBlockStyle(section, block.id, { margin: v || undefined }))} />
         </Field>
       </Section>
       <StyleSection block={block} onStyle={(t) => apply(updateBlockStyle(section, block.id, t))} />

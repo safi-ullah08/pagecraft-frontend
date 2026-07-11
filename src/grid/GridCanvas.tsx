@@ -222,6 +222,7 @@ function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize,
       style={{
         gridArea: `${rowStart} / ${colStart} / ${rowEnd} / ${colEnd}`, position: "relative",
         cursor: editing ? "text" : "grab",
+        margin: b.style?.margin != null ? `${b.style.margin}px` : undefined, // space between blocks/cols
         outline: selected ? `2px solid ${ACCENT}` : "none", outlineOffset: 1,
         opacity: ghosting ? 0.3 : 1, zIndex: selected ? 5 : 1,
         userSelect: editing ? "auto" : "none", WebkitUserSelect: editing ? "auto" : "none",
