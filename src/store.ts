@@ -4,9 +4,11 @@ import { type PageSize } from "./pages.ts";
 import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
 import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, createDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
-import { isGridSection, type BlockType, type GridArea } from "./grid/types.ts";
-import { addBlock as opsAddBlock } from "./grid/ops.ts";
+import { BLOCKS } from "@pagecraft/model";
+import { isGridSection, ROWS, type BlockType, type GridArea } from "./grid/types.ts";
+import { addBlock as opsAddBlock, resizeBlock } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
+import { blockHtml, blockWidthPx, heightToRows, measureHtmlHeight } from "./grid/measure.ts";
 
 export type Section = { id: string; content: SectionContent; version: number };
 
@@ -30,6 +32,7 @@ type Store = {
   setZoom: (z: number) => void;
   addBlock: (type: BlockType) => void;
   addBlockAt: (type: BlockType, toId: string, area: GridArea) => void;
+  fitBlock: (sectionId: string, blockId: string) => void;
   moveBlockToPage: (fromId: string, blockId: string, toId: string, area?: GridArea) => void;
   load: () => Promise<void>;
   edit: (id: string, content: SectionContent) => void;
@@ -100,6 +103,26 @@ export const useStore = create<Store>((set, get) => {
       const { section, id } = opsAddBlock(sec.content, type);
       get().edit(activeId!, section);
       set({ selectedBlockId: id });
+    },
+    // Fit a block's height to its content: measure the rendered content at the
+    // block's column width and set rowEnd to the whole rows it needs (clamped to the
+    // page from its rowStart). Text/typed blocks only; images/dividers have no flow.
+    fitBlock: (sectionId, blockId) => {
+      const { sections, theme, pageSize, edit } = get();
+      const sec = sections.find((s) => s.id === sectionId);
+      if (!sec || !isGridSection(sec.content)) return;
+      const block = sec.content.blocks.find((b) => b.id === blockId);
+      if (!block) return;
+      const html = blockHtml(block);
+      if (html == null) return; // nothing measurable (image/divider/spacer)
+      const cols = block.area.colEnd - block.area.colStart;
+      const pad = block.style?.padding ?? 0;
+      const h = measureHtmlHeight(html, blockWidthPx(cols, pageSize) - 2 * pad, theme) + 2 * pad;
+      const rows = heightToRows(h, pageSize);
+      const min = BLOCKS[block.block].min.rows;
+      const rowStart = block.area.rowStart;
+      const rowEnd = rowStart + Math.max(min, Math.min(rows, ROWS - rowStart + 1));
+      edit(sectionId, resizeBlock(sec.content, blockId, { ...block.area, rowEnd }));
     },
     // add a palette block to a specific page at a specific area (drag-from-palette)
     addBlockAt: (type, toId, area) => {

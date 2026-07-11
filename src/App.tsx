@@ -41,6 +41,7 @@ export function App() {
   const editingBlockId = useStore((s) => s.editingBlockId);
   const setEditing = useStore((s) => s.setEditing);
   const moveBlockToPage = useStore((s) => s.moveBlockToPage);
+  const fitBlock = useStore((s) => s.fitBlock);
   const showGrid = useStore((s) => s.showGrid);
   const toggleGrid = useStore((s) => s.toggleGrid);
   const zoom = useStore((s) => s.zoom);
@@ -163,6 +164,7 @@ export function App() {
                         onSelect={(id) => { setActive(s.id); selectBlock(id); }}
                         editingId={activeId === s.id ? editingBlockId : null}
                         onEdit={(id) => { setActive(s.id); setEditing(id); }}
+                        onFit={(id) => fitBlock(s.id, id)}
                         showGrid={showGrid}
                       />
                     </div>

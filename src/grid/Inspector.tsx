@@ -19,6 +19,7 @@ export function Inspector() {
   const selectBlock = useStore((s) => s.selectBlock);
 
   const moveBlockToPage = useStore((s) => s.moveBlockToPage);
+  const fitBlock = useStore((s) => s.fitBlock);
   const active = sections.find((s) => s.id === activeId);
   const section = active && isGridSection(active.content) ? active.content : null;
   const block = section?.blocks.find((b) => b.id === selectedBlockId) ?? null;
@@ -57,6 +58,16 @@ export function Inspector() {
         </Section>
       )}
       <PositionSection block={block} onArea={(a) => apply(moveBlock(section, block.id, { ...block.area, ...a }))} />
+      <Section title="Fit">
+        <button onClick={() => fitBlock(active!.id, block.id)} title="size the block's height to its content"
+          style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER}`, color: PALETTE.TEXT, padding: "8px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
+          ↕ Fit height to content
+        </button>
+        <Field label="Padding">
+          <Slider value={block.style?.padding ?? 0} min={0} max={40} unit="px"
+            onChange={(v) => apply(updateBlockStyle(section, block.id, { padding: v || undefined }))} />
+        </Field>
+      </Section>
       <StyleSection block={block} onStyle={(t) => apply(updateBlockStyle(section, block.id, t))} />
       <ContentSection block={block} onContent={(c) => apply(updateBlockContent(section, block.id, c))} />
 

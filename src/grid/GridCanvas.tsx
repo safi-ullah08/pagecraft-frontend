@@ -23,7 +23,7 @@ type Drag =
   | { id: string; kind: "move"; x: number; y: number; grabX: number; grabY: number; w: number; h: number; html: string; fp: Rect | null }
   | { id: string; kind: "resize"; area: GridArea };
 
-export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSize, selected, onSelect, editingId, onEdit, showGrid }: {
+export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSize, selected, onSelect, editingId, onEdit, onFit, showGrid }: {
   section: GridSection;
   sectionId: string;
   onChange: (s: GridSection) => void;
@@ -33,6 +33,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
   onSelect: (id: string | null) => void;
   editingId: string | null;
   onEdit: (id: string | null) => void;
+  onFit: (id: string) => void;
   showGrid: boolean;
 }) {
   const dim = PAGE_SIZES[pageSize];
@@ -162,6 +163,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
                 onStartResize={(e, side) => startResize(e, b, side)}
                 onSelect={() => onSelect(b.id)}
                 onEdit={() => onEdit(b.id)}
+                onFit={() => onFit(b.id)}
                 onContent={(c) => onChange(updateBlockContent(section, b.id, c))}
                 onDelete={() => { onChange(removeBlock(section, b.id)); onSelect(null); }} />
             );
@@ -184,7 +186,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
   );
 }
 
-function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize, onSelect, onEdit, onContent, onDelete }: {
+function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize, onSelect, onEdit, onFit, onContent, onDelete }: {
   b: GridBlock;
   ghosting: boolean;
   selected: boolean;
@@ -193,6 +195,7 @@ function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize,
   onStartResize: (e: React.PointerEvent, side: "right" | "bottom" | "corner") => void;
   onSelect: () => void;
   onEdit: () => void;
+  onFit: () => void;
   onContent: (c: unknown) => void;
   onDelete: () => void;
 }) {
@@ -228,8 +231,10 @@ function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize,
         <BlockBody b={b} editing={editing} onContent={onContent} />
       </div>
       {overflow && !ghosting && (
-        <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 20, pointerEvents: "none",
-          background: `linear-gradient(transparent, ${ACCENT}40)`, borderBottom: `2px dashed ${ACCENT}` }} />
+        <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onFit(); }}
+          title="content is clipped — click to grow the block to fit"
+          style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 20, cursor: "pointer",
+            background: `linear-gradient(transparent, ${ACCENT}40)`, borderBottom: `2px dashed ${ACCENT}` }} />
       )}
       {selected && !ghosting && (
         <>
