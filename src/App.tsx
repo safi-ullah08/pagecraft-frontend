@@ -11,6 +11,7 @@ import { scopeThemeCss } from "./scope-css.ts";
 import { PAGE_SIZES, PAGE_MARGIN_MM } from "./pages.ts";
 import { isGridSection, emptyGridSection } from "./grid/types.ts";
 import { GridCanvas } from "./grid/GridCanvas.tsx";
+import { Inspector } from "./grid/Inspector.tsx";
 import { PlaceholderView } from "./grid/PlaceholderView.tsx";
 import type { JSONContent } from "@tiptap/react";
 
@@ -33,11 +34,11 @@ export function App() {
   const setActive = useStore((s) => s.setActive);
   const sections = useStore((s) => s.sections);
   const activeId = useStore((s) => s.activeId);
-  const convertToGrid = useStore((s) => s.convertToGrid);
+  const loading = useStore((s) => s.loading);
+  const selectedBlockId = useStore((s) => s.selectedBlockId);
+  const selectBlock = useStore((s) => s.selectBlock);
 
   const [tab, setTab] = useState<Tab>("editor");
-  const [converting, setConverting] = useState(false);
-  const hasFlow = sections.some((s) => !isGridSection(s.content));
 
   useEffect(() => {
     void load();
@@ -88,24 +89,6 @@ export function App() {
             </button>
           ))}
           <div style={{ flex: 1 }} />
-          {hasFlow && (
-            <button
-              disabled={converting}
-              onClick={async () => {
-                if (!confirm("Convert this imported document to editable grid pages? Flowing chapters are paginated into grid pages you can edit block-by-block.")) return;
-                setConverting(true);
-                try {
-                  await convertToGrid();
-                } catch (e) {
-                  alert(`Convert failed: ${e}`);
-                } finally {
-                  setConverting(false);
-                }
-              }}
-              style={{ fontSize: 12, padding: "3px 8px", marginRight: 4, border: "1px solid #E07A5F", borderRadius: 4, background: "#E07A5F", color: "#fff", cursor: converting ? "wait" : "pointer" }}>
-              {converting ? "Converting…" : "¶→▦ Convert to grid"}
-            </button>
-          )}
           {active && (
             <button onClick={toggleLayout} title="convert the active section's layout"
               style={{ fontSize: 12, padding: "3px 8px", border: "1px solid #ccc", borderRadius: 4, background: "#fff", cursor: "pointer" }}>
@@ -115,32 +98,44 @@ export function App() {
         </div>
 
         <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
-          {sections.length === 0 ? (
+          {loading ? (
+            <div style={{ padding: 16, color: "#666" }}>Preparing editor…</div>
+          ) : sections.length === 0 ? (
             <div style={{ padding: 16 }}>Loading…</div>
           ) : tab === "pdf" ? (
             <Preview sections={contents} theme={theme} />
           ) : tab === "placeholder" ? (
             <PlaceholderView sections={contents} pageSize={pageSize} />
           ) : (
-            // Editor: sections stacked; flow -> page sheet, grid -> canvas
-            <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: 32, background: "#e6e6e6" }}>
-              <style>{surfaceCss + sheetCss}</style>
-              {sections.map((s) =>
-                isGridSection(s.content) ? (
-                  <div key={s.id} id={`sec-${s.id}`} onPointerDown={() => setActive(s.id)}>
-                    <GridCanvas section={s.content} onChange={(next) => edit(s.id, next)} pageSize={pageSize} />
-                  </div>
-                ) : (
-                  <section key={s.id} id={`sec-${s.id}`} className="page-sheet">
-                    <Editor
-                      content={s.content as JSONContent}
-                      onChange={(c) => edit(s.id, c)}
-                      onFocus={() => setActive(s.id)}
-                    />
-                  </section>
-                ),
-              )}
-            </div>
+            // Editor: sections stacked (flow -> page sheet, grid -> canvas) with the
+            // block Inspector docked right when the active section is a grid.
+            <>
+              <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: 32, background: "#e6e6e6" }}>
+                <style>{surfaceCss + sheetCss}</style>
+                {sections.map((s) =>
+                  isGridSection(s.content) ? (
+                    <div key={s.id} id={`sec-${s.id}`} onPointerDown={() => setActive(s.id)}>
+                      <GridCanvas
+                        section={s.content}
+                        onChange={(next) => edit(s.id, next)}
+                        pageSize={pageSize}
+                        selected={activeId === s.id ? selectedBlockId : null}
+                        onSelect={(id) => { setActive(s.id); selectBlock(id); }}
+                      />
+                    </div>
+                  ) : (
+                    <section key={s.id} id={`sec-${s.id}`} className="page-sheet">
+                      <Editor
+                        content={s.content as JSONContent}
+                        onChange={(c) => edit(s.id, c)}
+                        onFocus={() => setActive(s.id)}
+                      />
+                    </section>
+                  ),
+                )}
+              </div>
+              {active && isGridSection(active.content) && <Inspector />}
+            </>
           )}
         </div>
       </div>

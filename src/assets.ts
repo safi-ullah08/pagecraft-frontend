@@ -17,6 +17,8 @@ function mapSrc(node: any, fn: (src: string) => string): any {
   if (out.attrs && typeof out.attrs.src === "string") {
     out.attrs = { ...out.attrs, src: fn(out.attrs.src) };
   }
+  // image blocks store the url as a bare `src` (not attrs.src) — round-trip it too
+  if (typeof out.src === "string") out.src = fn(out.src);
   if (Array.isArray(out.content)) out.content = out.content.map((c: unknown) => mapSrc(c, fn));
   // grid sections: descend into each block's content (a Tiptap doc in a text frame)
   if (Array.isArray(out.blocks)) out.blocks = out.blocks.map((b: any) => ({ ...b, content: mapSrc(b.content, fn) }));

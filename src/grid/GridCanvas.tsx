@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useEditor, EditorContent, type JSONContent } from "@tiptap/react";
-import { extensions } from "@pagecraft/model";
+import { extensions, blockStyleProps } from "@pagecraft/model";
 import { COLS, ROWS, type BlockType, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS, BLOCK_ORDER } from "./blocks.ts";
 import { addBlock, moveBlock, resizeBlock, updateBlockContent, removeBlock, clampArea } from "./ops.ts";
@@ -10,14 +10,15 @@ import { PAGE_SIZES, PAGE_MARGIN_MM, type PageSize } from "../pages.ts";
 // a fixed page sheet with a 12×12 grid, blocks placed via inline grid-area, moved
 // and resized with raw pointer events (no dnd-kit dep), text blocks edited inline
 // with per-block Tiptap on the shared schema. Emits the whole GridSection upward.
-export function GridCanvas({ section, onChange, pageSize }: {
+export function GridCanvas({ section, onChange, pageSize, selected, onSelect }: {
   section: GridSection;
   onChange: (s: GridSection) => void;
   pageSize: PageSize;
+  selected: string | null; // lifted to the store so the Inspector targets the same block
+  onSelect: (id: string | null) => void;
 }) {
   const dim = PAGE_SIZES[pageSize];
   const gridRef = useRef<HTMLDivElement>(null);
-  const [selected, setSelected] = useState<string | null>(null);
   // Live drag/resize preview — kept LOCAL so a drag only re-renders this canvas,
   // not the whole app + every Tiptap editor. Committed to the store on release.
   const [drag, setDrag] = useState<{ id: string; area: GridArea } | null>(null);
@@ -25,7 +26,7 @@ export function GridCanvas({ section, onChange, pageSize }: {
   const add = (block: BlockType) => {
     const { section: next, id } = addBlock(section, block);
     onChange(next);
-    setSelected(id);
+    onSelect(id);
   };
 
   // Pointer drag: move the whole area (mode "move") or the end edges (mode "resize"),
@@ -33,7 +34,7 @@ export function GridCanvas({ section, onChange, pageSize }: {
   const startDrag = (e: React.PointerEvent, b: GridBlock, mode: "move" | "resize") => {
     e.preventDefault();
     e.stopPropagation();
-    setSelected(b.id);
+    onSelect(b.id);
     const grid = gridRef.current;
     if (!grid) return;
     const rect = grid.getBoundingClientRect();
@@ -82,7 +83,7 @@ export function GridCanvas({ section, onChange, pageSize }: {
         ))}
       </div>
 
-      <div className="editor-surface" style={sheet} onPointerDown={() => setSelected(null)}>
+      <div className="editor-surface" style={sheet} onPointerDown={() => onSelect(null)}>
         <div ref={gridRef} style={{ height: "100%", display: "grid",
           gridTemplateColumns: `repeat(${COLS}, 1fr)`, gridTemplateRows: `repeat(${ROWS}, 1fr)`, gap: "4mm" }}>
           {/* faint grid guides */}
@@ -92,10 +93,10 @@ export function GridCanvas({ section, onChange, pageSize }: {
             const bb = drag?.id === b.id ? { ...b, area: drag.area } : b;
             return (
               <BlockView key={b.id} b={bb} selected={selected === b.id}
-                onSelect={() => setSelected(b.id)}
+                onSelect={() => onSelect(b.id)}
                 onDragStart={(e, mode) => startDrag(e, b, mode)}
                 onContent={(c) => onChange(updateBlockContent(section, b.id, c))}
-                onDelete={() => { onChange(removeBlock(section, b.id)); setSelected(null); }} />
+                onDelete={() => { onChange(removeBlock(section, b.id)); onSelect(null); }} />
             );
           })}
         </div>
@@ -131,7 +132,7 @@ function BlockView({ b, selected, onSelect, onDragStart, onContent, onDelete }: 
             style={{ position: "absolute", top: -1, right: -1, width: 16, height: 16, background: "#E07A5F", color: "#fff", border: "none", fontSize: 11, lineHeight: 1, cursor: "pointer", zIndex: 4 }}>×</button>
         </>
       )}
-      <div style={{ height: "100%", paddingTop: selected ? 14 : 0, boxSizing: "border-box", overflow: "hidden" }}>
+      <div style={{ height: "100%", paddingTop: selected ? 14 : 0, boxSizing: "border-box", overflow: "hidden", ...(blockStyleProps(b.style) as React.CSSProperties) }}>
         <BlockBody b={b} onContent={onContent} />
       </div>
     </div>

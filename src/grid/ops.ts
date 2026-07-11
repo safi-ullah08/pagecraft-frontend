@@ -1,4 +1,4 @@
-import { COLS, ROWS, type BlockType, type GridArea, type GridBlock, type GridSection } from "./types.ts";
+import { COLS, ROWS, type BlockStyleTokens, type BlockType, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
 
 // Pure grid ops (GridSection -> GridSection). The canvas computes new areas from
@@ -40,6 +40,16 @@ export function resizeBlock(section: GridSection, blockId: string, area: GridAre
 
 export function updateBlockContent(section: GridSection, blockId: string, content: unknown): GridSection {
   return patch(section, blockId, (b) => ({ ...b, content: content as GridBlock["content"] }));
+}
+
+// Merge a style-token patch; drop keys set back to undefined (reset-to-theme) so
+// the stored style stays minimal (and empty {} disappears).
+export function updateBlockStyle(section: GridSection, blockId: string, tokens: Partial<BlockStyleTokens>): GridSection {
+  return patch(section, blockId, (b) => {
+    const merged: Record<string, unknown> = { ...b.style, ...tokens };
+    for (const k of Object.keys(merged)) if (merged[k] === undefined) delete merged[k];
+    return { ...b, style: Object.keys(merged).length ? (merged as BlockStyleTokens) : undefined };
+  });
 }
 
 export function removeBlock(section: GridSection, blockId: string): GridSection {

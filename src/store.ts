@@ -5,7 +5,7 @@ import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
 import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, createDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
 import { isGridSection } from "./grid/types.ts";
-import { flowToGrid } from "./grid/flowToGrid.ts";
+import { parseBlocks } from "./grid/parseBlocks.ts";
 
 export type Section = { id: string; content: SectionContent; version: number };
 
@@ -13,11 +13,14 @@ type Store = {
   theme: string;
   pageSize: PageSize; // editor page-sheet size (configurable)
   documentId: string | null;
+  loading: boolean; // true until load (incl. any auto flow→grid conversion) settles
   sections: Section[]; // ordered; ALL rendered at once (continuous scroll)
   activeId: string | null; // section in focus/view — ChapterNav highlight, toolbar target
+  selectedBlockId: string | null; // grid block the inspector targets (in the active section)
   setTheme: (t: string) => void;
   setPageSize: (p: PageSize) => void;
   setActive: (id: string) => void;
+  selectBlock: (id: string | null) => void;
   load: () => Promise<void>;
   edit: (id: string, content: SectionContent) => void;
   addPage: () => Promise<void>;
@@ -60,14 +63,17 @@ export const useStore = create<Store>((set, get) => {
     theme: DEFAULT_THEME,
     pageSize: "A4",
     documentId: null,
+    loading: true,
     sections: [],
     activeId: null,
+    selectedBlockId: null,
     // ponytail: theme is session view-state — seeded from doc.theme on load, but
     // switching is NOT persisted back yet (export/preview honour it live). DB
     // theme persistence lands with the theme/template builder phase.
     setTheme: (theme) => set({ theme }),
     setPageSize: (pageSize) => set({ pageSize }),
     setActive: (activeId) => set({ activeId }),
+    selectBlock: (selectedBlockId) => set({ selectedBlockId }),
     load: async () => {
       if (loadStarted) return;
       loadStarted = true;
@@ -77,11 +83,21 @@ export const useStore = create<Store>((set, get) => {
         // asset:// -> resolver URL so the editor can display imported images
         const sections = doc.sections.map((s) => ({ ...s, content: assetsToDisplay(s.content) }));
         set({ documentId: id, sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME });
+        // import path: flow is only a landing format — auto-paginate into grid on
+        // first open, then it's grid forever (convert persists, so idempotent).
+        if (sections.some((s) => !isGridSection(s.content))) {
+          try {
+            await get().convertToGrid();
+          } catch (e) {
+            console.error("auto flow→grid failed (staying flow):", e);
+          }
+        }
       } else {
         const { document, section } = await createDocument();
         history.replaceState(null, "", `?doc=${document.id}`);
         set({ documentId: document.id, sections: [section], activeId: section.id });
       }
+      set({ loading: false });
     },
     // Edit ONE section (each mounted editor owns its own id). Per-section 800ms
     // debounce so editing section B never drops a pending save for section A.
@@ -110,12 +126,11 @@ export const useStore = create<Store>((set, get) => {
     convertToGrid: async () => {
       const { documentId, sections, theme, pageSize } = get();
       if (!documentId) return;
-      const chapters = sections
-        .map((s) => s.content)
-        .filter((c) => !isGridSection(c))
-        .map((c) => assetsToCanonical(c) as JSONContent); // asset:// so the render can bundle
+      // Keep display URLs here so parseBlocks can LOAD each image to read its natural
+      // size; canonicalize (→ asset://) only the resulting pages before persisting.
+      const chapters = sections.map((s) => s.content).filter((c) => !isGridSection(c)) as JSONContent[];
       if (chapters.length === 0) return; // already all grid
-      const pages = flowToGrid(chapters, theme, pageSize).map((p) => assetsToCanonical(p));
+      const pages = (await parseBlocks(chapters, theme, pageSize)).map((p) => assetsToCanonical(p));
       const { sections: fresh } = await convertDocument(documentId, pages);
       set({
         sections: fresh.map((s) => ({ ...s, content: assetsToDisplay(s.content) })),
