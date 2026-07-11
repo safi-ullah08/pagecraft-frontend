@@ -19,9 +19,9 @@ export function clampArea(a: GridArea, min = { cols: 1, rows: 1 }): GridArea {
   return { colStart, rowStart, colEnd: colStart + w, rowEnd: rowStart + h };
 }
 
-export function addBlock(section: GridSection, block: BlockType): { section: GridSection; id: string } {
+export function addBlock(section: GridSection, block: BlockType, at?: GridArea): { section: GridSection; id: string } {
   const bid = id();
-  const area = clampArea(BLOCKS[block].defaultArea, BLOCKS[block].min);
+  const area = clampArea(at ?? BLOCKS[block].defaultArea, BLOCKS[block].min);
   const b: GridBlock = { id: bid, area, block, content: structuredClone(BLOCKS[block].defaultContent) as GridBlock["content"] };
   return { section: { ...section, blocks: [...section.blocks, b] }, id: bid };
 }

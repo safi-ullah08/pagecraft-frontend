@@ -165,6 +165,18 @@ function BlockView({ b, translate, selected, editing, onStartMove, onStartResize
   const { rowStart, colStart, rowEnd, colEnd } = b.area;
   const dragging = !!translate;
   const reg = BLOCKS[b.block];
+  // overflow affordance: dashed bar when the content is taller than its box
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState(false);
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const check = () => setOverflow(el.scrollHeight > el.clientHeight + 2);
+    check();
+    const obs = new ResizeObserver(check);
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [b.area, b.content]);
   return (
     <div
       onPointerDown={(e) => { if (editing) return; e.stopPropagation(); onStartMove(e); }}
@@ -177,9 +189,13 @@ function BlockView({ b, translate, selected, editing, onStartMove, onStartResize
         transform: translate, opacity: dragging ? 0.6 : 1, zIndex: selected ? 5 : 1,
       }}
     >
-      <div style={{ height: "100%", overflow: "hidden", ...(blockStyleProps(b.style) as React.CSSProperties) }}>
+      <div ref={contentRef} style={{ height: "100%", overflow: "hidden", ...(blockStyleProps(b.style) as React.CSSProperties) }}>
         <BlockBody b={b} editing={editing} onContent={onContent} />
       </div>
+      {overflow && !dragging && (
+        <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 20, pointerEvents: "none",
+          background: `linear-gradient(transparent, ${ACCENT}40)`, borderBottom: `2px dashed ${ACCENT}` }} />
+      )}
       {selected && !dragging && (
         <>
           <ResizeHandle side="right" onStart={onStartResize} />

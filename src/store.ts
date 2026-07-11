@@ -25,6 +25,7 @@ type Store = {
   selectBlock: (id: string | null) => void;
   setEditing: (id: string | null) => void;
   addBlock: (type: BlockType) => void;
+  addBlockAt: (type: BlockType, toId: string, area: GridArea) => void;
   moveBlockToPage: (fromId: string, blockId: string, toId: string, area?: GridArea) => void;
   load: () => Promise<void>;
   edit: (id: string, content: SectionContent) => void;
@@ -91,6 +92,15 @@ export const useStore = create<Store>((set, get) => {
       const { section, id } = opsAddBlock(sec.content, type);
       get().edit(activeId!, section);
       set({ selectedBlockId: id });
+    },
+    // add a palette block to a specific page at a specific area (drag-from-palette)
+    addBlockAt: (type, toId, area) => {
+      const { sections, edit } = get();
+      const sec = sections.find((s) => s.id === toId);
+      if (!sec || !isGridSection(sec.content)) return;
+      const { section, id } = opsAddBlock(sec.content, type, area);
+      edit(toId, section);
+      set({ activeId: toId, selectedBlockId: id, editingBlockId: null });
     },
     // Move a block from one page (section) to another: drop it from the source and
     // append to the target (optionally at a new area). Two edit()s so both pages

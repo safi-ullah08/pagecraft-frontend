@@ -3,6 +3,7 @@ import { BLOCKS, BLOCK_ORDER, type BlockCategory, type BlockType } from "@pagecr
 import { useStore } from "../store.ts";
 import { themeNames } from "../themes.ts";
 import { PAGE_SIZES, type PageSize } from "../pages.ts";
+import { COLS, ROWS } from "./types.ts";
 import { Inspector } from "./Inspector.tsx";
 import { Section, Field, Select, PALETTE } from "./controls.tsx";
 
@@ -54,12 +55,61 @@ function BlocksPanel() {
   );
 }
 
+// Click adds the block to the active page; drag drops it onto the page grid under
+// the cursor (a floating ghost follows; the target page highlights). Reuses the
+// [data-sec] hit-test the canvas exposes.
 function BlockTile({ type }: { type: BlockType }) {
   const addBlock = useStore((s) => s.addBlock);
+  const addBlockAt = useStore((s) => s.addBlockAt);
   const b = BLOCKS[type];
+  const w = b.defaultArea.colEnd - b.defaultArea.colStart;
+  const h = b.defaultArea.rowEnd - b.defaultArea.rowStart;
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    const startX = e.clientX, startY = e.clientY;
+    let moved = false;
+    let hot: HTMLElement | null = null;
+    let ghost: HTMLElement | null = null;
+    const clearHot = () => { if (hot) { hot.style.outline = ""; hot.style.outlineOffset = ""; hot = null; } };
+    const gridAt = (x: number, y: number) => (document.elementFromPoint(x, y) as HTMLElement | null)?.closest("[data-sec]") as HTMLElement | null;
+    const onMove = (ev: PointerEvent) => {
+      if (!moved && Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) < 4) return;
+      moved = true;
+      if (!ghost) {
+        ghost = document.createElement("div");
+        ghost.textContent = b.label;
+        ghost.style.cssText = `position:fixed;z-index:9999;pointer-events:none;background:${b.color};color:#fff;font-size:11px;font-weight:600;padding:3px 8px;border-radius:4px;box-shadow:0 2px 8px rgba(0,0,0,.3)`;
+        document.body.appendChild(ghost);
+      }
+      ghost.style.left = `${ev.clientX + 10}px`;
+      ghost.style.top = `${ev.clientY + 10}px`;
+      const g = gridAt(ev.clientX, ev.clientY);
+      if (g) { if (hot !== g) { clearHot(); g.style.outline = `2px solid ${b.color}`; g.style.outlineOffset = "-2px"; hot = g; } }
+      else clearHot();
+    };
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      ghost?.remove();
+      clearHot();
+      if (!moved) { addBlock(type); return; } // click → active page
+      const g = gridAt(ev.clientX, ev.clientY);
+      const sec = g?.getAttribute("data-sec");
+      if (g && sec) {
+        const r = g.getBoundingClientRect();
+        const colStart = Math.floor((ev.clientX - r.left) / (r.width / COLS)) + 1;
+        const rowStart = Math.floor((ev.clientY - r.top) / (r.height / ROWS)) + 1;
+        addBlockAt(type, sec, { colStart, rowStart, colEnd: colStart + w, rowEnd: rowStart + h });
+      }
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
   return (
-    <button onClick={(e) => { e.stopPropagation(); addBlock(type); }} title={`Add ${b.label}`}
-      style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER}`, borderRadius: 4, padding: 8, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6, cursor: "pointer" }}>
+    <button onPointerDown={onPointerDown} title={`Add ${b.label} (drag onto a page)`}
+      style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER}`, borderRadius: 4, padding: 8, display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6, cursor: "grab" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 3, background: `${b.color}33`, color: b.color, fontSize: 12, fontWeight: 600 }}>{b.icon}</span>
         <span style={{ fontSize: 11, fontWeight: 500, color: PALETTE.TEXT }}>{b.label}</span>
