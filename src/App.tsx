@@ -10,6 +10,7 @@ import { themeSkinCss } from "./themes.ts";
 import { scopeThemeCss } from "./scope-css.ts";
 import { PAGE_SIZES, PAGE_MARGIN_MM } from "./pages.ts";
 import { isGridSection, emptyGridSection } from "./grid/types.ts";
+import { removeBlock } from "./grid/ops.ts";
 import { GridCanvas } from "./grid/GridCanvas.tsx";
 import { ControlsPanel } from "./grid/ControlsPanel.tsx";
 import { PlaceholderView } from "./grid/PlaceholderView.tsx";
@@ -37,6 +38,8 @@ export function App() {
   const loading = useStore((s) => s.loading);
   const selectedBlockId = useStore((s) => s.selectedBlockId);
   const selectBlock = useStore((s) => s.selectBlock);
+  const editingBlockId = useStore((s) => s.editingBlockId);
+  const setEditing = useStore((s) => s.setEditing);
   const moveBlockToPage = useStore((s) => s.moveBlockToPage);
 
   const [tab, setTab] = useState<Tab>("editor");
@@ -44,6 +47,22 @@ export function App() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Keyboard: Escape exits inline edit; Delete/Backspace removes the selected
+  // block (guarded so it never fires while typing). Ported from temp/src.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && editingBlockId) { setEditing(null); return; }
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedBlockId && !editingBlockId) {
+        const t = e.target as HTMLElement | null;
+        if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+        const sec = sections.find((s) => s.id === activeId);
+        if (sec && isGridSection(sec.content)) { edit(activeId!, removeBlock(sec.content, selectedBlockId)); selectBlock(null); }
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editingBlockId, selectedBlockId, activeId, sections, edit, setEditing, selectBlock]);
 
   const surfaceCss = useMemo(() => {
     try {
@@ -124,6 +143,8 @@ export function App() {
                         pageSize={pageSize}
                         selected={activeId === s.id ? selectedBlockId : null}
                         onSelect={(id) => { setActive(s.id); selectBlock(id); }}
+                        editingId={activeId === s.id ? editingBlockId : null}
+                        onEdit={(id) => { setActive(s.id); setEditing(id); }}
                       />
                     </div>
                   ) : (
