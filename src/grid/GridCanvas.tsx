@@ -17,7 +17,7 @@ type Drag =
   | { id: string; kind: "move"; dx: number; dy: number }
   | { id: string; kind: "resize"; area: GridArea };
 
-export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSize, selected, onSelect, editingId, onEdit }: {
+export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSize, selected, onSelect, editingId, onEdit, showGrid }: {
   section: GridSection;
   sectionId: string;
   onChange: (s: GridSection) => void;
@@ -27,6 +27,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
   onSelect: (id: string | null) => void;
   editingId: string | null;
   onEdit: (id: string | null) => void;
+  showGrid: boolean;
 }) {
   const dim = PAGE_SIZES[pageSize];
   const gridRef = useRef<HTMLDivElement>(null);
@@ -127,8 +128,8 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
         <div ref={gridRef} data-sec={sectionId} style={{ height: "100%", display: "grid",
           gridTemplateColumns: `repeat(${COLS}, 1fr)`, gridTemplateRows: `repeat(${ROWS}, 1fr)`, gap: "4mm" }}>
           {/* faint grid guides */}
-          <div style={{ gridArea: `1 / 1 / ${ROWS + 1} / ${COLS + 1}`, pointerEvents: "none",
-            background: "repeating-linear-gradient(to right, transparent 0, transparent calc(100%/12 - 1px), rgba(0,0,0,.05) calc(100%/12 - 1px), rgba(0,0,0,.05) calc(100%/12))" }} />
+          {showGrid && <div style={{ gridArea: `1 / 1 / ${ROWS + 1} / ${COLS + 1}`, pointerEvents: "none",
+            background: "repeating-linear-gradient(to right, transparent 0, transparent calc(100%/12 - 1px), rgba(0,0,0,.05) calc(100%/12 - 1px), rgba(0,0,0,.05) calc(100%/12))" }} />}
           {section.blocks.map((b) => {
             const d = drag?.id === b.id ? drag : null;
             const area = d?.kind === "resize" ? d.area : b.area;

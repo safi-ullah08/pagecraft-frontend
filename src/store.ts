@@ -19,11 +19,15 @@ type Store = {
   activeId: string | null; // section in focus/view — ChapterNav highlight, toolbar target
   selectedBlockId: string | null; // grid block the inspector targets (in the active section)
   editingBlockId: string | null; // block currently in inline-text edit mode (double-click)
+  showGrid: boolean; // canvas grid-guide overlay
+  zoom: number; // editor zoom (1 = 100%)
   setTheme: (t: string) => void;
   setPageSize: (p: PageSize) => void;
   setActive: (id: string) => void;
   selectBlock: (id: string | null) => void;
   setEditing: (id: string | null) => void;
+  toggleGrid: () => void;
+  setZoom: (z: number) => void;
   addBlock: (type: BlockType) => void;
   addBlockAt: (type: BlockType, toId: string, area: GridArea) => void;
   moveBlockToPage: (fromId: string, blockId: string, toId: string, area?: GridArea) => void;
@@ -74,6 +78,8 @@ export const useStore = create<Store>((set, get) => {
     activeId: null,
     selectedBlockId: null,
     editingBlockId: null,
+    showGrid: true,
+    zoom: 1,
     // ponytail: theme is session view-state — seeded from doc.theme on load, but
     // switching is NOT persisted back yet (export/preview honour it live). DB
     // theme persistence lands with the theme/template builder phase.
@@ -83,6 +89,8 @@ export const useStore = create<Store>((set, get) => {
     // selecting a block exits any inline edit (like temp's selectBlock)
     selectBlock: (selectedBlockId) => set({ selectedBlockId, editingBlockId: null }),
     setEditing: (editingBlockId) => set({ editingBlockId, selectedBlockId: editingBlockId ?? get().selectedBlockId }),
+    toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
+    setZoom: (zoom) => set({ zoom }),
     // add a palette block to the active grid section and select it (palette lives
     // in the right bar now — see ControlsPanel/BlocksPanel).
     addBlock: (type) => {

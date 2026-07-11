@@ -41,6 +41,10 @@ export function App() {
   const editingBlockId = useStore((s) => s.editingBlockId);
   const setEditing = useStore((s) => s.setEditing);
   const moveBlockToPage = useStore((s) => s.moveBlockToPage);
+  const showGrid = useStore((s) => s.showGrid);
+  const toggleGrid = useStore((s) => s.toggleGrid);
+  const zoom = useStore((s) => s.zoom);
+  const setZoom = useStore((s) => s.setZoom);
 
   const [tab, setTab] = useState<Tab>("editor");
 
@@ -109,6 +113,19 @@ export function App() {
             </button>
           ))}
           <div style={{ flex: 1 }} />
+          {tab === "editor" && (
+            <>
+              <button onClick={toggleGrid} title="toggle grid overlay"
+                style={{ fontSize: 12, padding: "3px 8px", borderRadius: 4, cursor: "pointer",
+                  border: `1px solid ${showGrid ? "#E07A5F" : "#ccc"}`, background: showGrid ? "#fdeee9" : "#fff", color: showGrid ? "#E07A5F" : "#666" }}>
+                ▦ Grid
+              </button>
+              <select value={zoom} onChange={(e) => setZoom(Number(e.target.value))} title="zoom"
+                style={{ fontSize: 12, padding: "3px 4px", borderRadius: 4, border: "1px solid #ccc", background: "#fff" }}>
+                {[0.5, 0.75, 1, 1.25, 1.5].map((z) => <option key={z} value={z}>{Math.round(z * 100)}%</option>)}
+              </select>
+            </>
+          )}
           {active && (
             <button onClick={toggleLayout} title="convert the active section's layout"
               style={{ fontSize: 12, padding: "3px 8px", border: "1px solid #ccc", borderRadius: 4, background: "#fff", cursor: "pointer" }}>
@@ -132,6 +149,7 @@ export function App() {
             <>
               <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: 32, background: "#e6e6e6" }}>
                 <style>{surfaceCss + sheetCss}</style>
+                <div style={{ zoom }}>
                 {sections.map((s) =>
                   isGridSection(s.content) ? (
                     <div key={s.id} id={`sec-${s.id}`} onPointerDown={() => setActive(s.id)}>
@@ -145,6 +163,7 @@ export function App() {
                         onSelect={(id) => { setActive(s.id); selectBlock(id); }}
                         editingId={activeId === s.id ? editingBlockId : null}
                         onEdit={(id) => { setActive(s.id); setEditing(id); }}
+                        showGrid={showGrid}
                       />
                     </div>
                   ) : (
@@ -157,6 +176,7 @@ export function App() {
                     </section>
                   ),
                 )}
+                </div>
               </div>
               {active && isGridSection(active.content) && <ControlsPanel />}
             </>
