@@ -5,6 +5,9 @@ import { BLOCKS } from "./blocks.ts";
 import { moveBlock, updateBlockStyle, updateBlockContent, removeBlock } from "./ops.ts";
 import { Section, Field, Slider, ColorPicker, Select, inputStyle, resetBtn, PALETTE } from "./controls.tsx";
 
+const textareaStyle: React.CSSProperties = { ...inputStyle, resize: "vertical", fontFamily: "inherit" };
+const LINE_STYLES = [{ value: "solid", label: "Solid" }, { value: "dotted", label: "Dotted" }, { value: "none", label: "None" }];
+
 // Right-panel inspector: edits the selected block of the active grid section —
 // Position (grid area), Style (per-block token overrides), Content (per-type
 // fields). Mirrors the old temp/src BlockEditor feel on our grid model.
@@ -113,37 +116,110 @@ function StyleSection({ block, onStyle }: { block: GridBlock; onStyle: (t: Parti
   );
 }
 
-// Content editing: image src/alt and heading level are structured props best set
-// here; rich text blocks are edited inline on the page.
+// Content editing: schema-backed text blocks are edited inline on the page; typed
+// blocks (and image/heading structured props) are edited here, port of temp's
+// per-type field sets.
 function ContentSection({ block, onContent }: { block: GridBlock; onContent: (c: unknown) => void }) {
-  if (block.block === "image") {
-    const c = block.content as { src?: string; alt?: string };
-    return (
-      <Section title="Content">
-        <Field label="Image URL"><input value={c.src ?? ""} onChange={(e) => onContent({ ...c, src: e.target.value })} style={inputStyle} /></Field>
-        <Field label="Alt text"><input value={c.alt ?? ""} onChange={(e) => onContent({ ...c, alt: e.target.value })} style={inputStyle} /></Field>
-      </Section>
-    );
+  const c = (block.content ?? {}) as Record<string, unknown>;
+  const s = (k: string) => (c[k] as string) ?? "";
+  const u = (patch: Record<string, unknown>) => onContent({ ...c, ...patch });
+  const wrap = (children: React.ReactNode) => <Section title="Content">{children}</Section>;
+  const text = (k: string, label: string, rows = 4) => (
+    <Field label={label}><textarea value={s(k)} rows={rows} onChange={(e) => u({ [k]: e.target.value })} style={textareaStyle} /></Field>
+  );
+  const line = (k: string, label: string) => (
+    <Field label={label}><input value={s(k)} onChange={(e) => u({ [k]: e.target.value })} style={inputStyle} /></Field>
+  );
+
+  switch (block.block) {
+    case "image":
+      return wrap(<>{line("src", "Image URL")}{line("alt", "Alt text")}</>);
+    case "heading": {
+      const doc = block.content as JSONContent;
+      const node = doc.content?.[0];
+      const level = (node?.attrs?.level as number) ?? 1;
+      const setLevel = (l: number) => onContent({ ...doc, content: [{ ...node, attrs: { ...node?.attrs, level: l } }, ...(doc.content?.slice(1) ?? [])] });
+      return wrap(<>
+        <Field label="Level"><Select value={String(level)} options={[{ value: "1", label: "H1" }, { value: "2", label: "H2" }, { value: "3", label: "H3" }]} onChange={(v) => setLevel(Number(v))} /></Field>
+        <div style={{ fontSize: 11, color: PALETTE.MUTED }}>Edit the heading text on the page.</div>
+      </>);
+    }
+    case "authorBio":
+      return wrap(<>{line("name", "Name")}{text("bio", "Bio")}{line("imageUrl", "Image URL")}</>);
+    case "chapterOpener":
+      return wrap(<>
+        <Field label="Chapter number"><input type="number" min={1} value={(c.chapterNumber as number) ?? 1} onChange={(e) => u({ chapterNumber: Number(e.target.value) })} style={inputStyle} /></Field>
+        {line("title", "Title")}{line("subtitle", "Subtitle")}
+      </>);
+    case "ctaBlock":
+      return wrap(<>{line("heading", "Heading")}{text("text", "Text", 3)}{line("buttonText", "Button text")}{line("buttonUrl", "Button URL")}</>);
+    case "statHighlight":
+      return wrap(<>{line("value", "Value")}{line("label", "Label")}</>);
+    case "verse":
+      return wrap(<>{text("text", "Text", 6)}{line("attribution", "Attribution")}</>);
+    case "footnote":
+      return wrap(<>
+        <Field label="Number"><input type="number" min={1} value={(c.number as number) ?? 1} onChange={(e) => u({ number: Number(e.target.value) })} style={inputStyle} /></Field>
+        {text("text", "Text")}
+      </>);
+    case "embed":
+      return wrap(<>{line("url", "URL")}{line("provider", "Provider")}{line("caption", "Caption")}</>);
+    case "linedWritingArea":
+      return wrap(<>
+        <Field label="Lines"><Slider value={(c.lineCount as number) ?? 8} min={2} max={20} onChange={(v) => u({ lineCount: v })} /></Field>
+        <Field label="Line style"><Select value={s("lineStyle") || "solid"} options={LINE_STYLES} onChange={(v) => u({ lineStyle: v })} /></Field>
+        {line("label", "Label")}
+      </>);
+    case "promptBlock":
+      return wrap(<>
+        {text("prompt", "Prompt", 3)}
+        <Field label="Lines"><Slider value={(c.lineCount as number) ?? 6} min={2} max={20} onChange={(v) => u({ lineCount: v })} /></Field>
+        <Field label="Line style"><Select value={s("lineStyle") || "solid"} options={LINE_STYLES} onChange={(v) => u({ lineStyle: v })} /></Field>
+      </>);
+    case "gallery":
+      return wrap(<GalleryFields c={c} u={u} />);
+    case "trackerGrid":
+      return wrap(<TrackerFields c={c} u={u} />);
+    default:
+      if (BLOCKS[block.block].text) return wrap(<div style={{ fontSize: 11, color: PALETTE.MUTED }}>Edit this content directly on the page.</div>);
+      return wrap(<div style={{ fontSize: 11, color: PALETTE.MUTED }}>This block has no editable content.</div>);
   }
-  if (block.block === "heading") {
-    const doc = block.content as JSONContent;
-    const node = doc.content?.[0];
-    const level = (node?.attrs?.level as number) ?? 1;
-    const setLevel = (l: number) => {
-      const next: JSONContent = { ...doc, content: [{ ...node, attrs: { ...node?.attrs, level: l } }, ...(doc.content?.slice(1) ?? [])] };
-      onContent(next);
-    };
-    return (
-      <Section title="Content">
-        <Field label="Level">
-          <Select value={String(level)} options={[{ value: "1", label: "H1" }, { value: "2", label: "H2" }, { value: "3", label: "H3" }]} onChange={(v) => setLevel(Number(v))} />
-        </Field>
-        <div style={{ fontSize: 11, color: PALETTE.MUTED }}>Edit the heading text directly on the page.</div>
-      </Section>
-    );
-  }
-  if (BLOCKS[block.block].text) {
-    return <Section title="Content"><div style={{ fontSize: 11, color: PALETTE.MUTED }}>Edit this text directly on the page.</div></Section>;
-  }
-  return <Section title="Content"><div style={{ fontSize: 11, color: PALETTE.MUTED }}>This block has no editable content.</div></Section>;
+}
+
+const addBtn: React.CSSProperties = { background: PALETTE.SURFACE, border: `1px dashed ${PALETTE.BORDER_STRONG}`, color: PALETTE.MUTED, padding: "6px 10px", borderRadius: 4, fontSize: 12, cursor: "pointer" };
+const rmBtn: React.CSSProperties = { background: "transparent", border: "none", color: PALETTE.MUTED, fontSize: 12, cursor: "pointer" };
+
+function GalleryFields({ c, u }: { c: Record<string, unknown>; u: (p: Record<string, unknown>) => void }) {
+  const images = (c.images as Array<{ url: string; caption: string }>) ?? [];
+  const set = (i: number, patch: Partial<{ url: string; caption: string }>) => u({ images: images.map((im, j) => (j === i ? { ...im, ...patch } : im)) });
+  return (
+    <>
+      <Field label="Columns"><Slider value={(c.columns as number) ?? 2} min={2} max={4} onChange={(v) => u({ columns: v })} /></Field>
+      {images.map((im, i) => (
+        <div key={i} style={{ padding: 6, background: PALETTE.SURFACE, borderRadius: 4, display: "flex", flexDirection: "column", gap: 4 }}>
+          <input value={im.url} placeholder={`Image ${i + 1} URL`} onChange={(e) => set(i, { url: e.target.value })} style={inputStyle} />
+          <input value={im.caption} placeholder="Caption" onChange={(e) => set(i, { caption: e.target.value })} style={inputStyle} />
+          <button style={rmBtn} onClick={() => u({ images: images.filter((_, j) => j !== i) })}>Remove</button>
+        </div>
+      ))}
+      <button style={addBtn} onClick={() => u({ images: [...images, { url: "", caption: "" }] })}>+ Add image</button>
+    </>
+  );
+}
+
+function TrackerFields({ c, u }: { c: Record<string, unknown>; u: (p: Record<string, unknown>) => void }) {
+  const rows = (c.rowLabels as string[]) ?? [];
+  return (
+    <>
+      <Field label="Title"><input value={(c.title as string) ?? ""} onChange={(e) => u({ title: e.target.value })} style={inputStyle} /></Field>
+      <Field label="Columns"><Slider value={(c.columnCount as number) ?? 7} min={3} max={31} onChange={(v) => u({ columnCount: v })} /></Field>
+      {rows.map((label, i) => (
+        <div key={i} style={{ display: "flex", gap: 6 }}>
+          <input value={label} onChange={(e) => u({ rowLabels: rows.map((r, j) => (j === i ? e.target.value : r)) })} style={{ ...inputStyle, flex: 1 }} />
+          <button style={rmBtn} onClick={() => u({ rowLabels: rows.filter((_, j) => j !== i) })}>✕</button>
+        </div>
+      ))}
+      <button style={addBtn} onClick={() => u({ rowLabels: [...rows, "New row"] })}>+ Add row</button>
+    </>
+  );
 }

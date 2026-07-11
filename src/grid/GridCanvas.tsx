@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useEditor, EditorContent, type JSONContent } from "@tiptap/react";
-import { extensions, blockStyleProps } from "@pagecraft/model";
+import { extensions, blockStyleProps, renderTypedBlock } from "@pagecraft/model";
 import { COLS, ROWS, type BlockType, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS, BLOCK_ORDER } from "./blocks.ts";
 import { addBlock, moveBlock, resizeBlock, updateBlockContent, removeBlock, clampArea } from "./ops.ts";
@@ -148,7 +148,10 @@ function BlockBody({ b, onContent }: { b: GridBlock; onContent: (c: unknown) => 
       : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#888", fontSize: 12, background: "#f4f4f4" }}>Image</div>;
   }
   if (b.block === "divider") return <hr style={{ margin: "auto 0" }} />;
-  return null; // spacer
+  if (b.block === "spacer") return null;
+  // custom typed blocks: same HTML the PDF uses (renderTypedBlock)
+  const html = renderTypedBlock(b.block, b.content);
+  return html != null ? <div style={{ height: "100%", overflow: "hidden" }} dangerouslySetInnerHTML={{ __html: html }} /> : null;
 }
 
 function BlockText({ content, onContent }: { content: JSONContent; onContent: (c: unknown) => void }) {
