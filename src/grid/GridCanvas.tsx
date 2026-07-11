@@ -10,9 +10,11 @@ import { PAGE_SIZES, PAGE_MARGIN_MM, type PageSize } from "../pages.ts";
 // a fixed page sheet with a 12×12 grid, blocks placed via inline grid-area, moved
 // and resized with raw pointer events (no dnd-kit dep), text blocks edited inline
 // with per-block Tiptap on the shared schema. Emits the whole GridSection upward.
-export function GridCanvas({ section, onChange, pageSize, selected, onSelect }: {
+export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSize, selected, onSelect }: {
   section: GridSection;
+  sectionId: string; // this page's section id (for cross-page drops)
   onChange: (s: GridSection) => void;
+  onMoveAcross: (blockId: string, toSectionId: string, area: GridArea) => void;
   pageSize: PageSize;
   selected: string | null; // lifted to the store so the Inspector targets the same block
   onSelect: (id: string | null) => void;
@@ -40,7 +42,25 @@ export function GridCanvas({ section, onChange, pageSize, selected, onSelect }: 
 
     const min = BLOCKS[b.block].min;
     let last = orig;
+    // direct-DOM target highlight (no React state → other pages' Tiptap editors
+    // don't re-render mid-drag); the grid under the pointer, when it's another page.
+    let hot: HTMLElement | null = null;
+    const clearHot = () => { if (hot) { hot.style.outline = ""; hot.style.outlineOffset = ""; hot = null; } };
+    const otherGridAt = (x: number, y: number): HTMLElement | null => {
+      const g = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest("[data-sec]") as HTMLElement | null;
+      return g && g.getAttribute("data-sec") !== sectionId ? g : null;
+    };
+
     const onMove = (ev: PointerEvent) => {
+      if (mode === "move") {
+        const grid = otherGridAt(ev.clientX, ev.clientY);
+        if (grid) { // hovering another page: freeze source preview, highlight target
+          setDrag(null);
+          if (hot !== grid) { clearHot(); grid.style.outline = "2px solid #E07A5F"; grid.style.outlineOffset = "-2px"; hot = grid; }
+          return;
+        }
+      }
+      clearHot();
       const dc = Math.round((ev.clientX - startX) / cellW);
       const dr = Math.round((ev.clientY - startY) / cellH);
       const raw: GridArea = mode === "move"
@@ -49,10 +69,21 @@ export function GridCanvas({ section, onChange, pageSize, selected, onSelect }: 
       last = clampArea(raw, min);
       setDrag({ id: b.id, area: last }); // local preview only
     };
-    const onUp = () => {
+    const onUp = (ev: PointerEvent) => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      clearHot();
       setDrag(null);
+      const grid = mode === "move" ? otherGridAt(ev.clientX, ev.clientY) : null;
+      if (grid) { // dropped on another page → transfer the block there
+        const r = grid.getBoundingClientRect();
+        const w = orig.colEnd - orig.colStart, h = orig.rowEnd - orig.rowStart;
+        const colStart = Math.floor((ev.clientX - r.left) / (r.width / COLS)) + 1;
+        const rowStart = Math.floor((ev.clientY - r.top) / (r.height / ROWS)) + 1;
+        const area = clampArea({ colStart, rowStart, colEnd: colStart + w, rowEnd: rowStart + h }, min);
+        onMoveAcross(b.id, grid.getAttribute("data-sec")!, area);
+        return;
+      }
       onChange(mode === "move" ? moveBlock(section, b.id, last) : resizeBlock(section, b.id, last)); // commit once
     };
     window.addEventListener("pointermove", onMove);
@@ -69,7 +100,7 @@ export function GridCanvas({ section, onChange, pageSize, selected, onSelect }: 
     <div style={{ marginBottom: 24 }}>
       {/* palette lives in the right bar now (ControlsPanel › Blocks) */}
       <div className="editor-surface" style={sheet} onPointerDown={() => onSelect(null)}>
-        <div ref={gridRef} style={{ height: "100%", display: "grid",
+        <div ref={gridRef} data-sec={sectionId} style={{ height: "100%", display: "grid",
           gridTemplateColumns: `repeat(${COLS}, 1fr)`, gridTemplateRows: `repeat(${ROWS}, 1fr)`, gap: "4mm" }}>
           {/* faint grid guides */}
           <div style={{ gridArea: `1 / 1 / ${ROWS + 1} / ${COLS + 1}`, pointerEvents: "none",

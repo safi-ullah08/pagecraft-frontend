@@ -18,9 +18,14 @@ export function Inspector() {
   const edit = useStore((s) => s.edit);
   const selectBlock = useStore((s) => s.selectBlock);
 
+  const moveBlockToPage = useStore((s) => s.moveBlockToPage);
   const active = sections.find((s) => s.id === activeId);
   const section = active && isGridSection(active.content) ? active.content : null;
   const block = section?.blocks.find((b) => b.id === selectedBlockId) ?? null;
+  // pages this block could move to (all grid sections except the current one)
+  const pageOptions = sections
+    .map((s, i) => ({ id: s.id, i }))
+    .filter((o) => isGridSection(sections[o.i]!.content) && o.id !== activeId);
 
   // Rendered inside the right bar's Blocks tab (ControlsPanel), so no panel chrome
   // of its own — just the header + editor sections. BlocksPanel shows this only
@@ -40,6 +45,17 @@ export function Inspector() {
           style={{ background: "transparent", border: "none", color: PALETTE.MUTED, cursor: "pointer", fontSize: 12 }}>← Palette</button>
       </div>
 
+      {pageOptions.length > 0 && (
+        <Section title="Page">
+          <Field label="Move to page">
+            <Select
+              value=""
+              options={[{ value: "", label: "This page" }, ...pageOptions.map((o) => ({ value: o.id, label: `Page ${o.i + 1}` }))]}
+              onChange={(toId) => { if (toId) moveBlockToPage(activeId!, block.id, toId); }}
+            />
+          </Field>
+        </Section>
+      )}
       <PositionSection block={block} onArea={(a) => apply(moveBlock(section, block.id, { ...block.area, ...a }))} />
       <StyleSection block={block} onStyle={(t) => apply(updateBlockStyle(section, block.id, t))} />
       <ContentSection block={block} onContent={(c) => apply(updateBlockContent(section, block.id, c))} />

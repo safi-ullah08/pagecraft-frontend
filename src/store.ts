@@ -4,7 +4,7 @@ import { type PageSize } from "./pages.ts";
 import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
 import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, createDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
-import { isGridSection, type BlockType } from "./grid/types.ts";
+import { isGridSection, type BlockType, type GridArea } from "./grid/types.ts";
 import { addBlock as opsAddBlock } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
 
@@ -23,6 +23,7 @@ type Store = {
   setActive: (id: string) => void;
   selectBlock: (id: string | null) => void;
   addBlock: (type: BlockType) => void;
+  moveBlockToPage: (fromId: string, blockId: string, toId: string, area?: GridArea) => void;
   load: () => Promise<void>;
   edit: (id: string, content: SectionContent) => void;
   addPage: () => Promise<void>;
@@ -85,6 +86,22 @@ export const useStore = create<Store>((set, get) => {
       const { section, id } = opsAddBlock(sec.content, type);
       get().edit(activeId!, section);
       set({ selectedBlockId: id });
+    },
+    // Move a block from one page (section) to another: drop it from the source and
+    // append to the target (optionally at a new area). Two edit()s so both pages
+    // persist. Selection follows the block to its new page.
+    moveBlockToPage: (fromId, blockId, toId, area) => {
+      if (fromId === toId) return;
+      const { sections, edit } = get();
+      const from = sections.find((s) => s.id === fromId);
+      const to = sections.find((s) => s.id === toId);
+      if (!from || !to || !isGridSection(from.content) || !isGridSection(to.content)) return;
+      const block = from.content.blocks.find((b) => b.id === blockId);
+      if (!block) return;
+      const moved = area ? { ...block, area } : block;
+      edit(fromId, { ...from.content, blocks: from.content.blocks.filter((b) => b.id !== blockId) });
+      edit(toId, { ...to.content, blocks: [...to.content.blocks, moved] });
+      set({ activeId: toId, selectedBlockId: blockId });
     },
     load: async () => {
       if (loadStarted) return;

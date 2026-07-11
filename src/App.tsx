@@ -37,6 +37,7 @@ export function App() {
   const loading = useStore((s) => s.loading);
   const selectedBlockId = useStore((s) => s.selectedBlockId);
   const selectBlock = useStore((s) => s.selectBlock);
+  const moveBlockToPage = useStore((s) => s.moveBlockToPage);
 
   const [tab, setTab] = useState<Tab>("editor");
 
@@ -117,7 +118,9 @@ export function App() {
                     <div key={s.id} id={`sec-${s.id}`} onPointerDown={() => setActive(s.id)}>
                       <GridCanvas
                         section={s.content}
+                        sectionId={s.id}
                         onChange={(next) => edit(s.id, next)}
+                        onMoveAcross={(blockId, toId, area) => moveBlockToPage(s.id, blockId, toId, area)}
                         pageSize={pageSize}
                         selected={activeId === s.id ? selectedBlockId : null}
                         onSelect={(id) => { setActive(s.id); selectBlock(id); }}
