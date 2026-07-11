@@ -201,6 +201,8 @@ function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize,
 }) {
   const { rowStart, colStart, rowEnd, colEnd } = b.area;
   const reg = BLOCKS[b.block];
+  // where the double-click landed → place the caret there on entering edit
+  const [caret, setCaret] = useState<{ x: number; y: number } | null>(null);
   // overflow affordance: dashed bar when the content is taller than its box
   const contentRef = useRef<HTMLDivElement>(null);
   const [overflow, setOverflow] = useState(false);
@@ -217,19 +219,26 @@ function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize,
     <div
       onPointerDown={(e) => { if (editing) return; e.stopPropagation(); onStartMove(e); }}
       onClick={(e) => { e.stopPropagation(); if (!editing) onSelect(); }}
-      onDoubleClick={(e) => { e.stopPropagation(); onSelect(); if (reg.text) onEdit(); }}
+      onDoubleClick={(e) => { e.stopPropagation(); onSelect(); if (reg.text) { setCaret({ x: e.clientX, y: e.clientY }); onEdit(); } }}
       onDragStart={(e) => e.preventDefault()} // kill native drag (images etc.) so our pointer drag wins
       style={{
         gridArea: `${rowStart} / ${colStart} / ${rowEnd} / ${colEnd}`, position: "relative",
         cursor: editing ? "text" : "grab",
         margin: blockMargin(b.style), // space between blocks/cols (per-side)
         outline: selected ? `2px solid ${ACCENT}` : "none", outlineOffset: 1,
-        opacity: ghosting ? 0.3 : 1, zIndex: selected ? 5 : 1,
+        opacity: ghosting ? 0.3 : 1, zIndex: editing ? 20 : selected ? 5 : 1,
         userSelect: editing ? "auto" : "none", WebkitUserSelect: editing ? "auto" : "none",
       }}
     >
-      <div ref={contentRef} style={{ height: "100%", overflow: "hidden", ...(blockStyleProps(b.style) as React.CSSProperties) }}>
-        <BlockBody b={b} editing={editing} onContent={onContent} />
+      {/* while editing, the block expands to show ALL its text (auto-height,
+          overflow visible, elevated over neighbours); it snaps back on exit */}
+      <div ref={contentRef} style={{
+        height: editing ? "auto" : "100%", minHeight: editing ? "100%" : undefined,
+        overflow: editing ? "visible" : "hidden",
+        background: editing ? "#fff" : undefined, boxShadow: editing ? "0 4px 16px rgba(0,0,0,.18)" : undefined,
+        ...(blockStyleProps(b.style) as React.CSSProperties),
+      }}>
+        <BlockBody b={b} editing={editing} caret={caret} onContent={onContent} />
       </div>
       {overflow && !ghosting && (
         <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onFit(); }}
@@ -259,8 +268,8 @@ function ResizeHandle({ side, onStart }: { side: "right" | "bottom" | "corner"; 
   return <div onPointerDown={(e) => onStart(e, side)} style={style} />;
 }
 
-function BlockBody({ b, editing, onContent }: { b: GridBlock; editing: boolean; onContent: (c: unknown) => void }) {
-  if (BLOCKS[b.block].text) return <BlockText content={b.content as JSONContent} editable={editing} onContent={onContent} />;
+function BlockBody({ b, editing, caret, onContent }: { b: GridBlock; editing: boolean; caret: { x: number; y: number } | null; onContent: (c: unknown) => void }) {
+  if (BLOCKS[b.block].text) return <BlockText content={b.content as JSONContent} editable={editing} caret={caret} onContent={onContent} />;
   if (b.block === "image") {
     const src = (b.content as { src?: string }).src;
     return src
@@ -276,7 +285,7 @@ function BlockBody({ b, editing, onContent }: { b: GridBlock; editing: boolean; 
 // Per-block Tiptap. Interactive ONLY while editing — otherwise pointer-events:none
 // so clicks fall through to the block wrapper (select/drag), matching temp's
 // select-vs-edit split. Focuses on entering edit mode.
-function BlockText({ content, editable, onContent }: { content: JSONContent; editable: boolean; onContent: (c: unknown) => void }) {
+function BlockText({ content, editable, caret, onContent }: { content: JSONContent; editable: boolean; caret: { x: number; y: number } | null; onContent: (c: unknown) => void }) {
   const editor = useEditor({
     extensions,
     content,
@@ -286,7 +295,14 @@ function BlockText({ content, editable, onContent }: { content: JSONContent; edi
   useEffect(() => {
     if (!editor) return;
     editor.setEditable(editable);
-    if (editable) editor.commands.focus("end");
+    if (!editable) return;
+    editor.commands.focus();
+    // place the caret where the user double-clicked (ProseMirror maps screen
+    // coords → a doc position); fall back to the end.
+    const pos = caret ? editor.view.posAtCoords({ left: caret.x, top: caret.y }) : null;
+    if (pos) editor.commands.setTextSelection(pos.pos);
+    else editor.commands.focus("end");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editable, editor]);
   return <div style={{ height: "100%", pointerEvents: editable ? "auto" : "none" }}><EditorContent editor={editor} /></div>;
 }
