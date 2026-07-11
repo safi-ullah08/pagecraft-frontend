@@ -183,11 +183,14 @@ function BlockView({ b, translate, selected, editing, onStartMove, onStartResize
       onPointerDown={(e) => { if (editing) return; e.stopPropagation(); onStartMove(e); }}
       onClick={(e) => { e.stopPropagation(); if (!editing) onSelect(); }}
       onDoubleClick={(e) => { e.stopPropagation(); onSelect(); if (reg.text) onEdit(); }}
+      onDragStart={(e) => e.preventDefault()} // kill native drag (images etc.) so our pointer drag wins
       style={{
         gridArea: `${rowStart} / ${colStart} / ${rowEnd} / ${colEnd}`, position: "relative",
         cursor: editing ? "text" : dragging ? "grabbing" : "grab",
         outline: selected ? `2px solid ${ACCENT}` : "none", outlineOffset: 1,
         transform: translate, opacity: dragging ? 0.6 : 1, zIndex: selected ? 5 : 1,
+        // while not editing, a press-drag must move the block — never select text
+        userSelect: editing ? "auto" : "none", WebkitUserSelect: editing ? "auto" : "none",
       }}
     >
       <div ref={contentRef} style={{ height: "100%", overflow: "hidden", ...(blockStyleProps(b.style) as React.CSSProperties) }}>
@@ -224,7 +227,7 @@ function BlockBody({ b, editing, onContent }: { b: GridBlock; editing: boolean; 
   if (b.block === "image") {
     const src = (b.content as { src?: string }).src;
     return src
-      ? <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      ? <img src={src} alt="" draggable={false} style={{ width: "100%", height: "100%", objectFit: "cover", WebkitUserDrag: "none" } as React.CSSProperties} />
       : <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#888", fontSize: 12, background: "#f4f4f4" }}>Image</div>;
   }
   if (b.block === "divider") return <hr style={{ margin: "auto 0" }} />;
