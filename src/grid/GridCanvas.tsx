@@ -217,7 +217,10 @@ function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize,
   }, [b.area, b.content]);
   return (
     <div
-      onPointerDown={(e) => { if (editing) return; e.stopPropagation(); onStartMove(e); }}
+      // Always stop the press reaching the sheet (which would deselect/end edit).
+      // While editing, do NOT start a block-drag — let ProseMirror handle the
+      // pointer so click-drag selects text. Edit ends only on click elsewhere / Esc.
+      onPointerDown={(e) => { e.stopPropagation(); if (editing) return; onStartMove(e); }}
       onClick={(e) => { e.stopPropagation(); if (!editing) onSelect(); }}
       onDoubleClick={(e) => { e.stopPropagation(); onSelect(); if (reg.text) { setCaret({ x: e.clientX, y: e.clientY }); onEdit(); } }}
       onDragStart={(e) => e.preventDefault()} // kill native drag (images etc.) so our pointer drag wins
