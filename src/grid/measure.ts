@@ -1,4 +1,4 @@
-import { serialize, renderTypedBlock } from "@pagecraft/model";
+import { serialize, renderTypedBlock, type SideValues } from "@pagecraft/model";
 import type { JSONContent } from "@tiptap/react";
 import { themeSkinCss } from "../themes.ts";
 import { scopeThemeCss } from "../scope-css.ts";
@@ -20,6 +20,10 @@ export function blockHtml(block: GridBlock): string | null {
   if (BLOCKS[block.block].text && c?.type === "doc") return serialize(c);
   return renderTypedBlock(block.block, block.content);
 }
+
+// total px on the horizontal / vertical axes for a padding|margin token
+export function sidesX(v?: number | SideValues): number { return typeof v === "number" ? 2 * v : v ? (v.left ?? 0) + (v.right ?? 0) : 0; }
+export function sidesY(v?: number | SideValues): number { return typeof v === "number" ? 2 * v : v ? (v.top ?? 0) + (v.bottom ?? 0) : 0; }
 
 // px content width of a block spanning `cols` columns
 export function blockWidthPx(cols: number, pageSize: PageSize): number {

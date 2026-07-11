@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/react";
+import type { SideValues } from "@pagecraft/model";
 import { useStore } from "../store.ts";
 import { isGridSection, type BlockStyleTokens, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
@@ -64,12 +65,10 @@ export function Inspector() {
           ↕ Fit height to content
         </button>
         <Field label="Padding (inset content)">
-          <Slider value={block.style?.padding ?? 0} min={0} max={40} unit="px"
-            onChange={(v) => apply(updateBlockStyle(section, block.id, { padding: v || undefined }))} />
+          <BoxControl value={block.style?.padding} onChange={(v) => apply(updateBlockStyle(section, block.id, { padding: v }))} />
         </Field>
         <Field label="Margin (space around block)">
-          <Slider value={block.style?.margin ?? 0} min={0} max={40} unit="px"
-            onChange={(v) => apply(updateBlockStyle(section, block.id, { margin: v || undefined }))} />
+          <BoxControl value={block.style?.margin} onChange={(v) => apply(updateBlockStyle(section, block.id, { margin: v }))} />
         </Field>
       </Section>
       <StyleSection block={block} onStyle={(t) => apply(updateBlockStyle(section, block.id, t))} />
@@ -144,6 +143,29 @@ function StyleSection({ block, onStyle }: { block: GridBlock; onStyle: (t: Parti
         </button>
       )}
     </Section>
+  );
+}
+
+// Per-side box editor (top/right/bottom/left) for padding & margin. Negatives are
+// allowed; a side set to 0 is dropped, and all-zero clears the token.
+function BoxControl({ value, onChange }: { value?: number | SideValues; onChange: (v: SideValues | undefined) => void }) {
+  const cur: SideValues = typeof value === "number" ? { top: value, right: value, bottom: value, left: value } : (value ?? {});
+  const set = (side: keyof SideValues, n: number) => {
+    const next: SideValues = { ...cur, [side]: n || undefined };
+    const has = (["top", "right", "bottom", "left"] as const).some((k) => next[k]);
+    onChange(has ? next : undefined);
+  };
+  const cell = (side: keyof SideValues, label: string) => (
+    <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 10, color: PALETTE.MUTED }}>
+      {label}
+      <input type="number" value={cur[side] ?? 0} onChange={(e) => set(side, Number(e.target.value))}
+        style={{ ...inputStyle, padding: "4px 6px", width: "100%", boxSizing: "border-box" }} />
+    </label>
+  );
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
+      {cell("top", "Top")}{cell("right", "Right")}{cell("bottom", "Bottom")}{cell("left", "Left")}
+    </div>
   );
 }
 

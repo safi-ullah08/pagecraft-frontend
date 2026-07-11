@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEditor, EditorContent, type JSONContent } from "@tiptap/react";
-import { extensions, blockStyleProps, renderTypedBlock } from "@pagecraft/model";
+import { extensions, blockStyleProps, blockMargin, renderTypedBlock } from "@pagecraft/model";
 import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
 import { moveBlock, resizeBlock, updateBlockContent, removeBlock, clampArea } from "./ops.ts";
@@ -222,7 +222,7 @@ function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize,
       style={{
         gridArea: `${rowStart} / ${colStart} / ${rowEnd} / ${colEnd}`, position: "relative",
         cursor: editing ? "text" : "grab",
-        margin: b.style?.margin != null ? `${b.style.margin}px` : undefined, // space between blocks/cols
+        margin: blockMargin(b.style), // space between blocks/cols (per-side)
         outline: selected ? `2px solid ${ACCENT}` : "none", outlineOffset: 1,
         opacity: ghosting ? 0.3 : 1, zIndex: selected ? 5 : 1,
         userSelect: editing ? "auto" : "none", WebkitUserSelect: editing ? "auto" : "none",

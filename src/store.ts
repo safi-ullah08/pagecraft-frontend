@@ -8,7 +8,7 @@ import { BLOCKS } from "@pagecraft/model";
 import { isGridSection, ROWS, type BlockType, type GridArea } from "./grid/types.ts";
 import { addBlock as opsAddBlock, resizeBlock } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
-import { blockHtml, blockWidthPx, heightToRows, measureHtmlHeight } from "./grid/measure.ts";
+import { blockHtml, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY } from "./grid/measure.ts";
 
 export type Section = { id: string; content: SectionContent; version: number };
 
@@ -116,8 +116,11 @@ export const useStore = create<Store>((set, get) => {
       const html = blockHtml(block);
       if (html == null) return; // nothing measurable (image/divider/spacer)
       const cols = block.area.colEnd - block.area.colStart;
-      const pad = block.style?.padding ?? 0;
-      const h = measureHtmlHeight(html, blockWidthPx(cols, pageSize) - 2 * pad, theme) + 2 * pad;
+      // content width shrinks by horizontal padding + margin; occupied height grows
+      // by vertical padding + margin.
+      const padX = sidesX(block.style?.padding), padY = sidesY(block.style?.padding);
+      const marX = sidesX(block.style?.margin), marY = sidesY(block.style?.margin);
+      const h = measureHtmlHeight(html, blockWidthPx(cols, pageSize) - marX - padX, theme) + padY + marY;
       const rows = heightToRows(h, pageSize);
       const min = BLOCKS[block.block].min.rows;
       const rowStart = block.area.rowStart;
