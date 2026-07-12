@@ -34,10 +34,13 @@ function preloadDims(srcs: string[]): Promise<Map<string, { w: number; h: number
 
 export async function parseBlocks(chapters: JSONContent[], theme: string, pageSize: PageSize): Promise<GridSection[]> {
   const dim = PAGE_SIZES[pageSize];
+  const gap = 4 * MM; // must match the editor grid gap (GridCanvas) and gridBaseCss --pc-gap
   const contentW = (dim.w - 2 * PAGE_MARGIN_MM) * MM;
-  const contentH = (dim.h - 2 * PAGE_MARGIN_MM) * MM * 0.94; // slack so nothing clips at the fold
-  const rowPx = contentH / ROWS;
-  const colPx = contentW / COLS;
+  const contentH = (dim.h - 2 * PAGE_MARGIN_MM) * MM;
+  // per-row/col CONTENT height/width (gaps eat into the track), so a block sized to
+  // N rows actually holds its content — matches how the grid renders + measure.ts.
+  const rowPx = (contentH - (ROWS - 1) * gap) / ROWS;
+  const colPx = (contentW - (COLS - 1) * gap) / COLS;
 
   const srcs = new Set<string>();
   chapters.forEach((c) => collectImageSrcs(c, srcs));
