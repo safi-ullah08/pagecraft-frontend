@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { BLOCKS } from "@pagecraft/model";
 import { useStore } from "../store.ts";
 import { isGridSection } from "../grid/types.ts";
@@ -48,6 +49,11 @@ export function ChapterNav() {
   const dim = PAGE_SIZES[pageSize];
   const aspect = dim.h / dim.w;
 
+  // keep the active page's thumbnail in view when it changes (e.g. you clicked a
+  // page in the editor) — scrolls only the nav, not the editor.
+  const activeRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { activeRef.current?.scrollIntoView({ block: "nearest" }); }, [activeId]);
+
   const go = (id: string) => {
     setActive(id);
     document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -60,7 +66,7 @@ export function ChapterNav() {
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "0 8px" }}>
         {sections.map((s, i) => (
-          <div key={s.id} onClick={() => go(s.id)} title={titleOf(s.content, i)}
+          <div key={s.id} ref={s.id === activeId ? activeRef : undefined} onClick={() => go(s.id)} title={titleOf(s.content, i)}
             style={{ marginBottom: 10, padding: 8, borderRadius: 4, cursor: "pointer",
               background: s.id === activeId ? "#fff" : "transparent",
               border: `1px solid ${s.id === activeId ? "#bbb" : "transparent"}`, transition: "background .12s" }}>
