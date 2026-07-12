@@ -201,6 +201,10 @@ function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize,
 }) {
   const { rowStart, colStart, rowEnd, colEnd } = b.area;
   const reg = BLOCKS[b.block];
+  // Smaller blocks stack ABOVE larger ones, so a small element (e.g. an image)
+  // dropped over a full-page text frame is the one you click/drag — not the frame.
+  // Editing floats highest (it expands over everything).
+  const zBase = 200 - (rowEnd - rowStart) * (colEnd - colStart);
   // where the double-click landed → place the caret there on entering edit
   const [caret, setCaret] = useState<{ x: number; y: number } | null>(null);
   // overflow affordance: dashed bar when the content is taller than its box
@@ -229,7 +233,7 @@ function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize,
         cursor: editing ? "text" : "grab",
         margin: blockMargin(b.style), // space between blocks/cols (per-side)
         outline: selected ? `2px solid ${ACCENT}` : "none", outlineOffset: 1,
-        opacity: ghosting ? 0.3 : 1, zIndex: editing ? 20 : selected ? 5 : 1,
+        opacity: ghosting ? 0.3 : 1, zIndex: editing ? 1000 : zBase,
         userSelect: editing ? "auto" : "none", WebkitUserSelect: editing ? "auto" : "none",
       }}
     >
