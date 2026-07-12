@@ -320,5 +320,15 @@ function BlockText({ content, editable, caret, onContent }: { content: JSONConte
     else editor.commands.focus("end");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editable, editor]);
+  // Re-sync the editor when the content changes EXTERNALLY (reflow/split/paste) —
+  // but only while not editing, so we never clobber the caret mid-type. Without
+  // this the editor keeps its initial content and a spill/split looks un-applied.
+  useEffect(() => {
+    if (!editor || editable) return;
+    if (JSON.stringify(editor.getJSON()) !== JSON.stringify(content)) {
+      editor.commands.setContent(content, false); // emitUpdate=false → no write-back loop
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content, editable, editor]);
   return <div style={{ height: "100%", pointerEvents: editable ? "auto" : "none" }}><EditorContent editor={editor} /></div>;
 }
