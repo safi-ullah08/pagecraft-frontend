@@ -40,6 +40,17 @@ export async function deleteSection(id: string) {
   if (!res.ok) throw new Error(`delete page failed: ${res.status}`);
 }
 
+// insert new pages right after a section (split / break-to-next-page)
+export async function insertSectionsAfter(documentId: string, afterSectionId: string, pages: SectionContent[]) {
+  const res = await fetch(`/api/documents/${documentId}/sections/insert-after`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ afterSectionId, pages }),
+  });
+  if (!res.ok) throw new Error(`insert failed: ${res.status}`);
+  return res.json() as Promise<{ sections: Section[] }>;
+}
+
 // replace a document's sections with the flow→grid paginated pages
 export async function convertDocument(documentId: string, pages: SectionContent[]) {
   const res = await fetch(`/api/documents/${documentId}/convert`, {

@@ -34,6 +34,27 @@ export function blockWidthPx(cols: number, pageSize: PageSize): number {
   return cols * colW + (cols - 1) * gap;
 }
 
+// rendered px height of a block spanning `rows` rows (accounts for row gaps)
+export function blockHeightPx(rows: number, pageSize: PageSize): number {
+  const dim = PAGE_SIZES[pageSize];
+  const gap = GAP_MM * MM;
+  const contentH = (dim.h - 2 * PAGE_MARGIN_MM) * MM;
+  const rowH = (contentH - (ROWS - 1) * gap) / ROWS;
+  return rows * rowH + (rows - 1) * gap;
+}
+
+// Largest node count k (>=1) whose serialized nodes[0..k] fit within maxHpx at
+// widthPx — the split boundary. k === nodes.length means it all fits.
+export function splitIndex(nodes: JSONContent[], widthPx: number, maxHpx: number, theme: string): number {
+  let k = 1;
+  for (let i = 1; i <= nodes.length; i++) {
+    const h = measureHtmlHeight(serialize({ type: "doc", content: nodes.slice(0, i) }), widthPx, theme);
+    if (i === 1 || h <= maxHpx) k = i;
+    else break;
+  }
+  return k;
+}
+
 // whole rows needed to hold `heightPx` of content (accounts for row gaps)
 export function heightToRows(heightPx: number, pageSize: PageSize): number {
   const dim = PAGE_SIZES[pageSize];

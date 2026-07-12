@@ -4,11 +4,12 @@ import { type PageSize } from "./pages.ts";
 import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
 import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, createDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
-import { BLOCKS } from "@pagecraft/model";
+import { BLOCKS, splitDocAt } from "@pagecraft/model";
 import { isGridSection, ROWS, type BlockType, type GridArea } from "./grid/types.ts";
-import { addBlock as opsAddBlock, resizeBlock } from "./grid/ops.ts";
+import { addBlock as opsAddBlock, resizeBlock, updateBlockContent } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
-import { blockHtml, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY } from "./grid/measure.ts";
+import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitIndex } from "./grid/measure.ts";
+import { insertSectionsAfter } from "./api.ts";
 
 export type Section = { id: string; content: SectionContent; version: number };
 
@@ -33,6 +34,7 @@ type Store = {
   addBlock: (type: BlockType) => void;
   addBlockAt: (type: BlockType, toId: string, area: GridArea) => void;
   fitBlock: (sectionId: string, blockId: string) => void;
+  reflowBlock: (sectionId: string, blockId: string) => Promise<void>;
   moveBlockToPage: (fromId: string, blockId: string, toId: string, area?: GridArea) => void;
   load: () => Promise<void>;
   edit: (id: string, content: SectionContent) => void;
@@ -92,13 +94,13 @@ export const useStore = create<Store>((set, get) => {
     // selecting a block exits any inline edit (like temp's selectBlock)
     selectBlock: (selectedBlockId) => set({ selectedBlockId, editingBlockId: null }),
     setEditing: (editingBlockId) => {
-      // Leaving a text FRAME → auto-grow it to fit what you just typed (same page;
-      // fitBlock clamps to the page bottom — breaking to a new page is Phase B).
+      // Leaving a text FRAME → reflow it: grow to fit what you typed, and if it
+      // still overflows the page, break the overflow onto new page(s).
       const { editingBlockId: prev, activeId, sections } = get();
       if (prev && prev !== editingBlockId && activeId) {
         const sec = sections.find((s) => s.id === activeId);
         const blk = sec && isGridSection(sec.content) ? sec.content.blocks.find((b) => b.id === prev) : null;
-        if (blk?.block === "textFrame") get().fitBlock(activeId, prev);
+        if (blk?.block === "textFrame") void get().reflowBlock(activeId, prev);
       }
       set({ editingBlockId, selectedBlockId: editingBlockId ?? get().selectedBlockId });
     },
@@ -136,6 +138,41 @@ export const useStore = create<Store>((set, get) => {
       const rowStart = block.area.rowStart;
       const rowEnd = rowStart + Math.max(min, Math.min(rows, ROWS - rowStart + 1));
       edit(sectionId, resizeBlock(sec.content, blockId, { ...block.area, rowEnd }));
+    },
+    // Grow a text frame to fit, then if it STILL overflows at the page bottom, break
+    // the overflow into new page(s) after this one (Phase B). Node-boundary only —
+    // a single node taller than a page can't be split. Forward-only: pulling content
+    // back on later edits is Merge (Phase C), not automatic (would need threaded frames).
+    reflowBlock: async (sectionId, blockId) => {
+      get().fitBlock(sectionId, blockId); // grow on the page first
+      const { sections, theme, pageSize, documentId } = get();
+      if (!documentId) return;
+      const sec = sections.find((s) => s.id === sectionId);
+      if (!sec || !isGridSection(sec.content)) return;
+      const block = sec.content.blocks.find((b) => b.id === blockId);
+      if (!block || block.block !== "textFrame") return;
+      const doc = block.content as JSONContent;
+      const nodes = doc.content ?? [];
+      if (nodes.length < 2) return; // can't node-split a single node
+      const cols = block.area.colEnd - block.area.colStart;
+      const rows = block.area.rowEnd - block.area.rowStart;
+      const widthPx = blockWidthPx(cols, pageSize) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
+      const maxHpx = blockHeightPx(rows, pageSize) - sidesY(block.style?.padding) - sidesY(block.style?.margin);
+      const k = splitIndex(nodes, widthPx, maxHpx, theme);
+      if (k >= nodes.length) return; // it all fits after the grow
+      const [docA, docB] = splitDocAt(doc, k);
+      // keep the fitting part in this block and shrink it to that content
+      get().edit(sectionId, updateBlockContent(sec.content, blockId, docA as SectionContent));
+      get().fitBlock(sectionId, blockId);
+      // paginate the overflow into new pages and insert them right after this one
+      const pages = (await parseBlocks([docB], theme, pageSize)).map((p) => assetsToCanonical(p));
+      const { sections: inserted } = await insertSectionsAfter(documentId, sectionId, pages);
+      set((st) => {
+        const arr = [...st.sections];
+        const idx = arr.findIndex((s) => s.id === sectionId);
+        arr.splice(idx + 1, 0, ...inserted.map((s) => ({ ...s, content: assetsToDisplay(s.content) })));
+        return { sections: arr };
+      });
     },
     // add a palette block to a specific page at a specific area (drag-from-palette)
     addBlockAt: (type, toId, area) => {
