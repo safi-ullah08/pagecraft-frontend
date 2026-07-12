@@ -91,7 +91,17 @@ export const useStore = create<Store>((set, get) => {
     setActive: (activeId) => set({ activeId }),
     // selecting a block exits any inline edit (like temp's selectBlock)
     selectBlock: (selectedBlockId) => set({ selectedBlockId, editingBlockId: null }),
-    setEditing: (editingBlockId) => set({ editingBlockId, selectedBlockId: editingBlockId ?? get().selectedBlockId }),
+    setEditing: (editingBlockId) => {
+      // Leaving a text FRAME → auto-grow it to fit what you just typed (same page;
+      // fitBlock clamps to the page bottom — breaking to a new page is Phase B).
+      const { editingBlockId: prev, activeId, sections } = get();
+      if (prev && prev !== editingBlockId && activeId) {
+        const sec = sections.find((s) => s.id === activeId);
+        const blk = sec && isGridSection(sec.content) ? sec.content.blocks.find((b) => b.id === prev) : null;
+        if (blk?.block === "textFrame") get().fitBlock(activeId, prev);
+      }
+      set({ editingBlockId, selectedBlockId: editingBlockId ?? get().selectedBlockId });
+    },
     toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
     setZoom: (zoom) => set({ zoom }),
     // add a palette block to the active grid section and select it (palette lives
