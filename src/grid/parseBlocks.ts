@@ -52,6 +52,9 @@ export async function parseBlocks(chapters: JSONContent[], theme: string, pageSi
   meas.className = "pc-measure";
   meas.style.cssText = `position:absolute;left:-99999px;top:0;width:${contentW}px;visibility:hidden`;
   document.body.append(style, meas);
+  // wait for theme fonts, else text measures with fallback fonts (usually shorter)
+  // and frames come out under-sized → they overflow once the real font paints.
+  if (document.fonts?.ready) { try { await document.fonts.ready; } catch { /* ignore */ } }
   try {
     return modelParseBlocks(chapters, { rowPx, colPx }, (d) => {
       const only = d.content?.length === 1 ? d.content[0] : null;
