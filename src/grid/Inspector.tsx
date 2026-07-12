@@ -15,23 +15,34 @@ const LINE_STYLES = [{ value: "solid", label: "Solid" }, { value: "dotted", labe
 export function Inspector() {
   const sections = useStore((s) => s.sections);
   const activeId = useStore((s) => s.activeId);
-  const selectedBlockId = useStore((s) => s.selectedBlockId);
+  const selectedBlockIds = useStore((s) => s.selectedBlockIds);
   const edit = useStore((s) => s.edit);
   const selectBlock = useStore((s) => s.selectBlock);
+  const deleteSelected = useStore((s) => s.deleteSelected);
 
   const moveBlockToPage = useStore((s) => s.moveBlockToPage);
   const fitBlock = useStore((s) => s.fitBlock);
   const active = sections.find((s) => s.id === activeId);
   const section = active && isGridSection(active.content) ? active.content : null;
-  const block = section?.blocks.find((b) => b.id === selectedBlockId) ?? null;
+  // per-block editing only when exactly one is selected; else show a group panel
+  const block = section && selectedBlockIds.length === 1 ? section.blocks.find((b) => b.id === selectedBlockIds[0]) ?? null : null;
   // pages this block could move to (all grid sections except the current one)
   const pageOptions = sections
     .map((s, i) => ({ id: s.id, i }))
     .filter((o) => isGridSection(sections[o.i]!.content) && o.id !== activeId);
 
-  // Rendered inside the right bar's Blocks tab (ControlsPanel), so no panel chrome
-  // of its own — just the header + editor sections. BlocksPanel shows this only
-  // when a block is selected (otherwise it shows the palette tiles).
+  // Rendered inside the right bar's Blocks tab (ControlsPanel). No panel chrome of
+  // its own. Multiple selected → a small group panel; one → the full editor.
+  if (section && selectedBlockIds.length > 1) {
+    return (
+      <div style={{ padding: 14, fontSize: 12, color: PALETTE.TEXT, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ fontWeight: 600 }}>{selectedBlockIds.length} blocks selected</div>
+        <div style={{ color: PALETTE.MUTED, fontSize: 11 }}>Drag any one to move them together, or ⌘/Ctrl-C / -X / -D, Delete.</div>
+        <button onClick={() => deleteSelected()} style={{ background: "transparent", border: `1px solid ${PALETTE.BORDER_STRONG}`, color: PALETTE.ACCENT, padding: "8px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>Delete selected</button>
+        <button onClick={() => selectBlock(null)} style={{ background: "transparent", border: `1px solid ${PALETTE.BORDER}`, color: PALETTE.MUTED, padding: "6px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>Clear selection</button>
+      </div>
+    );
+  }
   if (!section || !block) {
     return <div style={{ padding: 14, fontSize: 12, color: PALETTE.MUTED }}>Select a block to edit it.</div>;
   }

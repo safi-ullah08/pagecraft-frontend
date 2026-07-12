@@ -4,7 +4,7 @@ import { useEditor, EditorContent, type JSONContent } from "@tiptap/react";
 import { extensions, blockStyleProps, blockMargin, renderTypedBlock } from "@pagecraft/model";
 import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
-import { moveBlock, resizeBlock, updateBlockContent, removeBlock, clampArea } from "./ops.ts";
+import { moveBlock, moveBlocks, resizeBlock, updateBlockContent, removeBlock, clampArea } from "./ops.ts";
 import { PAGE_SIZES, PAGE_MARGIN_MM, type PageSize } from "../pages.ts";
 
 // Recreated grid designer with temp/src's interaction feel on OUR stack:
@@ -29,8 +29,8 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
   onChange: (s: GridSection) => void;
   onMoveAcross: (blockId: string, toSectionId: string, area: GridArea) => void;
   pageSize: PageSize;
-  selected: string | null;
-  onSelect: (id: string | null) => void;
+  selected: string[]; // ids selected in this section (multi-select)
+  onSelect: (id: string | null, additive?: boolean) => void;
   editingId: string | null;
   onEdit: (id: string | null) => void;
   onFit: (id: string) => void;
@@ -47,6 +47,8 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
   // grid is under the cursor (same page → moveBlock, other page → moveBlockToPage).
   const startMove = (e: React.PointerEvent, b: GridBlock) => {
     if (editingId === b.id) return; // editing → let Tiptap handle the pointer
+    const shift = e.shiftKey;
+    const group = selected.includes(b.id) && selected.length > 1; // drag moves the whole selection
     const blockEl = e.currentTarget as HTMLElement;
     const rect = blockEl.getBoundingClientRect();
     const grabX = e.clientX - rect.left, grabY = e.clientY - rect.top; // where inside the block we grabbed
@@ -100,8 +102,15 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
       window.removeEventListener("pointerup", onUp);
       if (raf) cancelAnimationFrame(raf);
       setDrag(null);
-      onSelect(b.id); // press always selects (drag or click)
-      if (!moved) return;
+      if (!moved) { onSelect(b.id, shift); return; } // click: shift toggles, else single-select
+      if (group) { // move the whole selection by the same cell delta (same page)
+        const gr = gridRef.current!.getBoundingClientRect();
+        const dc = Math.round((ev.clientX - startX) / (gr.width / COLS));
+        const dr = Math.round((ev.clientY - startY) / (gr.height / ROWS));
+        onChange(moveBlocks(section, selected, dc, dr));
+        return;
+      }
+      if (!selected.includes(b.id)) onSelect(b.id, false); // a fresh single drag selects it
       const res = resolve(ev.clientX, ev.clientY);
       if (!res) return; // dropped outside any page → cancel (block stays put)
       if (res.sec === sectionId) onChange(moveBlock(section, b.id, res.area));
@@ -158,10 +167,10 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
             const area = d?.kind === "resize" ? d.area : b.area;
             return (
               <BlockView key={b.id} b={{ ...b, area }} ghosting={d?.kind === "move"}
-                selected={selected === b.id} editing={editingId === b.id}
+                selected={selected.includes(b.id)} editing={editingId === b.id}
                 onStartMove={(e) => startMove(e, b)}
                 onStartResize={(e, side) => startResize(e, b, side)}
-                onSelect={() => onSelect(b.id)}
+                onSelect={(additive) => onSelect(b.id, additive)}
                 onEdit={() => onEdit(b.id)}
                 onFit={() => onFit(b.id)}
                 onContent={(c) => onChange(updateBlockContent(section, b.id, c))}
@@ -193,7 +202,7 @@ function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize,
   editing: boolean;
   onStartMove: (e: React.PointerEvent) => void;
   onStartResize: (e: React.PointerEvent, side: "right" | "bottom" | "corner") => void;
-  onSelect: () => void;
+  onSelect: (additive: boolean) => void;
   onEdit: () => void;
   onFit: () => void;
   onContent: (c: unknown) => void;
@@ -225,8 +234,8 @@ function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize,
       // While editing, do NOT start a block-drag — let ProseMirror handle the
       // pointer so click-drag selects text. Edit ends only on click elsewhere / Esc.
       onPointerDown={(e) => { e.stopPropagation(); if (editing) return; onStartMove(e); }}
-      onClick={(e) => { e.stopPropagation(); if (!editing) onSelect(); }}
-      onDoubleClick={(e) => { e.stopPropagation(); onSelect(); if (reg.text) { setCaret({ x: e.clientX, y: e.clientY }); onEdit(); } }}
+      onClick={(e) => e.stopPropagation()} /* selection happens on pointer-up in startMove (handles shift) */
+      onDoubleClick={(e) => { e.stopPropagation(); onSelect(false); if (reg.text) { setCaret({ x: e.clientX, y: e.clientY }); onEdit(); } }}
       onDragStart={(e) => e.preventDefault()} // kill native drag (images etc.) so our pointer drag wins
       style={{
         gridArea: `${rowStart} / ${colStart} / ${rowEnd} / ${colEnd}`, position: "relative",

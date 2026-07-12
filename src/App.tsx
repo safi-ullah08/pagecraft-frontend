@@ -10,7 +10,6 @@ import { themeSkinCss } from "./themes.ts";
 import { scopeThemeCss } from "./scope-css.ts";
 import { PAGE_SIZES, PAGE_MARGIN_MM } from "./pages.ts";
 import { isGridSection, emptyGridSection } from "./grid/types.ts";
-import { removeBlock } from "./grid/ops.ts";
 import { GridCanvas } from "./grid/GridCanvas.tsx";
 import { ControlsPanel } from "./grid/ControlsPanel.tsx";
 import { PlaceholderView } from "./grid/PlaceholderView.tsx";
@@ -36,8 +35,14 @@ export function App() {
   const sections = useStore((s) => s.sections);
   const activeId = useStore((s) => s.activeId);
   const loading = useStore((s) => s.loading);
-  const selectedBlockId = useStore((s) => s.selectedBlockId);
+  const selectedBlockIds = useStore((s) => s.selectedBlockIds);
   const selectBlock = useStore((s) => s.selectBlock);
+  const selectAll = useStore((s) => s.selectAll);
+  const deleteSelected = useStore((s) => s.deleteSelected);
+  const copySelected = useStore((s) => s.copySelected);
+  const cutSelected = useStore((s) => s.cutSelected);
+  const paste = useStore((s) => s.paste);
+  const duplicateSelected = useStore((s) => s.duplicateSelected);
   const editingBlockId = useStore((s) => s.editingBlockId);
   const setEditing = useStore((s) => s.setEditing);
   const moveBlockToPage = useStore((s) => s.moveBlockToPage);
@@ -53,21 +58,26 @@ export function App() {
     void load();
   }, [load]);
 
-  // Keyboard: Escape exits inline edit; Delete/Backspace removes the selected
-  // block (guarded so it never fires while typing). Ported from temp/src.
+  // Block shortcuts on the canvas: Esc exits edit; ⌘/Ctrl C/X/V/D, select-all,
+  // Delete. All guarded so they never fire while typing (editor/inputs keep their
+  // native copy/paste/etc).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && editingBlockId) { setEditing(null); return; }
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedBlockId && !editingBlockId) {
-        const t = e.target as HTMLElement | null;
-        if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
-        const sec = sections.find((s) => s.id === activeId);
-        if (sec && isGridSection(sec.content)) { edit(activeId!, removeBlock(sec.content, selectedBlockId)); selectBlock(null); }
-      }
+      const t = e.target as HTMLElement | null;
+      const typing = editingBlockId || (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable));
+      if (typing) return; // let the editor / inputs handle everything
+      const meta = e.metaKey || e.ctrlKey;
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedBlockIds.length) { e.preventDefault(); deleteSelected(); return; }
+      if (meta && e.key.toLowerCase() === "a") { e.preventDefault(); selectAll(); return; }
+      if (meta && e.key.toLowerCase() === "c") { e.preventDefault(); copySelected(); return; }
+      if (meta && e.key.toLowerCase() === "x") { e.preventDefault(); cutSelected(); return; }
+      if (meta && e.key.toLowerCase() === "v") { e.preventDefault(); paste(); return; }
+      if (meta && e.key.toLowerCase() === "d") { e.preventDefault(); duplicateSelected(); return; }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [editingBlockId, selectedBlockId, activeId, sections, edit, setEditing, selectBlock]);
+  }, [editingBlockId, selectedBlockIds, setEditing, selectAll, deleteSelected, copySelected, cutSelected, paste, duplicateSelected]);
 
   const surfaceCss = useMemo(() => {
     try {
@@ -160,8 +170,8 @@ export function App() {
                         onChange={(next) => edit(s.id, next)}
                         onMoveAcross={(blockId, toId, area) => moveBlockToPage(s.id, blockId, toId, area)}
                         pageSize={pageSize}
-                        selected={activeId === s.id ? selectedBlockId : null}
-                        onSelect={(id) => { setActive(s.id); selectBlock(id); }}
+                        selected={activeId === s.id ? selectedBlockIds : []}
+                        onSelect={(id, additive) => { setActive(s.id); selectBlock(id, additive); }}
                         editingId={activeId === s.id ? editingBlockId : null}
                         onEdit={(id) => { setActive(s.id); setEditing(id); }}
                         onFit={(id) => fitBlock(s.id, id)}

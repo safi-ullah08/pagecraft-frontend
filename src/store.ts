@@ -5,8 +5,8 @@ import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
 import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, createDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
 import { BLOCKS, splitDocAt } from "@pagecraft/model";
-import { isGridSection, ROWS, type BlockType, type GridArea } from "./grid/types.ts";
-import { addBlock as opsAddBlock, resizeBlock, updateBlockContent } from "./grid/ops.ts";
+import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock } from "./grid/types.ts";
+import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitIndex } from "./grid/measure.ts";
 import { insertSectionsAfter } from "./api.ts";
@@ -20,15 +20,22 @@ type Store = {
   loading: boolean; // true until load (incl. any auto flow→grid conversion) settles
   sections: Section[]; // ordered; ALL rendered at once (continuous scroll)
   activeId: string | null; // section in focus/view — ChapterNav highlight, toolbar target
-  selectedBlockId: string | null; // grid block the inspector targets (in the active section)
+  selectedBlockIds: string[]; // grid blocks selected in the active section (multi-select)
   editingBlockId: string | null; // block currently in inline-text edit mode (double-click)
+  clipboard: GridBlock[]; // copied/cut blocks (in-app clipboard)
   showGrid: boolean; // canvas grid-guide overlay
   zoom: number; // editor zoom (1 = 100%)
   setTheme: (t: string) => void;
   setPageSize: (p: PageSize) => void;
   setActive: (id: string) => void;
-  selectBlock: (id: string | null) => void;
+  selectBlock: (id: string | null, additive?: boolean) => void;
+  selectAll: () => void;
   setEditing: (id: string | null) => void;
+  deleteSelected: () => void;
+  copySelected: () => void;
+  cutSelected: () => void;
+  duplicateSelected: () => void;
+  paste: () => void;
   toggleGrid: () => void;
   setZoom: (z: number) => void;
   addBlock: (type: BlockType) => void;
@@ -81,8 +88,9 @@ export const useStore = create<Store>((set, get) => {
     loading: true,
     sections: [],
     activeId: null,
-    selectedBlockId: null,
+    selectedBlockIds: [],
     editingBlockId: null,
+    clipboard: [],
     showGrid: true,
     zoom: 1,
     // ponytail: theme is session view-state — seeded from doc.theme on load, but
@@ -91,8 +99,59 @@ export const useStore = create<Store>((set, get) => {
     setTheme: (theme) => set({ theme }),
     setPageSize: (pageSize) => set({ pageSize }),
     setActive: (activeId) => set({ activeId }),
-    // selecting a block exits any inline edit (like temp's selectBlock)
-    selectBlock: (selectedBlockId) => set({ selectedBlockId, editingBlockId: null }),
+    // Select a block. additive (shift) toggles it in the multi-selection; otherwise
+    // it becomes the sole selection. null clears. Selecting exits inline edit.
+    selectBlock: (id, additive) =>
+      set((st) => {
+        if (id == null) return { selectedBlockIds: [], editingBlockId: null };
+        if (additive) {
+          const has = st.selectedBlockIds.includes(id);
+          return { selectedBlockIds: has ? st.selectedBlockIds.filter((x) => x !== id) : [...st.selectedBlockIds, id], editingBlockId: null };
+        }
+        return { selectedBlockIds: [id], editingBlockId: null };
+      }),
+    selectAll: () => {
+      const { sections, activeId } = get();
+      const sec = sections.find((s) => s.id === activeId);
+      if (sec && isGridSection(sec.content)) set({ selectedBlockIds: sec.content.blocks.map((b) => b.id), editingBlockId: null });
+    },
+    // Remove all selected blocks from the active section.
+    deleteSelected: () => {
+      const { sections, activeId, selectedBlockIds, edit } = get();
+      const sec = sections.find((s) => s.id === activeId);
+      if (!sec || !isGridSection(sec.content) || !selectedBlockIds.length) return;
+      edit(activeId!, removeBlocks(sec.content, selectedBlockIds));
+      set({ selectedBlockIds: [], editingBlockId: null });
+    },
+    // Copy the selected blocks to the in-app clipboard.
+    copySelected: () => {
+      const { sections, activeId, selectedBlockIds } = get();
+      const sec = sections.find((s) => s.id === activeId);
+      if (!sec || !isGridSection(sec.content)) return;
+      const ids = new Set(selectedBlockIds);
+      const blocks = sec.content.blocks.filter((b) => ids.has(b.id));
+      if (blocks.length) set({ clipboard: structuredClone(blocks) });
+    },
+    cutSelected: () => { get().copySelected(); get().deleteSelected(); },
+    // Paste clipboard blocks (fresh ids, nudged) into the active section + select them.
+    paste: () => {
+      const { sections, activeId, clipboard, edit } = get();
+      const sec = sections.find((s) => s.id === activeId);
+      if (!sec || !isGridSection(sec.content) || !clipboard.length) return;
+      const clones = cloneBlocks(clipboard);
+      edit(activeId!, { ...sec.content, blocks: [...sec.content.blocks, ...clones] });
+      set({ selectedBlockIds: clones.map((c) => c.id), editingBlockId: null });
+    },
+    // Duplicate the current selection in place (independent of the clipboard).
+    duplicateSelected: () => {
+      const { sections, activeId, selectedBlockIds, edit } = get();
+      const sec = sections.find((s) => s.id === activeId);
+      if (!sec || !isGridSection(sec.content) || !selectedBlockIds.length) return;
+      const ids = new Set(selectedBlockIds);
+      const clones = cloneBlocks(sec.content.blocks.filter((b) => ids.has(b.id)));
+      edit(activeId!, { ...sec.content, blocks: [...sec.content.blocks, ...clones] });
+      set({ selectedBlockIds: clones.map((c) => c.id), editingBlockId: null });
+    },
     setEditing: (editingBlockId) => {
       // Leaving a text FRAME → reflow it: grow to fit what you typed, and if it
       // still overflows the page, break the overflow onto new page(s).
@@ -102,7 +161,7 @@ export const useStore = create<Store>((set, get) => {
         const blk = sec && isGridSection(sec.content) ? sec.content.blocks.find((b) => b.id === prev) : null;
         if (blk?.block === "textFrame") void get().reflowBlock(activeId, prev);
       }
-      set({ editingBlockId, selectedBlockId: editingBlockId ?? get().selectedBlockId });
+      set({ editingBlockId, selectedBlockIds: editingBlockId ? [editingBlockId] : get().selectedBlockIds });
     },
     toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
     setZoom: (zoom) => set({ zoom }),
@@ -114,7 +173,7 @@ export const useStore = create<Store>((set, get) => {
       if (!sec || !isGridSection(sec.content)) return;
       const { section, id } = opsAddBlock(sec.content, type);
       get().edit(activeId!, section);
-      set({ selectedBlockId: id });
+      set({ selectedBlockIds: [id] });
     },
     // Fit a block's height to its content: measure the rendered content at the
     // block's column width and set rowEnd to the whole rows it needs (clamped to the
@@ -181,7 +240,7 @@ export const useStore = create<Store>((set, get) => {
       if (!sec || !isGridSection(sec.content)) return;
       const { section, id } = opsAddBlock(sec.content, type, area);
       edit(toId, section);
-      set({ activeId: toId, selectedBlockId: id, editingBlockId: null });
+      set({ activeId: toId, selectedBlockIds: [id], editingBlockId: null });
     },
     // Move a block from one page (section) to another: drop it from the source and
     // append to the target (optionally at a new area). Two edit()s so both pages
@@ -197,7 +256,7 @@ export const useStore = create<Store>((set, get) => {
       const moved = area ? { ...block, area } : block;
       edit(fromId, { ...from.content, blocks: from.content.blocks.filter((b) => b.id !== blockId) });
       edit(toId, { ...to.content, blocks: [...to.content.blocks, moved] });
-      set({ activeId: toId, selectedBlockId: blockId });
+      set({ activeId: toId, selectedBlockIds: [blockId] });
     },
     load: async () => {
       if (loadStarted) return;

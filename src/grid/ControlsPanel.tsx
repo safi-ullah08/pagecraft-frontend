@@ -40,8 +40,8 @@ const CATEGORIES: BlockCategory[] = ["content", "emphasis", "structure", "intera
 
 // Palette (tiles grouped by category) — or the block editor when one is selected.
 function BlocksPanel() {
-  const selectedBlockId = useStore((s) => s.selectedBlockId);
-  if (selectedBlockId) return <Inspector />;
+  const selectedCount = useStore((s) => s.selectedBlockIds.length);
+  if (selectedCount) return <Inspector />;
   return (
     <div>
       {CATEGORIES.map((cat) => (

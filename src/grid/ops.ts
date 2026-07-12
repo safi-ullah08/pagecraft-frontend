@@ -55,3 +55,30 @@ export function updateBlockStyle(section: GridSection, blockId: string, tokens: 
 export function removeBlock(section: GridSection, blockId: string): GridSection {
   return { ...section, blocks: section.blocks.filter((b) => b.id !== blockId) };
 }
+
+export function removeBlocks(section: GridSection, ids: string[]): GridSection {
+  const set = new Set(ids);
+  return { ...section, blocks: section.blocks.filter((b) => !set.has(b.id)) };
+}
+
+// Move every block in `ids` by the same cell delta (group move), each clamped.
+export function moveBlocks(section: GridSection, ids: string[], dCol: number, dRow: number): GridSection {
+  const set = new Set(ids);
+  return {
+    ...section,
+    blocks: section.blocks.map((b) =>
+      set.has(b.id)
+        ? { ...b, area: clampArea({ rowStart: b.area.rowStart + dRow, colStart: b.area.colStart + dCol, rowEnd: b.area.rowEnd + dRow, colEnd: b.area.colEnd + dCol }, BLOCKS[b.block].min) }
+        : b,
+    ),
+  };
+}
+
+// Copies with fresh ids, nudged one cell down-right (paste/duplicate feel).
+export function cloneBlocks(blocks: GridBlock[]): GridBlock[] {
+  return blocks.map((b) => ({
+    ...structuredClone(b),
+    id: id(),
+    area: clampArea({ rowStart: b.area.rowStart + 1, colStart: b.area.colStart + 1, rowEnd: b.area.rowEnd + 1, colEnd: b.area.colEnd + 1 }, BLOCKS[b.block].min),
+  }));
+}
