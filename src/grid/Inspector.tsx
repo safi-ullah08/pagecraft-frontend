@@ -22,6 +22,7 @@ export function Inspector() {
 
   const moveBlockToPage = useStore((s) => s.moveBlockToPage);
   const fitBlock = useStore((s) => s.fitBlock);
+  const reflowBlock = useStore((s) => s.reflowBlock);
   const active = sections.find((s) => s.id === activeId);
   const section = active && isGridSection(active.content) ? active.content : null;
   // per-block editing only when exactly one is selected; else show a group panel
@@ -75,6 +76,12 @@ export function Inspector() {
           style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER}`, color: PALETTE.TEXT, padding: "8px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
           ↕ Fit height to content
         </button>
+        {block.block === "textFrame" && (
+          <button onClick={() => void reflowBlock(active!.id, block.id)} title="grow to fit, and spill any overflow onto the next page(s)"
+            style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER}`, color: PALETTE.TEXT, padding: "8px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
+            ↧ Spill overflow → next page
+          </button>
+        )}
         <Field label="Padding (inset content)">
           <BoxControl value={block.style?.padding} onChange={(v) => apply(updateBlockStyle(section, block.id, { padding: v }))} />
         </Field>
