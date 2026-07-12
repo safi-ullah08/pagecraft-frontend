@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useEditor, EditorContent, type JSONContent } from "@tiptap/react";
+import { useEditor, EditorContent, BubbleMenu, type Editor, type JSONContent } from "@tiptap/react";
 import { extensions, blockStyleProps, blockMargin, renderTypedBlock } from "@pagecraft/model";
 import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
@@ -330,5 +330,42 @@ function BlockText({ content, editable, caret, onContent }: { content: JSONConte
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content, editable, editor]);
-  return <div style={{ height: "100%", pointerEvents: editable ? "auto" : "none" }}><EditorContent editor={editor} /></div>;
+  return (
+    <div style={{ height: "100%", pointerEvents: editable ? "auto" : "none" }}>
+      {editor && (
+        // Select text → floating format toolbar (only shows on a non-empty
+        // selection in an editable block, so exactly one appears at a time).
+        <BubbleMenu editor={editor} tippyOptions={{ duration: 100 }}>
+          <div style={{ display: "flex", gap: 2, padding: 3, background: "#2b2b2b", borderRadius: 6, boxShadow: "0 4px 14px rgba(0,0,0,.35)" }}>
+            <MarkBtn active={editor.isActive("bold")} run={() => editor.chain().focus().toggleBold().run()} title="Bold (⌘B)" css={{ fontWeight: 700 }}>B</MarkBtn>
+            <MarkBtn active={editor.isActive("italic")} run={() => editor.chain().focus().toggleItalic().run()} title="Italic (⌘I)" css={{ fontStyle: "italic" }}>I</MarkBtn>
+            <MarkBtn active={editor.isActive("underline")} run={() => editor.chain().focus().toggleUnderline().run()} title="Underline (⌘U)" css={{ textDecoration: "underline" }}>U</MarkBtn>
+            <MarkBtn active={editor.isActive("strike")} run={() => editor.chain().focus().toggleStrike().run()} title="Strikethrough" css={{ textDecoration: "line-through" }}>S</MarkBtn>
+            <MarkBtn active={editor.isActive("superscript")} run={() => editor.chain().focus().toggleSuperscript().run()} title="Superscript">x²</MarkBtn>
+            <MarkBtn active={editor.isActive("subscript")} run={() => editor.chain().focus().toggleSubscript().run()} title="Subscript">x₂</MarkBtn>
+            <MarkBtn active={editor.isActive("link")} run={() => setLink(editor)} title="Link">🔗</MarkBtn>
+          </div>
+        </BubbleMenu>
+      )}
+      <EditorContent editor={editor} />
+    </div>
+  );
+}
+
+// Toolbar button: onMouseDown+preventDefault so clicking never blurs the editor
+// or collapses the selection before the command runs.
+function MarkBtn({ active, run, title, css, children }: { active: boolean; run: () => void; title: string; css?: React.CSSProperties; children: React.ReactNode }) {
+  return (
+    <button onMouseDown={(e) => { e.preventDefault(); run(); }} title={title}
+      style={{ minWidth: 26, height: 26, border: "none", borderRadius: 4, cursor: "pointer", fontSize: 13, lineHeight: 1,
+        background: active ? ACCENT : "transparent", color: active ? "#fff" : "#e8e8e8", ...css }}>
+      {children}
+    </button>
+  );
+}
+
+function setLink(editor: Editor) {
+  if (editor.isActive("link")) { editor.chain().focus().unsetLink().run(); return; }
+  const url = window.prompt("Link URL");
+  if (url) editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
 }
