@@ -261,6 +261,7 @@ export const useStore = create<Store>((set, get) => {
     load: async () => {
       if (loadStarted) return;
       loadStarted = true;
+      try {
       const id = new URLSearchParams(location.search).get("doc");
       if (id) {
         const doc = await getDocument(id);
@@ -282,6 +283,11 @@ export const useStore = create<Store>((set, get) => {
         set({ documentId: document.id, sections: [section], activeId: section.id });
       }
       set({ loading: false });
+      } catch (e) {
+        console.error("document load failed:", e);
+        loadStarted = false; // allow a retry (e.g. after auth settles)
+        set({ loading: false });
+      }
     },
     // Edit ONE section (each mounted editor owns its own id). Per-section 800ms
     // debounce so editing section B never drops a pending save for section A.

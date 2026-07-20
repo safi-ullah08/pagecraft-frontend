@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@clerk/clerk-react": "^5.61.9",
     "@pagecraft/model": "file:./model",
     "@tiptap/pm": "2.27.2",
     "@tiptap/react": "2.27.2",

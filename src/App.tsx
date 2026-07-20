@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { UserButton } from "@clerk/clerk-react";
 import { ChapterNav } from "./components/ChapterNav.tsx";
 import { Editor } from "./components/Editor.tsx";
 import { Preview } from "./components/Preview.tsx";
@@ -111,6 +112,12 @@ export function App() {
           <Toolbar />
           <ImportBar />
           {documentId && <ExportButton documentId={documentId} theme={theme} />}
+          {/* UserButton only mounts under ClerkProvider (i.e. when a key is set) */}
+          {import.meta.env.VITE_CLERK_PUBLISHABLE_KEY && (
+            <div style={{ marginLeft: "auto" }}>
+              <UserButton afterSignOutUrl="/" />
+            </div>
+          )}
         </div>
 
         {/* view tabs + active-section layout toggle */}

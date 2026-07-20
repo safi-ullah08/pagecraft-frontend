@@ -3,6 +3,27 @@ import type { JSONContent } from "@tiptap/react";
 import { DEFAULT_THEME } from "./themes.ts";
 import type { GridSection } from "./grid/types.ts";
 
+// Clerk's getToken(), injected at startup by <AuthBridge> (see main.tsx).
+// When Clerk is on, requests must wait for it to be wired or they fire tokenless
+// and 401 (the initial load races the provider mount / StrictMode double-mount).
+const clerkEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+let tokenGetter: (() => Promise<string | null>) | null = null;
+let markReady!: () => void;
+const tokenReady = new Promise<void>((r) => (markReady = r));
+export function setTokenGetter(fn: () => Promise<string | null>) {
+  tokenGetter = fn;
+  markReady();
+}
+
+// fetch + the Clerk bearer token. Drop-in for fetch across this module.
+async function authedFetch(input: string, init: RequestInit = {}) {
+  if (clerkEnabled) await tokenReady;
+  const token = tokenGetter ? await tokenGetter() : null;
+  const headers = new Headers(init.headers);
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return fetch(input, { ...init, headers });
+}
+
 // A section's content is a Tiptap doc (flow) or a GridSection (grid); the shape
 // self-describes (grid = { type:"grid", … }). Both round-trip through the same PUT.
 export type SectionContent = JSONContent | GridSection;
@@ -10,23 +31,24 @@ export type Section = { id: string; content: SectionContent; version: number };
 export type Document = { id: string; title: string; theme: string; sections: Section[] };
 
 export async function createDocument(title = "Untitled") {
-  const res = await fetch("/api/documents", {
+  const res = await authedFetch("/api/documents", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ title }),
   });
+  if (!res.ok) throw new Error(`create failed: ${res.status}`);
   return res.json() as Promise<{ document: { id: string }; section: Section }>;
 }
 
 export async function getDocument(id: string) {
-  const res = await fetch(`/api/documents/${id}`);
+  const res = await authedFetch(`/api/documents/${id}`);
   if (!res.ok) throw new Error(`load failed: ${res.status}`);
   return res.json() as Promise<Document>;
 }
 
 // add a new page (empty grid section) at the end of a document
 export async function addSection(documentId: string) {
-  const res = await fetch(`/api/documents/${documentId}/sections`, {
+  const res = await authedFetch(`/api/documents/${documentId}/sections`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: "{}",
@@ -36,13 +58,13 @@ export async function addSection(documentId: string) {
 }
 
 export async function deleteSection(id: string) {
-  const res = await fetch(`/api/sections/${id}`, { method: "DELETE" });
+  const res = await authedFetch(`/api/sections/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`delete page failed: ${res.status}`);
 }
 
 // insert new pages right after a section (split / break-to-next-page)
 export async function insertSectionsAfter(documentId: string, afterSectionId: string, pages: SectionContent[]) {
-  const res = await fetch(`/api/documents/${documentId}/sections/insert-after`, {
+  const res = await authedFetch(`/api/documents/${documentId}/sections/insert-after`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ afterSectionId, pages }),
@@ -53,7 +75,7 @@ export async function insertSectionsAfter(documentId: string, afterSectionId: st
 
 // replace a document's sections with the flow→grid paginated pages
 export async function convertDocument(documentId: string, pages: SectionContent[]) {
-  const res = await fetch(`/api/documents/${documentId}/convert`, {
+  const res = await authedFetch(`/api/documents/${documentId}/convert`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ pages }),
@@ -63,7 +85,7 @@ export async function convertDocument(documentId: string, pages: SectionContent[
 }
 
 export async function getSection(id: string) {
-  const res = await fetch(`/api/sections/${id}`);
+  const res = await authedFetch(`/api/sections/${id}`);
   if (!res.ok) throw new Error(`section load failed: ${res.status}`);
   return res.json() as Promise<Section>;
 }
@@ -71,7 +93,7 @@ export async function getSection(id: string) {
 // Returns the new version. Throws "version_conflict" on 409 so the caller can
 // re-read and retry (optimistic concurrency).
 export async function saveSection(id: string, content: SectionContent, version: number) {
-  const res = await fetch(`/api/sections/${id}`, {
+  const res = await authedFetch(`/api/sections/${id}`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ content, version }),
@@ -84,7 +106,7 @@ export async function saveSection(id: string, content: SectionContent, version: 
 // Import a source (url | html | wordpress | …) into a NEW document. Returns the
 // new documentId; the caller navigates to it.
 export async function importSource(source: string, body: Record<string, unknown>) {
-  const res = await fetch(`/api/integrations/${source}/import`, {
+  const res = await authedFetch(`/api/integrations/${source}/import`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -97,7 +119,7 @@ export async function importSource(source: string, body: Record<string, unknown>
 }
 
 export async function startExport(documentId: string, theme = DEFAULT_THEME) {
-  const res = await fetch("/api/export", {
+  const res = await authedFetch("/api/export", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ documentId, theme }),
