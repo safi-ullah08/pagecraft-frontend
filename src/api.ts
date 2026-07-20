@@ -54,6 +54,22 @@ export async function deleteDocument(id: string) {
   if (!res.ok) throw new Error(`delete failed: ${res.status}`);
 }
 
+// Billing (Lemon Squeezy). getBillingStatus tells the dashboard free vs pro;
+// startCheckout redirects to the LS checkout for the current workspace.
+export async function getBillingStatus() {
+  const res = await authedFetch("/api/billing/status");
+  if (!res.ok) throw new Error(`billing status failed: ${res.status}`);
+  return (await res.json()) as { plan: "free" | "pro"; subStatus?: string | null; currentPeriodEnd?: string | null };
+}
+
+export async function startCheckout() {
+  const res = await authedFetch("/api/billing/checkout");
+  if (res.status === 503) throw new Error("Billing isn't configured yet.");
+  if (!res.ok) throw new Error(`checkout failed: ${res.status}`);
+  const { url } = (await res.json()) as { url: string };
+  window.location.href = url;
+}
+
 export async function getDocument(id: string) {
   const res = await authedFetch(`/api/documents/${id}`);
   if (!res.ok) throw new Error(`load failed: ${res.status}`);

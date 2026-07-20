@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { listDocuments, createDocument, deleteDocument, type DocumentSummary } from "../api.ts";
+import { listDocuments, createDocument, deleteDocument, getBillingStatus, startCheckout, type DocumentSummary } from "../api.ts";
 import { ImportBar } from "./ImportBar.tsx";
 
 // The landing view (no ?doc in the URL): list / create / import / open / delete
@@ -13,10 +13,20 @@ export function Dashboard() {
   const [docs, setDocs] = useState<DocumentSummary[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [plan, setPlan] = useState<"free" | "pro" | null>(null);
 
   useEffect(() => {
     listDocuments().then(setDocs).catch((e) => setErr(String(e instanceof Error ? e.message : e)));
+    getBillingStatus().then((s) => setPlan(s.plan)).catch(() => setPlan("free"));
   }, []);
+
+  async function upgrade() {
+    try {
+      await startCheckout(); // redirects to Lemon Squeezy on success
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    }
+  }
 
   async function create() {
     if (creating) return;
@@ -45,6 +55,15 @@ export function Dashboard() {
     <div style={{ maxWidth: 960, margin: "0 auto", padding: "40px 24px" }}>
       <header style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 28 }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, flex: 1 }}>My documents</h1>
+        {plan === "pro" ? (
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#2e7d32" }}>Pro ✓</span>
+        ) : plan === "free" ? (
+          <button onClick={upgrade}
+            style={{ padding: "8px 14px", fontSize: 14, fontWeight: 600, color: "#E07A5F", background: "#fff",
+              border: "1px solid #E07A5F", borderRadius: 6, cursor: "pointer" }}>
+            Upgrade to Pro
+          </button>
+        ) : null}
         <ImportBar />
         <button onClick={create} disabled={creating}
           style={{ padding: "8px 14px", fontSize: 14, fontWeight: 600, color: "#fff", background: "#E07A5F",
@@ -52,6 +71,12 @@ export function Dashboard() {
           {creating ? "Creating…" : "+ New document"}
         </button>
       </header>
+
+      {plan === "free" && (
+        <p style={{ fontSize: 12, color: "#888", marginTop: -14, marginBottom: 20 }}>
+          Free plan — exported PDFs are watermarked. Upgrade to Pro to remove it.
+        </p>
+      )}
 
       {err && <p style={{ color: "#b00020", fontSize: 13 }}>{err}</p>}
 
