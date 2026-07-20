@@ -3,7 +3,7 @@ import { DEFAULT_THEME } from "./themes.ts";
 import { type PageSize } from "./pages.ts";
 import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
 import type { JSONContent } from "@tiptap/react";
-import { addSection, convertDocument, createDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
+import { addSection, convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
 import { BLOCKS, splitDocAt } from "@pagecraft/model";
 import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock } from "./grid/types.ts";
 import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks } from "./grid/ops.ts";
@@ -278,9 +278,9 @@ export const useStore = create<Store>((set, get) => {
           }
         }
       } else {
-        const { document, section } = await createDocument();
-        history.replaceState(null, "", `?doc=${document.id}`);
-        set({ documentId: document.id, sections: [section], activeId: section.id });
+        // No ?doc: the editor shouldn't be here — creation lives on the dashboard.
+        location.assign(location.pathname);
+        return;
       }
       set({ loading: false });
       } catch (e) {

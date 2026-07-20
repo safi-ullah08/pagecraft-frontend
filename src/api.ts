@@ -40,6 +40,20 @@ export async function createDocument(title = "Untitled") {
   return res.json() as Promise<{ document: { id: string }; section: Section }>;
 }
 
+export type DocumentSummary = { id: string; title: string; createdAt: string; pages: number };
+
+// Dashboard: my documents, newest first.
+export async function listDocuments() {
+  const res = await authedFetch("/api/documents");
+  if (!res.ok) throw new Error(`list failed: ${res.status}`);
+  return (await res.json()).documents as DocumentSummary[];
+}
+
+export async function deleteDocument(id: string) {
+  const res = await authedFetch(`/api/documents/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`delete failed: ${res.status}`);
+}
+
 export async function getDocument(id: string) {
   const res = await authedFetch(`/api/documents/${id}`);
   if (!res.ok) throw new Error(`load failed: ${res.status}`);
