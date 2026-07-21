@@ -163,7 +163,8 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       setDrag(null);
-      onChange(resizeBlock(section, b.id, last));
+      // growing a block via the handle opens room below too (same as fit-to-content)
+      onChange(pushDownOverlaps(resizeBlock(section, b.id, last), b.id));
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -322,6 +323,11 @@ function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStar
             <span style={{ color: "#fff", fontSize: 10, opacity: 0.85, padding: "0 2px", textTransform: "capitalize" }}>{b.block}</span>
             <button onClick={(e) => { e.stopPropagation(); fit(); }} title="Fit box to content"
               style={{ width: 18, height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 11, lineHeight: 1, cursor: "pointer" }}>⤢</button>
+            {/* only a text frame that overflows can be split across pages (reflowBlock) */}
+            {overflow && b.block === "textFrame" && (
+              <button onClick={(e) => { e.stopPropagation(); onReflow(); }} title="Split: keep what fits, flow the rest onto the next page"
+                style={{ height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer", padding: "0 5px" }}>Split ⤵</button>
+            )}
             <button onClick={(e) => { e.stopPropagation(); onDelete(); }} title="Remove block"
               style={{ width: 18, height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 12, lineHeight: 1, cursor: "pointer" }}>×</button>
           </div>
