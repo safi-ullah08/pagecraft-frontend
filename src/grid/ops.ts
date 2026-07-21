@@ -38,6 +38,15 @@ export function resizeBlock(section: GridSection, blockId: string, area: GridAre
   return moveBlock(section, blockId, area); // same clamp path; resize just changes the end edges
 }
 
+// Snap a block's row span so the box wraps its content exactly (to the nearest
+// whole cell), keeping its top-left. Used by "Fit" and auto-fit-on-edit-exit.
+export function fitBlockRows(section: GridSection, blockId: string, rows: number): GridSection {
+  return patch(section, blockId, (b) => clampBlockRows(b, rows));
+}
+function clampBlockRows(b: GridBlock, rows: number): GridBlock {
+  return { ...b, area: clampArea({ ...b.area, rowEnd: b.area.rowStart + rows }, BLOCKS[b.block].min) };
+}
+
 export function updateBlockContent(section: GridSection, blockId: string, content: unknown): GridSection {
   return patch(section, blockId, (b) => ({ ...b, content: content as GridBlock["content"] }));
 }

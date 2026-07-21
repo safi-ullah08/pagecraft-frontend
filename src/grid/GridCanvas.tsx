@@ -4,7 +4,7 @@ import { useEditor, EditorContent, BubbleMenu, type Editor, type JSONContent } f
 import { extensions, blockStyleProps, blockMargin, renderTypedBlock } from "@pagecraft/model";
 import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
-import { moveBlock, moveBlocks, resizeBlock, updateBlockContent, removeBlock, clampArea } from "./ops.ts";
+import { moveBlock, moveBlocks, resizeBlock, fitBlockRows, updateBlockContent, removeBlock, clampArea } from "./ops.ts";
 import { PAGE_SIZES, PAGE_MARGIN_MM, type PageSize } from "../pages.ts";
 
 // Recreated grid designer with temp/src's interaction feel on OUR stack:
@@ -123,6 +123,19 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
     window.addEventListener("pointerup", onUp);
   };
 
+  // Snap a block's row span to wrap its content exactly. naturalPx is the block
+  // content's measured natural height; invert height = rows*rowUnit + (rows-1)*gap
+  // to get the fewest whole cells that hold it.
+  const fitBlock = (id: string, naturalPx: number) => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const gap = parseFloat(getComputedStyle(grid).rowGap) || 0;
+    const gridH = grid.getBoundingClientRect().height;
+    const rowUnit = (gridH - (ROWS - 1) * gap) / ROWS;
+    const rows = Math.max(1, Math.ceil((naturalPx + gap) / (rowUnit + gap)));
+    onChange(fitBlockRows(section, id, rows));
+  };
+
   // Resize from an edge/corner handle (snapped live preview, in-place).
   const startResize = (e: React.PointerEvent, b: GridBlock, side: "right" | "bottom" | "corner") => {
     e.preventDefault();
@@ -179,6 +192,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
                 onSelect={(additive) => onSelect(b.id, additive)}
                 onEdit={() => onEdit(b.id)}
                 onReflow={() => onReflow(b.id)}
+                onFit={(px) => fitBlock(b.id, px)}
                 onContent={(c) => onChange(updateBlockContent(section, b.id, c))}
                 onDelete={() => { onChange(removeBlock(section, b.id)); onSelect(null); }} />
             );
@@ -201,7 +215,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
   );
 }
 
-function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStartResize, onSelect, onEdit, onReflow, onContent, onDelete }: {
+function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStartResize, onSelect, onEdit, onReflow, onFit, onContent, onDelete }: {
   b: GridBlock;
   ghosting: boolean;
   offset: { x: number; y: number } | null; // live px translate during a group drag
@@ -212,6 +226,7 @@ function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStar
   onSelect: (additive: boolean) => void;
   onEdit: () => void;
   onReflow: () => void;
+  onFit: (naturalPx: number) => void;
   onContent: (c: unknown) => void;
   onDelete: () => void;
 }) {
@@ -235,6 +250,15 @@ function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStar
     obs.observe(el);
     return () => obs.disconnect();
   }, [b.area, b.content]);
+  // Snap the box to wrap content exactly: on demand (Fit button) and automatically
+  // when a text block leaves edit mode (content just settled).
+  const fit = () => { if (contentRef.current) onFit(contentRef.current.scrollHeight); };
+  const wasEditing = useRef(editing);
+  useEffect(() => {
+    if (wasEditing.current && !editing) fit();
+    wasEditing.current = editing;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
   return (
     <div
       // Always stop the press reaching the sheet (which would deselect/end edit).
@@ -284,6 +308,8 @@ function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStar
             <span onPointerDown={onStartMove} title="Drag to move"
               style={{ cursor: "grab", color: "#fff", fontSize: 12, lineHeight: 1, padding: "2px 3px" }}>✥</span>
             <span style={{ color: "#fff", fontSize: 10, opacity: 0.85, padding: "0 2px", textTransform: "capitalize" }}>{b.block}</span>
+            <button onClick={(e) => { e.stopPropagation(); fit(); }} title="Fit box to content"
+              style={{ width: 18, height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 11, lineHeight: 1, cursor: "pointer" }}>⤢</button>
             <button onClick={(e) => { e.stopPropagation(); onDelete(); }} title="Remove block"
               style={{ width: 18, height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 12, lineHeight: 1, cursor: "pointer" }}>×</button>
           </div>
