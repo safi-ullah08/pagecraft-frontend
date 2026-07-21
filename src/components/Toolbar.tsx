@@ -15,6 +15,7 @@ export function Toolbar() {
   return (
     <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
       <select value={theme} onChange={(e) => setTheme(e.target.value)} title="theme">
+        {!themeNames().includes(theme) && <option value={theme}>{theme === "verbatim" ? "Imported (verbatim)" : theme}</option>}
         {themeNames().map((t) => (
           <option key={t} value={t}>{t}</option>
         ))}

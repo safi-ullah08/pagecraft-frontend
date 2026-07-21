@@ -5,7 +5,7 @@
 // this produce byte-identical CSS, preserving the 1-to-1 WYSIWYG guarantee.
 // ponytail: exists ONLY because fs can't run in the browser; delete if the model
 // ever ships a bundler-safe skin loader.
-import { baseCss, gridBaseCss, type LayoutMode, type ThemeName } from "@pagecraft/model";
+import { baseCss, gridBaseCss, VERBATIM_SKIN, type LayoutMode, type ThemeName } from "@pagecraft/model";
 
 export { DEFAULT_THEME } from "@pagecraft/model";
 
@@ -35,6 +35,7 @@ export function documentCss(theme: ThemeName, layoutMode: LayoutMode = "flow"): 
 // Just the theme skin (no structural baseCss) — the editing surface scopes THIS
 // onto its container so editing looks like output. baseCss is pagination-only.
 export function themeSkinCss(theme: ThemeName): string {
+  if (theme === "verbatim") return VERBATIM_SKIN; // imported docs: neutral base, own styling
   const skin = skins[theme];
   if (skin === undefined) throw new Error(`unknown theme "${theme}" (have: ${themeNames().join(", ")})`);
   return skin;
