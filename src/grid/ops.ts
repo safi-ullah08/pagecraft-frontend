@@ -70,6 +70,38 @@ export function removeBlocks(section: GridSection, ids: string[]): GridSection {
   return { ...section, blocks: section.blocks.filter((b) => !set.has(b.id)) };
 }
 
+// After `anchorId`'s area changed (typically grew to fit overflow), push blocks
+// it now overlaps DOWNWARD to make room — cascading to blocks they in turn push
+// into. Only ever moves blocks down (monotonic → always terminates); a block that
+// would leave the page clamps at the bottom. A block that overlaps the anchor from
+// ABOVE is left alone (we only open space below the growing block).
+export function pushDownOverlaps(section: GridSection, anchorId: string): GridSection {
+  const byId = new Map(section.blocks.map((b) => [b.id, { ...b, area: { ...b.area } }]));
+  const anchor = byId.get(anchorId);
+  if (!anchor) return section;
+  const colsOverlap = (a: GridArea, b: GridArea) => a.colStart < b.colEnd && b.colStart < a.colEnd;
+  const rowsOverlap = (a: GridArea, b: GridArea) => a.rowStart < b.rowEnd && b.rowStart < a.rowEnd;
+  const queue = [anchorId];
+  let steps = 0;
+  const guard = section.blocks.length * (ROWS + 1) + 1; // monotonic, but bound it anyway
+  while (queue.length && steps++ < guard) {
+    const a = byId.get(queue.shift()!)!;
+    for (const x of byId.values()) {
+      if (x.id === a.id) continue;
+      if (x.area.rowStart >= a.area.rowStart && colsOverlap(a.area, x.area) && rowsOverlap(a.area, x.area)) {
+        const shift = a.area.rowEnd - x.area.rowStart; // push x's top to a's bottom
+        if (shift <= 0) continue;
+        const h = x.area.rowEnd - x.area.rowStart;
+        x.area.rowStart += shift;
+        x.area.rowEnd += shift;
+        if (x.area.rowEnd > ROWS + 1) { x.area.rowEnd = ROWS + 1; x.area.rowStart = ROWS + 1 - h; } // clamp at bottom
+        queue.push(x.id);
+      }
+    }
+  }
+  return { ...section, blocks: section.blocks.map((b) => byId.get(b.id)!) };
+}
+
 // Move every block in `ids` by the same cell delta (group move), each clamped.
 export function moveBlocks(section: GridSection, ids: string[], dCol: number, dRow: number): GridSection {
   const set = new Set(ids);

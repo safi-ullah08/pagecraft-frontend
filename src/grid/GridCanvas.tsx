@@ -4,7 +4,7 @@ import { useEditor, EditorContent, BubbleMenu, type Editor, type JSONContent } f
 import { extensions, blockStyleProps, blockMargin, renderTypedBlock, scopeCustomCss } from "@pagecraft/model";
 import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
-import { moveBlock, moveBlocks, resizeBlock, fitBlockRows, updateBlockContent, removeBlock, clampArea } from "./ops.ts";
+import { moveBlock, moveBlocks, resizeBlock, fitBlockRows, pushDownOverlaps, updateBlockContent, removeBlock, clampArea } from "./ops.ts";
 import { PAGE_SIZES, PAGE_MARGIN_MM, type PageSize } from "../pages.ts";
 
 // Recreated grid designer with temp/src's interaction feel on OUR stack:
@@ -137,7 +137,8 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     const gridH = grid.getBoundingClientRect().height;
     const rowUnit = (gridH - (ROWS - 1) * gap) / ROWS;
     const rows = Math.max(1, Math.ceil((naturalPx + gap) / (rowUnit + gap)));
-    onChange(fitBlockRows(section, id, rows));
+    // grow/shrink to fit, then push any blocks the new size overlaps downward
+    onChange(pushDownOverlaps(fitBlockRows(section, id, rows), id));
   };
 
   // Resize from an edge/corner handle (snapped live preview, in-place).
