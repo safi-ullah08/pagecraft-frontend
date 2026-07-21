@@ -154,8 +154,13 @@ function StyleSection({ block, onStyle }: { block: GridBlock; onStyle: (t: Parti
           {clear("fontFamily")}
         </div>
       </Field>
+      <Field label="Custom CSS">
+        <textarea value={t.customCss ?? ""} placeholder={"transform: rotate(-2deg);\nbox-shadow: 0 6px 20px rgba(0,0,0,.25);"}
+          onChange={(e) => onStyle({ customCss: e.target.value || undefined })} spellCheck={false} rows={3}
+          style={{ ...inputStyle, width: "100%", boxSizing: "border-box", fontFamily: "ui-monospace, monospace", fontSize: 11, resize: "vertical" }} />
+      </Field>
       {hasAny && (
-        <button onClick={() => onStyle({ textColor: undefined, backgroundColor: undefined, fontSize: undefined, fontWeight: undefined, letterSpacing: undefined, opacity: undefined, textAlign: undefined, fontFamily: undefined })}
+        <button onClick={() => onStyle({ textColor: undefined, backgroundColor: undefined, fontSize: undefined, fontWeight: undefined, letterSpacing: undefined, opacity: undefined, textAlign: undefined, fontFamily: undefined, customCss: undefined })}
           style={{ background: "transparent", border: `1px solid ${PALETTE.BORDER_STRONG}`, color: PALETTE.MUTED, padding: "6px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>
           Reset all overrides
         </button>
