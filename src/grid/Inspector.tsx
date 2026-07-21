@@ -22,6 +22,7 @@ export function Inspector() {
 
   const moveBlockToPage = useStore((s) => s.moveBlockToPage);
   const fitBlock = useStore((s) => s.fitBlock);
+  const reflowBlock = useStore((s) => s.reflowBlock);
   const breakTextFrame = useStore((s) => s.breakTextFrame);
   const active = sections.find((s) => s.id === activeId);
   const section = active && isGridSection(active.content) ? active.content : null;
@@ -76,6 +77,12 @@ export function Inspector() {
           style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER}`, color: PALETTE.TEXT, padding: "8px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
           ↕ Fit height to content
         </button>
+        {block.block === "textFrame" && (
+          <button onClick={() => void reflowBlock(active!.id, block.id)} title="grow to fit, and spill any overflow onto the next page(s)"
+            style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER}`, color: PALETTE.TEXT, padding: "8px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
+            ↧ Spill overflow → next page
+          </button>
+        )}
         {block.block === "textFrame" && (
           <button onClick={() => breakTextFrame(active!.id, block.id)} title="Break this text frame into separate paragraph blocks on this page"
             style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER}`, color: PALETTE.TEXT, padding: "8px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>

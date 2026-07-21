@@ -25,7 +25,7 @@ type Drag =
   | { id: string; kind: "move"; x: number; y: number; grabX: number; grabY: number; w: number; h: number; html: string; fp: Rect | null; group: string[] | null; dx: number; dy: number }
   | { id: string; kind: "resize"; area: GridArea };
 
-export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveGroupAcross, pageSize, selected, onSelect, editingId, onEdit, onBreak, showGrid }: {
+export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveGroupAcross, pageSize, selected, onSelect, editingId, onEdit, onReflow, onBreak, showGrid }: {
   section: GridSection;
   sectionId: string;
   onChange: (s: GridSection) => void;
@@ -36,7 +36,8 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
   onSelect: (id: string | null, additive?: boolean) => void;
   editingId: string | null;
   onEdit: (id: string | null) => void;
-  onBreak: (id: string) => void;
+  onReflow: (id: string) => void; // Split: spill overflow onto the next page
+  onBreak: (id: string) => void;  // Break: decompose into paragraph blocks on this page
   showGrid: boolean;
 }) {
   const dim = PAGE_SIZES[pageSize];
@@ -197,6 +198,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
                 onStartResize={(e, side) => startResize(e, b, side)}
                 onSelect={(additive) => onSelect(b.id, additive)}
                 onEdit={() => onEdit(b.id)}
+                onReflow={() => onReflow(b.id)}
                 onBreak={() => onBreak(b.id)}
                 onFit={(px) => fitBlock(b.id, px)}
                 onContent={(c) => onChange(updateBlockContent(section, b.id, c))}
@@ -221,7 +223,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
   );
 }
 
-function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStartResize, onSelect, onEdit, onBreak, onFit, onContent, onDelete }: {
+function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStartResize, onSelect, onEdit, onReflow, onBreak, onFit, onContent, onDelete }: {
   b: GridBlock;
   ghosting: boolean;
   offset: { x: number; y: number } | null; // live px translate during a group drag
@@ -231,6 +233,7 @@ function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStar
   onStartResize: (e: React.PointerEvent, side: "right" | "bottom" | "corner") => void;
   onSelect: (additive: boolean) => void;
   onEdit: () => void;
+  onReflow: () => void;
   onBreak: () => void;
   onFit: (naturalPx: number) => void;
   onContent: (c: unknown) => void;
@@ -323,7 +326,12 @@ function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStar
             <span style={{ color: "#fff", fontSize: 10, opacity: 0.85, padding: "0 2px", textTransform: "capitalize" }}>{b.block}</span>
             <button onClick={(e) => { e.stopPropagation(); fit(); }} title="Fit box to content"
               style={{ width: 18, height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 11, lineHeight: 1, cursor: "pointer" }}>⤢</button>
-            {/* Break a text frame into smaller paragraph blocks on THIS page (no page-push) */}
+            {/* Split: spill overflow onto the next page (only when it overflows a page) */}
+            {overflow && b.block === "textFrame" && (
+              <button onClick={(e) => { e.stopPropagation(); onReflow(); }} title="Split: keep what fits, flow the rest onto the next page"
+                style={{ height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer", padding: "0 5px" }}>Split ⤵</button>
+            )}
+            {/* Break: decompose into separate paragraph blocks on THIS page (no page-push) */}
             {b.block === "textFrame" && (((b.content as { content?: unknown[] })?.content?.length ?? 0) > 1 || overflow) && (
               <button onClick={(e) => { e.stopPropagation(); onBreak(); }} title="Break into separate paragraph blocks on this page"
                 style={{ height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer", padding: "0 5px" }}>Break ⑃</button>

@@ -6,8 +6,9 @@ import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
 import { BLOCKS, serialize } from "@pagecraft/model";
 import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock } from "./grid/types.ts";
-import { addBlock as opsAddBlock, resizeBlock, removeBlocks, cloneBlocks, clampArea } from "./grid/ops.ts";
+import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
+import { insertSectionsAfter } from "./api.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
 
 export type Section = { id: string; content: SectionContent; version: number };
@@ -40,6 +41,7 @@ type Store = {
   addBlock: (type: BlockType) => void;
   addBlockAt: (type: BlockType, toId: string, area: GridArea) => void;
   fitBlock: (sectionId: string, blockId: string) => void;
+  reflowBlock: (sectionId: string, blockId: string) => Promise<void>;
   breakTextFrame: (sectionId: string, blockId: string) => void;
   moveBlockToPage: (fromId: string, blockId: string, toId: string, area?: GridArea) => void;
   moveBlocksToPage: (fromId: string, ids: string[], toId: string, dCol: number, dRow: number) => void;
@@ -192,6 +194,40 @@ export const useStore = create<Store>((set, get) => {
       const rowStart = block.area.rowStart;
       const rowEnd = rowStart + Math.max(min, Math.min(rows, ROWS - rowStart + 1));
       edit(sectionId, resizeBlock(sec.content, blockId, { ...block.area, rowEnd }));
+    },
+    // Split (spill): grow a text frame to fit, then flow any overflow onto NEW
+    // page(s) after this one. Manual only now — no longer auto-runs on edit-exit.
+    reflowBlock: async (sectionId, blockId) => {
+      get().fitBlock(sectionId, blockId); // grow on the page first
+      const { sections, theme, pageSize, documentId } = get();
+      if (!documentId) return;
+      const sec = sections.find((s) => s.id === sectionId);
+      if (!sec || !isGridSection(sec.content)) return;
+      const block = sec.content.blocks.find((b) => b.id === blockId);
+      if (!block || block.block !== "textFrame") return;
+      const doc = block.content as JSONContent;
+      const nodes = doc.content ?? [];
+      if (nodes.length < 1) return;
+      const cols = block.area.colEnd - block.area.colStart;
+      const rows = block.area.rowEnd - block.area.rowStart;
+      const widthPx = blockWidthPx(cols, pageSize) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
+      const maxHpx = blockHeightPx(rows, pageSize) - sidesY(block.style?.padding) - sidesY(block.style?.margin);
+      // splits between paragraphs, or WITHIN a paragraph (word boundary) when a
+      // single long paragraph overflows — so any overflowing text frame can spill.
+      const [docA, docB] = splitTextFrameAt(doc, widthPx, maxHpx, theme);
+      if (!docB.content?.length) return; // it all fits after the grow
+      // keep the fitting part in this block and shrink it to that content
+      get().edit(sectionId, updateBlockContent(sec.content, blockId, docA as SectionContent));
+      get().fitBlock(sectionId, blockId);
+      // paginate the overflow into new pages and insert them right after this one
+      const pages = (await parseBlocks([docB], theme, pageSize)).map((p) => assetsToCanonical(p));
+      const { sections: inserted } = await insertSectionsAfter(documentId, sectionId, pages);
+      set((st) => {
+        const arr = [...st.sections];
+        const idx = arr.findIndex((s) => s.id === sectionId);
+        arr.splice(idx + 1, 0, ...inserted.map((s) => ({ ...s, content: assetsToDisplay(s.content) })));
+        return { sections: arr };
+      });
     },
     // Break a text frame into smaller blocks on the SAME page (no new pages, no
     // page-pushing). One block per paragraph; a lone overflowing paragraph is
