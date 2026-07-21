@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { listDocuments, createDocument, deleteDocument, getBillingStatus, startCheckout, type DocumentSummary } from "../api.ts";
+import { useEffect, useRef, useState } from "react";
+import { listDocuments, createDocument, deleteDocument, getBillingStatus, startCheckout, uploadDocument, type DocumentSummary } from "../api.ts";
 import { ImportBar } from "./ImportBar.tsx";
 
 // The landing view (no ?doc in the URL): list / create / import / open / delete
@@ -14,11 +14,26 @@ export function Dashboard() {
   const [err, setErr] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [plan, setPlan] = useState<"free" | "pro" | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     listDocuments().then(setDocs).catch((e) => setErr(String(e instanceof Error ? e.message : e)));
     getBillingStatus().then((s) => setPlan(s.plan)).catch(() => setPlan("free"));
   }, []);
+
+  async function upload(file: File) {
+    if (uploading) return;
+    setUploading(true);
+    setErr(null);
+    try {
+      const { documentId } = await uploadDocument(file);
+      openDoc(documentId); // reload into the imported doc
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+      setUploading(false);
+    }
+  }
 
   async function upgrade() {
     try {
@@ -65,6 +80,13 @@ export function Dashboard() {
           </button>
         ) : null}
         <ImportBar />
+        <input ref={fileInput} type="file" accept=".docx,.md,.markdown,.txt" style={{ display: "none" }}
+          onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void upload(f); }} />
+        <button onClick={() => fileInput.current?.click()} disabled={uploading} title="Upload a .docx, .md or .txt file"
+          style={{ padding: "8px 14px", fontSize: 14, fontWeight: 600, color: "#E07A5F", background: "#fff",
+            border: "1px solid #E07A5F", borderRadius: 6, cursor: "pointer" }}>
+          {uploading ? "Uploading…" : "↑ Upload doc"}
+        </button>
         <button onClick={create} disabled={creating}
           style={{ padding: "8px 14px", fontSize: 14, fontWeight: 600, color: "#fff", background: "#E07A5F",
             border: "none", borderRadius: 6, cursor: "pointer" }}>

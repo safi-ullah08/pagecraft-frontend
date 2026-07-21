@@ -148,6 +148,21 @@ export async function importSource(source: string, body: Record<string, unknown>
   return res.json() as Promise<{ documentId: string; sections: number }>;
 }
 
+// Upload a document file (.docx/.md/.txt) → parse+import into a NEW document.
+// Raw bytes + the filename in a header (matches the backend's raw-body route).
+export async function uploadDocument(file: File) {
+  const res = await authedFetch("/api/integrations/upload", {
+    method: "POST",
+    headers: { "content-type": file.type || "application/octet-stream", "x-filename": file.name },
+    body: file,
+  });
+  if (!res.ok) {
+    const msg = await res.json().then((j) => j.message ?? j.error).catch(() => null);
+    throw new Error(msg ?? `upload failed: ${res.status}`);
+  }
+  return res.json() as Promise<{ documentId: string; sections: number }>;
+}
+
 export async function startExport(documentId: string, theme = DEFAULT_THEME) {
   const res = await authedFetch("/api/export", {
     method: "POST",
