@@ -22,7 +22,7 @@ type Rect = { left: number; top: number; width: number; height: number };
 type Drag =
   // group != null → a multi-select drag: every selected block translates by (dx,dy)
   // live (no portal ghost); single drag floats the one block in the portal.
-  | { id: string; kind: "move"; x: number; y: number; grabX: number; grabY: number; w: number; h: number; html: string; fp: Rect | null; group: string[] | null; dx: number; dy: number; mergeId: string | null }
+  | { id: string; kind: "move"; x: number; y: number; grabX: number; grabY: number; w: number; h: number; html: string; fp: Rect | null; group: string[] | null; dx: number; dy: number; mergeId: string | null; mergeLine: { left: number; right: number; top: number } | null }
   | { id: string; kind: "resize"; area: GridArea };
 
 export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveGroupAcross, pageSize, selected, onSelect, editingId, onEdit, onReflow, onBreak, onMerge, showGrid }: {
@@ -38,7 +38,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
   onEdit: (id: string | null) => void;
   onReflow: (id: string) => void; // Split: spill overflow onto the next page
   onBreak: (id: string) => void;  // Break: decompose into paragraph blocks on this page
-  onMerge: (sourceId: string, targetId: string) => void; // drop a text block onto a text frame → concatenate
+  onMerge: (sourceId: string, targetId: string, atIndex: number) => void; // drop a text block onto a text frame → concatenate at index
   showGrid: boolean;
 }) {
   const dim = PAGE_SIZES[pageSize];
@@ -65,12 +65,22 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     const startX = e.clientX, startY = e.clientY;
     let moved = false, lastX = startX, lastY = startY, raf = 0, scrollDir = 0;
 
-    // A DIFFERENT text-frame block under the point (merge target), else null.
-    const blockAt = (x: number, y: number): string | null => {
+    // Merge target under the point: a DIFFERENT text-frame block, plus the insertion
+    // index (which paragraph boundary the cursor is nearest) and a screen line to draw.
+    const mergeAt = (x: number, y: number): { id: string; index: number; line: { left: number; right: number; top: number } } | null => {
       if (!canMerge) return null;
       const el = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest("[data-block-id]") as HTMLElement | null;
       const id = el?.getAttribute("data-block-id");
-      return id && id !== b.id && el!.getAttribute("data-block-type") === "textFrame" ? id : null;
+      if (!id || id === b.id || el!.getAttribute("data-block-type") !== "textFrame") return null;
+      const root = (el!.querySelector(".ProseMirror") ?? el!) as HTMLElement;
+      const kids = Array.from(root.children) as HTMLElement[];
+      const rr = root.getBoundingClientRect();
+      let index = kids.length, top = rr.bottom; // default: append at the end
+      for (let i = 0; i < kids.length; i++) {
+        const r = kids[i]!.getBoundingClientRect();
+        if (y < r.top + r.height / 2) { index = i; top = r.top; break; }
+      }
+      return { id, index, line: { left: rr.left, right: rr.right, top } };
     };
 
     // The page grid under a point (ghost/footprint are pointer-events:none so
@@ -96,10 +106,10 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     };
     const apply = (x: number, y: number) => {
       const res = resolve(x, y);
-      const mergeId = blockAt(x, y);
+      const merge = mergeAt(x, y);
       // group drag: no portal/footprint; the selection translates in place by px delta.
       // over a merge target: suppress the landing footprint (show the merge highlight instead).
-      setDrag({ id: b.id, kind: "move", x, y, grabX, grabY, w, h, html, fp: group || mergeId ? null : (res?.fp ?? null), group: group ? selected : null, dx: x - startX, dy: y - startY, mergeId });
+      setDrag({ id: b.id, kind: "move", x, y, grabX, grabY, w, h, html, fp: group || merge ? null : (res?.fp ?? null), group: group ? selected : null, dx: x - startX, dy: y - startY, mergeId: merge?.id ?? null, mergeLine: merge?.line ?? null });
       if (scrollEl) {
         const sr = scrollEl.getBoundingClientRect();
         scrollDir = y < sr.top + EDGE ? -1 : y > sr.bottom - EDGE ? 1 : 0;
@@ -131,8 +141,8 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
         return;
       }
       if (!selected.includes(b.id)) onSelect(b.id, false); // a fresh single drag selects it
-      const mergeId = blockAt(ev.clientX, ev.clientY);
-      if (mergeId) { onMerge(b.id, mergeId); return; } // dropped onto a text frame → concatenate
+      const merge = mergeAt(ev.clientX, ev.clientY);
+      if (merge) { onMerge(b.id, merge.id, merge.index); return; } // dropped onto a text frame → concatenate at the line
       const res = resolve(ev.clientX, ev.clientY);
       if (!res) return; // dropped outside any page → cancel (block stays put)
       if (res.sec === sectionId) onChange(moveBlock(section, b.id, res.area));
@@ -231,6 +241,14 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
             pointerEvents: "none", opacity: 0.85, background: "#fff", overflow: "hidden", outline: `2px solid ${ACCENT}`,
             boxShadow: "0 8px 24px rgba(0,0,0,.3)", zIndex: 9999 }} dangerouslySetInnerHTML={{ __html: drag.html }} />
         </>,
+        document.body,
+      )}
+      {/* merge insertion line: where the dropped paragraphs will land in the target frame */}
+      {drag?.kind === "move" && drag.mergeLine && createPortal(
+        <div style={{ position: "fixed", left: drag.mergeLine.left, top: drag.mergeLine.top - 1, width: drag.mergeLine.right - drag.mergeLine.left,
+          height: 3, background: ACCENT, borderRadius: 2, pointerEvents: "none", zIndex: 9999, boxShadow: `0 0 0 2px ${ACCENT}55` }}>
+          <div style={{ position: "absolute", left: -5, top: -3, width: 9, height: 9, borderRadius: "50%", background: ACCENT }} />
+        </div>,
         document.body,
       )}
     </div>

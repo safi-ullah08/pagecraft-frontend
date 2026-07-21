@@ -187,7 +187,7 @@ export function App() {
                         onEdit={(id) => { setActive(s.id); setEditing(id); }}
                         onReflow={(id) => void reflowBlock(s.id, id)}
                         onBreak={(id) => breakTextFrame(s.id, id)}
-                        onMerge={(sourceId, targetId) => mergeBlocks(s.id, sourceId, targetId)}
+                        onMerge={(sourceId, targetId, atIndex) => mergeBlocks(s.id, sourceId, targetId, atIndex)}
                         showGrid={showGrid}
                       />
                     </div>

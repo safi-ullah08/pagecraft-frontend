@@ -43,7 +43,7 @@ type Store = {
   fitBlock: (sectionId: string, blockId: string) => void;
   reflowBlock: (sectionId: string, blockId: string) => Promise<void>;
   breakTextFrame: (sectionId: string, blockId: string) => void;
-  mergeBlocks: (sectionId: string, sourceId: string, targetId: string) => void;
+  mergeBlocks: (sectionId: string, sourceId: string, targetId: string, atIndex?: number) => void;
   moveBlockToPage: (fromId: string, blockId: string, toId: string, area?: GridArea) => void;
   moveBlocksToPage: (fromId: string, ids: string[], toId: string, dCol: number, dRow: number) => void;
   load: () => Promise<void>;
@@ -232,11 +232,11 @@ export const useStore = create<Store>((set, get) => {
     },
     // Merge a dropped text block's content into a target text frame, then remove
     // the source (drop-to-concatenate). Selects the target after.
-    mergeBlocks: (sectionId, sourceId, targetId) => {
+    mergeBlocks: (sectionId, sourceId, targetId, atIndex) => {
       const { sections, edit } = get();
       const sec = sections.find((s) => s.id === sectionId);
       if (!sec || !isGridSection(sec.content)) return;
-      const next = mergeInto(sec.content, sourceId, targetId);
+      const next = mergeInto(sec.content, sourceId, targetId, atIndex);
       if (next === sec.content) return; // nothing merged (non-text source, etc.)
       edit(sectionId, next);
       set({ selectedBlockIds: [targetId], editingBlockId: null });
