@@ -115,6 +115,26 @@ export function moveBlocks(section: GridSection, ids: string[], dCol: number, dR
   };
 }
 
+// Merge one text block's content into another (append its nodes at `atIndex`, or
+// at the end), then remove the source — the drop-to-concatenate op. Both blocks
+// must be text-bearing (Tiptap doc content); otherwise it's a no-op.
+export function mergeInto(section: GridSection, sourceId: string, targetId: string, atIndex?: number): GridSection {
+  if (sourceId === targetId) return section;
+  const source = section.blocks.find((b) => b.id === sourceId);
+  const target = section.blocks.find((b) => b.id === targetId);
+  if (!source || !target) return section;
+  const sDoc = source.content as { type?: string; content?: unknown[] };
+  const tDoc = target.content as { type?: string; content?: unknown[] };
+  if (sDoc?.type !== "doc" || tDoc?.type !== "doc") return section;
+  const tNodes = tDoc.content ?? [];
+  const i = atIndex == null ? tNodes.length : Math.max(0, Math.min(atIndex, tNodes.length));
+  const merged = { ...tDoc, content: [...tNodes.slice(0, i), ...(sDoc.content ?? []), ...tNodes.slice(i)] };
+  return {
+    ...section,
+    blocks: section.blocks.filter((b) => b.id !== sourceId).map((b) => (b.id === targetId ? { ...b, content: merged } : b)),
+  };
+}
+
 // Copies with fresh ids, nudged one cell down-right (paste/duplicate feel).
 export function cloneBlocks(blocks: GridBlock[]): GridBlock[] {
   return blocks.map((b) => ({

@@ -22,10 +22,10 @@ type Rect = { left: number; top: number; width: number; height: number };
 type Drag =
   // group != null → a multi-select drag: every selected block translates by (dx,dy)
   // live (no portal ghost); single drag floats the one block in the portal.
-  | { id: string; kind: "move"; x: number; y: number; grabX: number; grabY: number; w: number; h: number; html: string; fp: Rect | null; group: string[] | null; dx: number; dy: number }
+  | { id: string; kind: "move"; x: number; y: number; grabX: number; grabY: number; w: number; h: number; html: string; fp: Rect | null; group: string[] | null; dx: number; dy: number; mergeId: string | null }
   | { id: string; kind: "resize"; area: GridArea };
 
-export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveGroupAcross, pageSize, selected, onSelect, editingId, onEdit, onReflow, onBreak, showGrid }: {
+export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveGroupAcross, pageSize, selected, onSelect, editingId, onEdit, onReflow, onBreak, onMerge, showGrid }: {
   section: GridSection;
   sectionId: string;
   onChange: (s: GridSection) => void;
@@ -38,6 +38,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
   onEdit: (id: string | null) => void;
   onReflow: (id: string) => void; // Split: spill overflow onto the next page
   onBreak: (id: string) => void;  // Break: decompose into paragraph blocks on this page
+  onMerge: (sourceId: string, targetId: string) => void; // drop a text block onto a text frame → concatenate
   showGrid: boolean;
 }) {
   const dim = PAGE_SIZES[pageSize];
@@ -60,8 +61,17 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     const html = (blockEl.firstElementChild as HTMLElement | null)?.outerHTML ?? ""; // snapshot the content box
     const scrollEl = blockEl.closest("[data-scroll]") as HTMLElement | null;
     const orig = b.area, min = BLOCKS[b.block].min;
+    const canMerge = BLOCKS[b.block].text && !group; // a text block dropped onto a text frame concatenates
     const startX = e.clientX, startY = e.clientY;
     let moved = false, lastX = startX, lastY = startY, raf = 0, scrollDir = 0;
+
+    // A DIFFERENT text-frame block under the point (merge target), else null.
+    const blockAt = (x: number, y: number): string | null => {
+      if (!canMerge) return null;
+      const el = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest("[data-block-id]") as HTMLElement | null;
+      const id = el?.getAttribute("data-block-id");
+      return id && id !== b.id && el!.getAttribute("data-block-type") === "textFrame" ? id : null;
+    };
 
     // The page grid under a point (ghost/footprint are pointer-events:none so
     // elementFromPoint sees through them to the page).
@@ -86,8 +96,10 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     };
     const apply = (x: number, y: number) => {
       const res = resolve(x, y);
+      const mergeId = blockAt(x, y);
       // group drag: no portal/footprint; the selection translates in place by px delta.
-      setDrag({ id: b.id, kind: "move", x, y, grabX, grabY, w, h, html, fp: group ? null : (res?.fp ?? null), group: group ? selected : null, dx: x - startX, dy: y - startY });
+      // over a merge target: suppress the landing footprint (show the merge highlight instead).
+      setDrag({ id: b.id, kind: "move", x, y, grabX, grabY, w, h, html, fp: group || mergeId ? null : (res?.fp ?? null), group: group ? selected : null, dx: x - startX, dy: y - startY, mergeId });
       if (scrollEl) {
         const sr = scrollEl.getBoundingClientRect();
         scrollDir = y < sr.top + EDGE ? -1 : y > sr.bottom - EDGE ? 1 : 0;
@@ -119,6 +131,8 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
         return;
       }
       if (!selected.includes(b.id)) onSelect(b.id, false); // a fresh single drag selects it
+      const mergeId = blockAt(ev.clientX, ev.clientY);
+      if (mergeId) { onMerge(b.id, mergeId); return; } // dropped onto a text frame → concatenate
       const res = resolve(ev.clientX, ev.clientY);
       if (!res) return; // dropped outside any page → cancel (block stays put)
       if (res.sec === sectionId) onChange(moveBlock(section, b.id, res.area));
@@ -193,7 +207,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
             const offset = dm?.group?.includes(b.id) ? { x: dm.dx, y: dm.dy } : null;
             return (
               <BlockView key={b.id} b={{ ...b, area }} ghosting={d?.kind === "move" && !dm?.group} offset={offset}
-                selected={selected.includes(b.id)} editing={editingId === b.id}
+                mergeTarget={dm?.mergeId === b.id} selected={selected.includes(b.id)} editing={editingId === b.id}
                 onStartMove={(e) => startMove(e, b)}
                 onStartResize={(e, side) => startResize(e, b, side)}
                 onSelect={(additive) => onSelect(b.id, additive)}
@@ -223,10 +237,11 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
   );
 }
 
-function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStartResize, onSelect, onEdit, onReflow, onBreak, onFit, onContent, onDelete }: {
+function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, onStartMove, onStartResize, onSelect, onEdit, onReflow, onBreak, onFit, onContent, onDelete }: {
   b: GridBlock;
   ghosting: boolean;
   offset: { x: number; y: number } | null; // live px translate during a group drag
+  mergeTarget: boolean; // a text block is being dragged onto this frame (highlight it)
   selected: boolean;
   editing: boolean;
   onStartMove: (e: React.PointerEvent) => void;
@@ -270,6 +285,8 @@ function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStar
   }, [editing]);
   return (
     <div
+      data-block-id={b.id}
+      data-block-type={b.block}
       // Always stop the press reaching the sheet (which would deselect/end edit).
       // While editing, do NOT start a block-drag — let ProseMirror handle the
       // pointer so click-drag selects text. Edit ends only on click elsewhere / Esc.
@@ -281,7 +298,8 @@ function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStar
         gridArea: `${rowStart} / ${colStart} / ${rowEnd} / ${colEnd}`, position: "relative",
         cursor: editing ? "text" : "grab",
         margin: blockMargin(b.style), // space between blocks/cols (per-side)
-        outline: selected ? `2px solid ${ACCENT}` : "none", outlineOffset: 1,
+        outline: mergeTarget ? `3px solid ${ACCENT}` : selected ? `2px solid ${ACCENT}` : "none",
+        outlineOffset: 1, boxShadow: mergeTarget ? `inset 0 0 0 100vmax ${ACCENT}18` : undefined,
         opacity: ghosting ? 0.3 : offset ? 0.7 : 1,
         transform: offset ? `translate(${offset.x}px, ${offset.y}px)` : undefined,
         // during a group drag the drag is driven by window listeners, so make the
@@ -292,6 +310,12 @@ function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStar
         userSelect: editing ? "auto" : "none", WebkitUserSelect: editing ? "auto" : "none",
       }}
     >
+      {mergeTarget && (
+        <div style={{ position: "absolute", top: -22, left: "50%", transform: "translateX(-50%)", zIndex: 11, whiteSpace: "nowrap",
+          background: ACCENT, color: "#fff", fontSize: 10, padding: "2px 6px", borderRadius: 3, pointerEvents: "none" }}>
+          Merge into this frame ⑃
+        </div>
+      )}
       {/* per-block custom CSS: same scoped stylesheet + class the PDF uses, so the
           editor and export render it identically (e.g. table cell styling) */}
       {b.style?.customCss && <style dangerouslySetInnerHTML={{ __html: scopeCustomCss(b.style.customCss, `pc-${b.id}`) }} />}

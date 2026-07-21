@@ -6,7 +6,7 @@ import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
 import { BLOCKS, serialize } from "@pagecraft/model";
 import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock } from "./grid/types.ts";
-import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea } from "./grid/ops.ts";
+import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
 import { insertSectionsAfter } from "./api.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
@@ -43,6 +43,7 @@ type Store = {
   fitBlock: (sectionId: string, blockId: string) => void;
   reflowBlock: (sectionId: string, blockId: string) => Promise<void>;
   breakTextFrame: (sectionId: string, blockId: string) => void;
+  mergeBlocks: (sectionId: string, sourceId: string, targetId: string) => void;
   moveBlockToPage: (fromId: string, blockId: string, toId: string, area?: GridArea) => void;
   moveBlocksToPage: (fromId: string, ids: string[], toId: string, dCol: number, dRow: number) => void;
   load: () => Promise<void>;
@@ -228,6 +229,17 @@ export const useStore = create<Store>((set, get) => {
         arr.splice(idx + 1, 0, ...inserted.map((s) => ({ ...s, content: assetsToDisplay(s.content) })));
         return { sections: arr };
       });
+    },
+    // Merge a dropped text block's content into a target text frame, then remove
+    // the source (drop-to-concatenate). Selects the target after.
+    mergeBlocks: (sectionId, sourceId, targetId) => {
+      const { sections, edit } = get();
+      const sec = sections.find((s) => s.id === sectionId);
+      if (!sec || !isGridSection(sec.content)) return;
+      const next = mergeInto(sec.content, sourceId, targetId);
+      if (next === sec.content) return; // nothing merged (non-text source, etc.)
+      edit(sectionId, next);
+      set({ selectedBlockIds: [targetId], editingBlockId: null });
     },
     // Break a text frame into smaller blocks on the SAME page (no new pages, no
     // page-pushing). One block per paragraph; a lone overflowing paragraph is

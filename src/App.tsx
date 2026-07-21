@@ -50,6 +50,7 @@ export function App() {
   const moveBlocksToPage = useStore((s) => s.moveBlocksToPage);
   const reflowBlock = useStore((s) => s.reflowBlock);
   const breakTextFrame = useStore((s) => s.breakTextFrame);
+  const mergeBlocks = useStore((s) => s.mergeBlocks);
   const showGrid = useStore((s) => s.showGrid);
   const toggleGrid = useStore((s) => s.toggleGrid);
   const zoom = useStore((s) => s.zoom);
@@ -186,6 +187,7 @@ export function App() {
                         onEdit={(id) => { setActive(s.id); setEditing(id); }}
                         onReflow={(id) => void reflowBlock(s.id, id)}
                         onBreak={(id) => breakTextFrame(s.id, id)}
+                        onMerge={(sourceId, targetId) => mergeBlocks(s.id, sourceId, targetId)}
                         showGrid={showGrid}
                       />
                     </div>

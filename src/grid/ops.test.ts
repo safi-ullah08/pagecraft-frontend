@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pushDownOverlaps } from "./ops.ts";
+import { pushDownOverlaps, mergeInto } from "./ops.ts";
 import type { GridSection, GridBlock } from "./types.ts";
 
 // run: cd pagecraft-backend && node --import tsx --test ../pagecraft-frontend/src/grid/ops.test.ts
@@ -38,4 +38,26 @@ test("a pushed block clamps at the page bottom instead of leaving the page", () 
   const b = area(out, "B");
   assert.ok(b.rowEnd <= 13, `rowEnd ${b.rowEnd} must stay on the page`);
   assert.equal(b.rowEnd - b.rowStart, 2); // height preserved
+});
+
+// --- mergeInto ---
+const doc = (...ps: string[]) => ({ type: "doc", content: ps.map((t) => ({ type: "paragraph", content: [{ type: "text", text: t }] })) });
+const tblk = (id: string, ...ps: string[]): GridBlock => ({ id, area: { rowStart: 1, colStart: 1, rowEnd: 3, colEnd: 7 }, block: "textFrame", content: doc(...ps) });
+const texts = (s: GridSection, id: string) => (s.blocks.find((b) => b.id === id)!.content as { content: { content: { text: string }[] }[] }).content.map((n) => n.content[0]!.text);
+
+test("mergeInto appends the source's paragraphs into the target and removes the source", () => {
+  const out = mergeInto(sec(tblk("T", "one", "two"), tblk("S", "three")), "S", "T");
+  assert.equal(out.blocks.length, 1); // source gone
+  assert.deepEqual(texts(out, "T"), ["one", "two", "three"]);
+});
+
+test("mergeInto inserts at a given index", () => {
+  const out = mergeInto(sec(tblk("T", "one", "two"), tblk("S", "X")), "S", "T", 1);
+  assert.deepEqual(texts(out, "T"), ["one", "X", "two"]);
+});
+
+test("mergeInto is a no-op for a non-text source (e.g. image)", () => {
+  const img: GridBlock = { id: "I", area: { rowStart: 1, colStart: 1, rowEnd: 3, colEnd: 7 }, block: "image", content: { src: "x" } };
+  const out = mergeInto(sec(tblk("T", "one"), img), "I", "T");
+  assert.equal(out.blocks.length, 2); // nothing merged, nothing removed
 });
