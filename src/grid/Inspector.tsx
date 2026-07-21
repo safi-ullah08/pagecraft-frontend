@@ -155,9 +155,10 @@ function StyleSection({ block, onStyle }: { block: GridBlock; onStyle: (t: Parti
         </div>
       </Field>
       <Field label="Custom CSS">
-        <textarea value={t.customCss ?? ""} placeholder={"transform: rotate(-2deg);\nbox-shadow: 0 6px 20px rgba(0,0,0,.25);"}
-          onChange={(e) => onStyle({ customCss: e.target.value || undefined })} spellCheck={false} rows={3}
+        <textarea value={t.customCss ?? ""} placeholder={"transform: rotate(-2deg);\n/* or target children: */\ntd, th { padding: 8px; border: 1px solid #ccc }"}
+          onChange={(e) => onStyle({ customCss: e.target.value || undefined })} spellCheck={false} rows={4}
           style={{ ...inputStyle, width: "100%", boxSizing: "border-box", fontFamily: "ui-monospace, monospace", fontSize: 11, resize: "vertical" }} />
+        <div style={{ fontSize: 10, color: PALETTE.MUTED, marginTop: 2 }}>Bare declarations style the block; selectors (e.g. <code>td</code>) target its contents.</div>
       </Field>
       {hasAny && (
         <button onClick={() => onStyle({ textColor: undefined, backgroundColor: undefined, fontSize: undefined, fontWeight: undefined, letterSpacing: undefined, opacity: undefined, textAlign: undefined, fontFamily: undefined, customCss: undefined })}

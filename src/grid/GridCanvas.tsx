@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEditor, EditorContent, BubbleMenu, type Editor, type JSONContent } from "@tiptap/react";
-import { extensions, blockStyleProps, blockMargin, renderTypedBlock } from "@pagecraft/model";
+import { extensions, blockStyleProps, blockMargin, renderTypedBlock, scopeCustomCss } from "@pagecraft/model";
 import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
 import { moveBlock, moveBlocks, resizeBlock, fitBlockRows, updateBlockContent, removeBlock, clampArea } from "./ops.ts";
@@ -287,9 +287,12 @@ function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStar
         userSelect: editing ? "auto" : "none", WebkitUserSelect: editing ? "auto" : "none",
       }}
     >
+      {/* per-block custom CSS: same scoped stylesheet + class the PDF uses, so the
+          editor and export render it identically (e.g. table cell styling) */}
+      {b.style?.customCss && <style dangerouslySetInnerHTML={{ __html: scopeCustomCss(b.style.customCss, `pc-${b.id}`) }} />}
       {/* while editing, the block expands to show ALL its text (auto-height,
           overflow visible, elevated over neighbours); it snaps back on exit */}
-      <div ref={contentRef} style={{
+      <div ref={contentRef} className={b.style?.customCss ? `pc-${b.id}` : undefined} style={{
         height: editing ? "auto" : "100%", minHeight: editing ? "100%" : undefined,
         overflow: editing ? "visible" : "hidden",
         background: editing ? "#fff" : undefined, boxShadow: editing ? "0 4px 16px rgba(0,0,0,.18)" : undefined,
