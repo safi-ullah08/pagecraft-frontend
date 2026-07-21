@@ -10,6 +10,7 @@ import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks,
 import { parseBlocks } from "./grid/parseBlocks.ts";
 import { insertSectionsAfter } from "./api.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
+import { splitParagraphSentences } from "./grid/split-inline.ts";
 
 export type Section = { id: string; content: SectionContent; version: number };
 
@@ -318,13 +319,20 @@ export const useStore = create<Store>((set, get) => {
       if (nodes.length >= 2) {
         pieces = nodes.map((n) => ({ ...doc, content: [n] })); // one block per paragraph
       } else {
-        pieces = []; // single paragraph → chunk it by page-fit
-        let rest: JSONContent = doc, guard = 0;
-        while ((rest.content?.length ?? 0) > 0 && guard++ < 100) {
-          const [a, b] = splitTextFrameAt(rest, widthPx, maxHpx, theme);
-          if (!a.content?.length) break;
-          pieces.push(a);
-          rest = b;
+        // single node: split a paragraph into sentences; else chunk by page-fit
+        const only = nodes[0];
+        const sentences = only?.type === "paragraph" ? splitParagraphSentences(only) : only ? [only] : [];
+        if (sentences.length > 1) {
+          pieces = sentences.map((s) => ({ ...doc, content: [s] }));
+        } else {
+          pieces = [];
+          let rest: JSONContent = doc, guard = 0;
+          while ((rest.content?.length ?? 0) > 0 && guard++ < 100) {
+            const [a, b] = splitTextFrameAt(rest, widthPx, maxHpx, theme);
+            if (!a.content?.length) break;
+            pieces.push(a);
+            rest = b;
+          }
         }
       }
       if (pieces.length < 2) return; // nothing to break

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { splitInlineAt } from "./split-inline.ts";
+import { splitInlineAt, splitParagraphSentences } from "./split-inline.ts";
 import type { JSONContent } from "@tiptap/react";
 
 // run: cd pagecraft-backend && node --import tsx --test ../pagecraft-frontend/src/grid/split.test.ts
@@ -28,6 +28,18 @@ test("counts words across multiple text nodes", () => {
   const [a, b] = splitInlineAt(para(text("a b "), text("c d e")), 3);
   assert.equal(words(a).trim(), "a b c"); // 3 words land in A across both nodes
   assert.equal(words(b).trim(), "d e");
+});
+
+test("splitParagraphSentences splits a paragraph into one node per sentence", () => {
+  const out = splitParagraphSentences(para(text("One two. Three four! Five six?")));
+  assert.equal(out.length, 3);
+  assert.equal(words(out[0]!).trim(), "One two.");
+  assert.equal(words(out[2]!).trim(), "Five six?");
+});
+
+test("splitParagraphSentences returns the node unchanged when there's nothing to split", () => {
+  assert.equal(splitParagraphSentences(para(text("no sentence enders here"))).length, 1);
+  assert.equal(splitParagraphSentences(para(text("word"))).length, 1);
 });
 
 test("a non-text inline node goes to the side the boundary has reached", () => {

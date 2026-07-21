@@ -373,8 +373,8 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, onStar
               <button onClick={(e) => { e.stopPropagation(); onReflow(); }} title="Split: keep what fits, flow the rest onto the next page"
                 style={{ height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer", padding: "0 5px" }}>Split ⤵</button>
             )}
-            {/* Break: decompose into separate paragraph blocks on THIS page (no page-push) */}
-            {b.block === "textFrame" && (((b.content as { content?: unknown[] })?.content?.length ?? 0) > 1 || overflow) && (
+            {/* Break: decompose into separate paragraph/sentence blocks on THIS page (no page-push) */}
+            {b.block === "textFrame" && (((b.content as { content?: unknown[] })?.content?.length ?? 0) >= 1) && (
               <button onClick={(e) => { e.stopPropagation(); onBreak(); }} title="Break into separate paragraph blocks on this page"
                 style={{ height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer", padding: "0 5px" }}>Break ⑃</button>
             )}
