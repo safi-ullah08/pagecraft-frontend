@@ -20,7 +20,9 @@ const SCROLL_SPEED = 14; // px/frame while auto-scrolling
 
 type Rect = { left: number; top: number; width: number; height: number };
 type Drag =
-  | { id: string; kind: "move"; x: number; y: number; grabX: number; grabY: number; w: number; h: number; html: string; fp: Rect | null }
+  // group != null → a multi-select drag: every selected block translates by (dx,dy)
+  // live (no portal ghost); single drag floats the one block in the portal.
+  | { id: string; kind: "move"; x: number; y: number; grabX: number; grabY: number; w: number; h: number; html: string; fp: Rect | null; group: string[] | null; dx: number; dy: number }
   | { id: string; kind: "resize"; area: GridArea };
 
 export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSize, selected, onSelect, editingId, onEdit, onReflow, showGrid }: {
@@ -82,7 +84,8 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
     };
     const apply = (x: number, y: number) => {
       const res = resolve(x, y);
-      setDrag({ id: b.id, kind: "move", x, y, grabX, grabY, w, h, html, fp: res?.fp ?? null });
+      // group drag: no portal/footprint; the selection translates in place by px delta.
+      setDrag({ id: b.id, kind: "move", x, y, grabX, grabY, w, h, html, fp: group ? null : (res?.fp ?? null), group: group ? selected : null, dx: x - startX, dy: y - startY });
       if (scrollEl) {
         const sr = scrollEl.getBoundingClientRect();
         scrollDir = y < sr.top + EDGE ? -1 : y > sr.bottom - EDGE ? 1 : 0;
@@ -163,10 +166,13 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
           {showGrid && <div style={{ gridArea: `1 / 1 / ${ROWS + 1} / ${COLS + 1}`, pointerEvents: "none",
             background: "repeating-linear-gradient(to right, transparent 0, transparent calc(100%/12 - 1px), rgba(0,0,0,.05) calc(100%/12 - 1px), rgba(0,0,0,.05) calc(100%/12))" }} />}
           {section.blocks.map((b) => {
+            const dm = drag?.kind === "move" ? drag : null;
             const d = drag?.id === b.id ? drag : null;
             const area = d?.kind === "resize" ? d.area : b.area;
+            // group members translate live; single-drag grabbed block ghosts + floats in the portal.
+            const offset = dm?.group?.includes(b.id) ? { x: dm.dx, y: dm.dy } : null;
             return (
-              <BlockView key={b.id} b={{ ...b, area }} ghosting={d?.kind === "move"}
+              <BlockView key={b.id} b={{ ...b, area }} ghosting={d?.kind === "move" && !dm?.group} offset={offset}
                 selected={selected.includes(b.id)} editing={editingId === b.id}
                 onStartMove={(e) => startMove(e, b)}
                 onStartResize={(e, side) => startResize(e, b, side)}
@@ -181,7 +187,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
       </div>
       {/* floating drag layer: the block travels above every page; footprint shows
           where it will land on the page under the cursor */}
-      {drag?.kind === "move" && createPortal(
+      {drag?.kind === "move" && !drag.group && createPortal(
         <>
           {drag.fp && <div style={{ position: "fixed", left: drag.fp.left, top: drag.fp.top, width: drag.fp.width, height: drag.fp.height,
             pointerEvents: "none", background: `${ACCENT}22`, border: `2px dashed ${ACCENT}`, borderRadius: 2, zIndex: 9998 }} />}
@@ -195,9 +201,10 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
   );
 }
 
-function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize, onSelect, onEdit, onReflow, onContent, onDelete }: {
+function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStartResize, onSelect, onEdit, onReflow, onContent, onDelete }: {
   b: GridBlock;
   ghosting: boolean;
+  offset: { x: number; y: number } | null; // live px translate during a group drag
   selected: boolean;
   editing: boolean;
   onStartMove: (e: React.PointerEvent) => void;
@@ -242,7 +249,9 @@ function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize,
         cursor: editing ? "text" : "grab",
         margin: blockMargin(b.style), // space between blocks/cols (per-side)
         outline: selected ? `2px solid ${ACCENT}` : "none", outlineOffset: 1,
-        opacity: ghosting ? 0.3 : 1, zIndex: editing ? 1000 : zBase,
+        opacity: ghosting ? 0.3 : offset ? 0.7 : 1,
+        transform: offset ? `translate(${offset.x}px, ${offset.y}px)` : undefined,
+        zIndex: editing ? 1000 : offset ? 900 : zBase,
         userSelect: editing ? "auto" : "none", WebkitUserSelect: editing ? "auto" : "none",
       }}
     >
@@ -267,8 +276,17 @@ function BlockView({ b, ghosting, selected, editing, onStartMove, onStartResize,
           <ResizeHandle side="right" onStart={onStartResize} />
           <ResizeHandle side="bottom" onStart={onStartResize} />
           <ResizeHandle side="corner" onStart={onStartResize} />
-          <button onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onDelete(); }} title="Remove block"
-            style={{ position: "absolute", top: -10, right: -10, width: 20, height: 20, borderRadius: "50%", background: ACCENT, color: "#fff", border: "none", fontSize: 12, lineHeight: 1, cursor: "pointer", zIndex: 10, boxShadow: "0 1px 3px rgba(0,0,0,.4)" }}>×</button>
+          {/* Floating control bar hovering just above the block's top border — the
+              per-block controls live here (not only in the side Inspector). */}
+          <div onPointerDown={(e) => e.stopPropagation()}
+            style={{ position: "absolute", top: -26, right: 0, display: "flex", gap: 2, alignItems: "center",
+              padding: "2px 3px", background: ACCENT, borderRadius: 4, zIndex: 10, boxShadow: "0 1px 4px rgba(0,0,0,.35)" }}>
+            <span onPointerDown={onStartMove} title="Drag to move"
+              style={{ cursor: "grab", color: "#fff", fontSize: 12, lineHeight: 1, padding: "2px 3px" }}>✥</span>
+            <span style={{ color: "#fff", fontSize: 10, opacity: 0.85, padding: "0 2px", textTransform: "capitalize" }}>{b.block}</span>
+            <button onClick={(e) => { e.stopPropagation(); onDelete(); }} title="Remove block"
+              style={{ width: 18, height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 12, lineHeight: 1, cursor: "pointer" }}>×</button>
+          </div>
         </>
       )}
     </div>
