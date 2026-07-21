@@ -2,7 +2,7 @@
 
 import { COLS, ROWS, isGridSection, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
-import { PAGE_SIZES, PAGE_MARGIN_MM, type PageSize } from "../pages.ts";
+import { PAGE_MARGIN_MM, type PageDims } from "../pages.ts";
 import type { SectionContent } from "../api.ts";
 
 // Read-only wireframe of the document layout (the "Placeholder preview" tab): grid
@@ -10,8 +10,8 @@ import type { SectionContent } from "../api.ts";
 // single "Flowing text" sheet. This is the template/layout view — the future home
 // of P3 {{placeholder}} blocks. ponytail: generic labeled boxes, not per-block
 // ghosts.
-export function PlaceholderView({ sections, pageSize }: { sections: SectionContent[]; pageSize: PageSize }) {
-  const dim = PAGE_SIZES[pageSize];
+export function PlaceholderView({ sections, page }: { sections: SectionContent[]; page: PageDims }) {
+  const dim = page;
   const sheet: React.CSSProperties = {
     width: `${dim.w}mm`, height: `${dim.h}mm`, boxSizing: "border-box",
     padding: `${PAGE_MARGIN_MM}mm`, position: "relative", margin: "0 auto 24px",

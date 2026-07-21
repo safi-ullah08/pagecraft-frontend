@@ -2,7 +2,7 @@ import { useState } from "react";
 import { BLOCKS, BLOCK_ORDER, type BlockCategory, type BlockType } from "@pagecraft/model";
 import { useStore } from "../store.ts";
 import { themeNames } from "../themes.ts";
-import { PAGE_SIZES, type PageSize } from "../pages.ts";
+import { PAGE_SIZES, presetOf, type PageSize } from "../pages.ts";
 import { COLS, ROWS } from "./types.ts";
 import { Inspector } from "./Inspector.tsx";
 import { Section, Field, Select, PALETTE } from "./controls.tsx";
@@ -122,15 +122,16 @@ function BlockTile({ type }: { type: BlockType }) {
 function DesignPanel() {
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
-  const pageSize = useStore((s) => s.pageSize);
-  const setPageSize = useStore((s) => s.setPageSize);
+  const page = useStore((s) => s.page);
+  const setPage = useStore((s) => s.setPage);
+  const preset = presetOf(page);
   return (
     <div>
       <Section title="Theme">
         <Field label="Theme"><Select value={theme} options={themeNames().map((t) => ({ value: t, label: t }))} onChange={(v) => setTheme(v)} /></Field>
       </Section>
       <Section title="Page">
-        <Field label="Size"><Select value={pageSize} options={Object.keys(PAGE_SIZES).map((p) => ({ value: p, label: p }))} onChange={(v) => setPageSize(v as PageSize)} /></Field>
+        <Field label="Size"><Select value={preset ?? "custom"} options={[...Object.keys(PAGE_SIZES).map((p) => ({ value: p, label: p })), ...(preset ? [] : [{ value: "custom", label: `Custom ${page.w}×${page.h}mm` }])]} onChange={(v) => { if (v !== "custom") setPage(PAGE_SIZES[v as PageSize]); }} /></Field>
       </Section>
     </div>
   );

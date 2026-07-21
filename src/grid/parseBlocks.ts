@@ -2,7 +2,7 @@ import { serialize, parseBlocks as modelParseBlocks } from "@pagecraft/model";
 import type { JSONContent } from "@tiptap/react";
 import { themeSkinCss } from "../themes.ts";
 import { scopeThemeCss } from "../scope-css.ts";
-import { PAGE_SIZES, PAGE_MARGIN_MM, type PageSize } from "../pages.ts";
+import { PAGE_MARGIN_MM, type PageDims } from "../pages.ts";
 import { ROWS, COLS, type GridSection } from "./types.ts";
 
 // Browser side of flow→grid. The shared algorithm (mapping + pagination) lives in
@@ -32,8 +32,7 @@ function preloadDims(srcs: string[]): Promise<Map<string, { w: number; h: number
   ).then(() => map);
 }
 
-export async function parseBlocks(chapters: JSONContent[], theme: string, pageSize: PageSize): Promise<GridSection[]> {
-  const dim = PAGE_SIZES[pageSize];
+export async function parseBlocks(chapters: JSONContent[], theme: string, dim: PageDims): Promise<GridSection[]> {
   const gap = 4 * MM; // must match the editor grid gap (GridCanvas) and gridBaseCss --pc-gap
   const contentW = (dim.w - 2 * PAGE_MARGIN_MM) * MM;
   const contentH = (dim.h - 2 * PAGE_MARGIN_MM) * MM;

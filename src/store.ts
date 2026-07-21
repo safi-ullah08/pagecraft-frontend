@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { DEFAULT_THEME } from "./themes.ts";
-import { type PageSize } from "./pages.ts";
+import { A4, type PageDims } from "./pages.ts";
 import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
 import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
@@ -15,7 +15,7 @@ export type Section = { id: string; content: SectionContent; version: number };
 
 type Store = {
   theme: string;
-  pageSize: PageSize; // editor page-sheet size (configurable)
+  page: PageDims; // editor page size (mm); loaded from the doc, matches the PDF
   documentId: string | null;
   loading: boolean; // true until load (incl. any auto flow→grid conversion) settles
   sections: Section[]; // ordered; ALL rendered at once (continuous scroll)
@@ -26,7 +26,7 @@ type Store = {
   showGrid: boolean; // canvas grid-guide overlay
   zoom: number; // editor zoom (1 = 100%)
   setTheme: (t: string) => void;
-  setPageSize: (p: PageSize) => void;
+  setPage: (p: PageDims) => void;
   setActive: (id: string) => void;
   selectBlock: (id: string | null, additive?: boolean) => void;
   selectAll: () => void;
@@ -139,7 +139,7 @@ export const useStore = create<Store>((set, get) => {
 
   return {
     theme: DEFAULT_THEME,
-    pageSize: "A4",
+    page: A4,
     documentId: null,
     loading: true,
     sections: [],
@@ -153,7 +153,7 @@ export const useStore = create<Store>((set, get) => {
     // switching is NOT persisted back yet (export/preview honour it live). DB
     // theme persistence lands with the theme/template builder phase.
     setTheme: (theme) => set({ theme }),
-    setPageSize: (pageSize) => set({ pageSize }),
+    setPage: (page) => set({ page }),
     setActive: (activeId) => set({ activeId }),
     // Select a block. additive (shift) toggles it in the multi-selection; otherwise
     // it becomes the sole selection. null clears. Selecting exits inline edit.
@@ -230,7 +230,7 @@ export const useStore = create<Store>((set, get) => {
     // block's column width and set rowEnd to the whole rows it needs (clamped to the
     // page from its rowStart). Text/typed blocks only; images/dividers have no flow.
     fitBlock: (sectionId, blockId) => {
-      const { sections, theme, pageSize, edit } = get();
+      const { sections, theme, page, edit } = get();
       const sec = sections.find((s) => s.id === sectionId);
       if (!sec || !isGridSection(sec.content)) return;
       const block = sec.content.blocks.find((b) => b.id === blockId);
@@ -242,8 +242,8 @@ export const useStore = create<Store>((set, get) => {
       // by vertical padding + margin.
       const padX = sidesX(block.style?.padding), padY = sidesY(block.style?.padding);
       const marX = sidesX(block.style?.margin), marY = sidesY(block.style?.margin);
-      const h = measureHtmlHeight(html, blockWidthPx(cols, pageSize) - marX - padX, theme) + padY + marY;
-      const rows = heightToRows(h, pageSize);
+      const h = measureHtmlHeight(html, blockWidthPx(cols, page) - marX - padX, theme) + padY + marY;
+      const rows = heightToRows(h, page);
       const min = BLOCKS[block.block].min.rows;
       const rowStart = block.area.rowStart;
       const rowEnd = rowStart + Math.max(min, Math.min(rows, ROWS - rowStart + 1));
@@ -253,7 +253,7 @@ export const useStore = create<Store>((set, get) => {
     // page(s) after this one. Manual only now — no longer auto-runs on edit-exit.
     reflowBlock: async (sectionId, blockId) => {
       get().fitBlock(sectionId, blockId); // grow on the page first
-      const { sections, theme, pageSize, documentId } = get();
+      const { sections, theme, page, documentId } = get();
       if (!documentId) return;
       const sec = sections.find((s) => s.id === sectionId);
       if (!sec || !isGridSection(sec.content)) return;
@@ -264,8 +264,8 @@ export const useStore = create<Store>((set, get) => {
       if (nodes.length < 1) return;
       const cols = block.area.colEnd - block.area.colStart;
       const rows = block.area.rowEnd - block.area.rowStart;
-      const widthPx = blockWidthPx(cols, pageSize) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
-      const maxHpx = blockHeightPx(rows, pageSize) - sidesY(block.style?.padding) - sidesY(block.style?.margin);
+      const widthPx = blockWidthPx(cols, page) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
+      const maxHpx = blockHeightPx(rows, page) - sidesY(block.style?.padding) - sidesY(block.style?.margin);
       // splits between paragraphs, or WITHIN a paragraph (word boundary) when a
       // single long paragraph overflows — so any overflowing text frame can spill.
       const [docA, docB] = splitTextFrameAt(doc, widthPx, maxHpx, theme);
@@ -274,7 +274,7 @@ export const useStore = create<Store>((set, get) => {
       get().edit(sectionId, updateBlockContent(sec.content, blockId, docA as SectionContent));
       get().fitBlock(sectionId, blockId);
       // paginate the overflow into new pages and insert them right after this one
-      const pages = (await parseBlocks([docB], theme, pageSize)).map((p) => assetsToCanonical(p));
+      const pages = (await parseBlocks([docB], theme, page)).map((p) => assetsToCanonical(p));
       const { sections: inserted } = await insertSectionsAfter(documentId, sectionId, pages);
       set((st) => {
         const arr = [...st.sections];
@@ -299,7 +299,7 @@ export const useStore = create<Store>((set, get) => {
     // chunked by page-fit so it still breaks into pieces. Each piece is fit-sized
     // and stacked below the previous — the user then arranges them freely.
     breakTextFrame: (sectionId, blockId) => {
-      const { sections, theme, pageSize, edit } = get();
+      const { sections, theme, page, edit } = get();
       const sec = sections.find((s) => s.id === sectionId);
       if (!sec || !isGridSection(sec.content)) return;
       const block = sec.content.blocks.find((b) => b.id === blockId);
@@ -308,9 +308,9 @@ export const useStore = create<Store>((set, get) => {
       const nodes = doc.content ?? [];
       const cols = block.area.colEnd - block.area.colStart;
       const rows = block.area.rowEnd - block.area.rowStart;
-      const widthPx = blockWidthPx(cols, pageSize) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
+      const widthPx = blockWidthPx(cols, page) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
       const padY = sidesY(block.style?.padding) + sidesY(block.style?.margin);
-      const maxHpx = blockHeightPx(rows, pageSize) - padY;
+      const maxHpx = blockHeightPx(rows, page) - padY;
 
       let pieces: JSONContent[];
       if (nodes.length >= 2) {
@@ -331,7 +331,7 @@ export const useStore = create<Store>((set, get) => {
       const newBlocks: GridBlock[] = pieces.map((piece) => {
         const h = measureHtmlHeight(serialize(piece), widthPx, theme) + padY;
         const area = clampArea(
-          { rowStart: row, colStart: block.area.colStart, rowEnd: row + heightToRows(h, pageSize), colEnd: block.area.colEnd },
+          { rowStart: row, colStart: block.area.colStart, rowEnd: row + heightToRows(h, page), colEnd: block.area.colEnd },
           BLOCKS.textFrame.min,
         );
         row = area.rowEnd;
@@ -392,7 +392,9 @@ export const useStore = create<Store>((set, get) => {
         const doc = await getDocument(id);
         // asset:// -> resolver URL so the editor can display imported images
         const sections = doc.sections.map((s) => ({ ...s, content: assetsToDisplay(s.content) }));
-        set({ documentId: id, sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME });
+        // page size comes from the document (e.g. a docx's page size); else A4
+        const page = doc.pageWidthMm && doc.pageHeightMm ? { w: doc.pageWidthMm, h: doc.pageHeightMm } : A4;
+        set({ documentId: id, sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME, page });
         // import path: flow is only a landing format — auto-paginate into grid on
         // first open, then it's grid forever (convert persists, so idempotent).
         if (sections.some((s) => !isGridSection(s.content))) {
@@ -444,13 +446,13 @@ export const useStore = create<Store>((set, get) => {
     // flow → grid (model A): measure/paginate the flow chapters in the browser,
     // then atomically replace the doc's sections with the resulting grid pages.
     convertToGrid: async () => {
-      const { documentId, sections, theme, pageSize } = get();
+      const { documentId, sections, theme, page } = get();
       if (!documentId) return;
       // Keep display URLs here so parseBlocks can LOAD each image to read its natural
       // size; canonicalize (→ asset://) only the resulting pages before persisting.
       const chapters = sections.map((s) => s.content).filter((c) => !isGridSection(c)) as JSONContent[];
       if (chapters.length === 0) return; // already all grid
-      const pages = (await parseBlocks(chapters, theme, pageSize)).map((p) => assetsToCanonical(p));
+      const pages = (await parseBlocks(chapters, theme, page)).map((p) => assetsToCanonical(p));
       const { sections: fresh } = await convertDocument(documentId, pages);
       set({
         sections: fresh.map((s) => ({ ...s, content: assetsToDisplay(s.content) })),

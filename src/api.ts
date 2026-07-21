@@ -28,7 +28,7 @@ async function authedFetch(input: string, init: RequestInit = {}) {
 // self-describes (grid = { type:"grid", … }). Both round-trip through the same PUT.
 export type SectionContent = JSONContent | GridSection;
 export type Section = { id: string; content: SectionContent; version: number };
-export type Document = { id: string; title: string; theme: string; sections: Section[] };
+export type Document = { id: string; title: string; theme: string; sections: Section[]; pageWidthMm?: number | null; pageHeightMm?: number | null };
 
 export async function createDocument(title = "Untitled") {
   const res = await authedFetch("/api/documents", {

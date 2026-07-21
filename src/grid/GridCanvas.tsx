@@ -5,7 +5,7 @@ import { extensions, blockStyleProps, blockMargin, renderTypedBlock, scopeCustom
 import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
 import { moveBlock, moveBlocks, resizeBlock, fitBlockRows, pushDownOverlaps, updateBlockContent, removeBlock, clampArea } from "./ops.ts";
-import { PAGE_SIZES, PAGE_MARGIN_MM, type PageSize } from "../pages.ts";
+import { PAGE_MARGIN_MM, type PageDims } from "../pages.ts";
 
 // Recreated grid designer with temp/src's interaction feel on OUR stack:
 // single click = SELECT, double click = EDIT (inline Tiptap); the whole block is
@@ -25,13 +25,13 @@ type Drag =
   | { id: string; kind: "move"; x: number; y: number; grabX: number; grabY: number; w: number; h: number; html: string; fp: Rect | null; group: string[] | null; dx: number; dy: number; mergeId: string | null; mergeLine: { left: number; right: number; top: number } | null }
   | { id: string; kind: "resize"; area: GridArea };
 
-export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveGroupAcross, pageSize, selected, onSelect, editingId, onEdit, onReflow, onBreak, onMerge, showGrid }: {
+export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveGroupAcross, selected, onSelect, editingId, onEdit, onReflow, onBreak, onMerge, page, showGrid }: {
   section: GridSection;
   sectionId: string;
   onChange: (s: GridSection) => void;
   onMoveAcross: (blockId: string, toSectionId: string, area: GridArea) => void;
   onMoveGroupAcross: (ids: string[], toSectionId: string, dCol: number, dRow: number) => void;
-  pageSize: PageSize;
+  page: PageDims;
   selected: string[]; // ids selected in this section (multi-select)
   onSelect: (id: string | null, additive?: boolean) => void;
   editingId: string | null;
@@ -41,7 +41,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
   onMerge: (sourceId: string, targetId: string, atIndex: number) => void; // drop a text block onto a text frame → concatenate at index
   showGrid: boolean;
 }) {
-  const dim = PAGE_SIZES[pageSize];
+  const dim = page;
   const gridRef = useRef<HTMLDivElement>(null);
   // Live preview kept LOCAL so a drag re-renders only this canvas, not every Tiptap
   // editor. The ghost + footprint render into a body-level portal (above all pages).

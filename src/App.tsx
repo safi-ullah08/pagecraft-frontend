@@ -9,7 +9,7 @@ import { ImportBar } from "./components/ImportBar.tsx";
 import { useStore } from "./store.ts";
 import { themeSkinCss } from "./themes.ts";
 import { scopeThemeCss } from "./scope-css.ts";
-import { PAGE_SIZES, PAGE_MARGIN_MM } from "./pages.ts";
+import { PAGE_MARGIN_MM } from "./pages.ts";
 import { isGridSection, emptyGridSection } from "./grid/types.ts";
 import { GridCanvas } from "./grid/GridCanvas.tsx";
 import { ControlsPanel } from "./grid/ControlsPanel.tsx";
@@ -30,7 +30,7 @@ export function App() {
   const load = useStore((s) => s.load);
   const documentId = useStore((s) => s.documentId);
   const theme = useStore((s) => s.theme);
-  const pageSize = useStore((s) => s.pageSize);
+  const page = useStore((s) => s.page);
   const edit = useStore((s) => s.edit);
   const setActive = useStore((s) => s.setActive);
   const sections = useStore((s) => s.sections);
@@ -99,7 +99,7 @@ export function App() {
     }
   }, [theme]);
 
-  const dim = PAGE_SIZES[pageSize];
+  const dim = page;
   const sheetCss = `
 .page-sheet { width: ${dim.w}mm; box-sizing: border-box; margin: 0 auto 24px; box-shadow: 0 1px 10px rgba(0,0,0,.28); overflow: hidden; background: #fff; }
 .page-sheet > .editor-surface { min-height: ${dim.h}mm; box-sizing: border-box; padding: ${PAGE_MARGIN_MM}mm; }
@@ -177,7 +177,7 @@ export function App() {
           ) : tab === "pdf" ? (
             <Preview sections={contents} theme={theme} />
           ) : tab === "placeholder" ? (
-            <PlaceholderView sections={contents} pageSize={pageSize} />
+            <PlaceholderView sections={contents} page={page} />
           ) : (
             // Editor: sections stacked (flow -> page sheet, grid -> canvas) with the
             // block Inspector docked right when the active section is a grid.
@@ -194,7 +194,7 @@ export function App() {
                         onChange={(next) => edit(s.id, next)}
                         onMoveAcross={(blockId, toId, area) => moveBlockToPage(s.id, blockId, toId, area)}
                         onMoveGroupAcross={(ids, toId, dCol, dRow) => moveBlocksToPage(s.id, ids, toId, dCol, dRow)}
-                        pageSize={pageSize}
+                        page={page}
                         selected={activeId === s.id ? selectedBlockIds : []}
                         onSelect={(id, additive) => { setActive(s.id); selectBlock(id, additive); }}
                         editingId={activeId === s.id ? editingBlockId : null}

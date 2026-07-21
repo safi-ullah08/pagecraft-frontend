@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { BLOCKS } from "@pagecraft/model";
 import { useStore } from "../store.ts";
 import { isGridSection } from "../grid/types.ts";
-import { PAGE_SIZES } from "../pages.ts";
+
 import type { SectionContent } from "../api.ts";
 
 // Page/section list for the loaded document. Each entry is a mini layout preview
@@ -45,8 +45,7 @@ export function ChapterNav() {
   const setActive = useStore((s) => s.setActive);
   const addPage = useStore((s) => s.addPage);
   const removePage = useStore((s) => s.removePage);
-  const pageSize = useStore((s) => s.pageSize);
-  const dim = PAGE_SIZES[pageSize];
+  const dim = useStore((s) => s.page);
   const aspect = dim.h / dim.w;
 
   // keep the active page's thumbnail in view when it changes (e.g. you clicked a

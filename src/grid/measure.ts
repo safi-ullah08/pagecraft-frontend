@@ -2,7 +2,7 @@ import { serialize, renderTypedBlock, type SideValues } from "@pagecraft/model";
 import type { JSONContent } from "@tiptap/react";
 import { themeSkinCss } from "../themes.ts";
 import { scopeThemeCss } from "../scope-css.ts";
-import { PAGE_SIZES, PAGE_MARGIN_MM, type PageSize } from "../pages.ts";
+import { PAGE_MARGIN_MM, type PageDims } from "../pages.ts";
 import { COLS, ROWS, type GridBlock } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
 import { splitInlineAt, countWords } from "./split-inline.ts";
@@ -27,8 +27,7 @@ export function sidesX(v?: number | SideValues): number { return typeof v === "n
 export function sidesY(v?: number | SideValues): number { return typeof v === "number" ? 2 * v : v ? (v.top ?? 0) + (v.bottom ?? 0) : 0; }
 
 // px content width of a block spanning `cols` columns
-export function blockWidthPx(cols: number, pageSize: PageSize): number {
-  const dim = PAGE_SIZES[pageSize];
+export function blockWidthPx(cols: number, dim: PageDims): number {
   const gap = GAP_MM * MM;
   const contentW = (dim.w - 2 * PAGE_MARGIN_MM) * MM;
   const colW = (contentW - (COLS - 1) * gap) / COLS;
@@ -36,8 +35,7 @@ export function blockWidthPx(cols: number, pageSize: PageSize): number {
 }
 
 // rendered px height of a block spanning `rows` rows (accounts for row gaps)
-export function blockHeightPx(rows: number, pageSize: PageSize): number {
-  const dim = PAGE_SIZES[pageSize];
+export function blockHeightPx(rows: number, dim: PageDims): number {
   const gap = GAP_MM * MM;
   const contentH = (dim.h - 2 * PAGE_MARGIN_MM) * MM;
   const rowH = (contentH - (ROWS - 1) * gap) / ROWS;
@@ -85,8 +83,7 @@ export function splitTextFrameAt(doc: JSONContent, widthPx: number, maxHpx: numb
 }
 
 // whole rows needed to hold `heightPx` of content (accounts for row gaps)
-export function heightToRows(heightPx: number, pageSize: PageSize): number {
-  const dim = PAGE_SIZES[pageSize];
+export function heightToRows(heightPx: number, dim: PageDims): number {
   const gap = GAP_MM * MM;
   const contentH = (dim.h - 2 * PAGE_MARGIN_MM) * MM;
   const rowH = (contentH - (ROWS - 1) * gap) / ROWS;
