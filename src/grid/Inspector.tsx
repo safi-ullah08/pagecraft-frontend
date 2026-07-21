@@ -86,7 +86,7 @@ export function Inspector() {
           <BoxControl value={block.style?.padding} onChange={(v) => apply(updateBlockStyle(section, block.id, { padding: v }))} />
         </Field>
         <Field label="Margin (space around block)">
-          <BoxControl value={block.style?.margin} min={-32} onChange={(v) => apply(updateBlockStyle(section, block.id, { margin: v }))} />
+          <BoxControl value={block.style?.margin} onChange={(v) => apply(updateBlockStyle(section, block.id, { margin: v }))} />
         </Field>
       </Section>
       <StyleSection block={block} onStyle={(t) => apply(updateBlockStyle(section, block.id, t))} />
@@ -170,11 +170,9 @@ function StyleSection({ block, onStyle }: { block: GridBlock; onStyle: (t: Parti
   );
 }
 
-// Per-side box editor (top/right/bottom/left) for padding & margin, as sliders
-// with a live value readout. A side set to 0 is dropped, and all-zero clears the
-// token. `min` is 0 for padding; margin passes a negative min to allow pull-in.
-const BOX_MAX = 64;
-function BoxControl({ value, onChange, min = 0 }: { value?: number | SideValues; onChange: (v: SideValues | undefined) => void; min?: number }) {
+// Per-side box editor (top/right/bottom/left) for padding & margin. Negatives are
+// allowed; a side set to 0 is dropped, and all-zero clears the token.
+function BoxControl({ value, onChange }: { value?: number | SideValues; onChange: (v: SideValues | undefined) => void }) {
   const cur: SideValues = typeof value === "number" ? { top: value, right: value, bottom: value, left: value } : (value ?? {});
   const set = (side: keyof SideValues, n: number) => {
     const next: SideValues = { ...cur, [side]: n || undefined };
@@ -183,13 +181,13 @@ function BoxControl({ value, onChange, min = 0 }: { value?: number | SideValues;
   };
   const cell = (side: keyof SideValues, label: string) => (
     <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: 10, color: PALETTE.MUTED }}>
-      <span style={{ display: "flex", justifyContent: "space-between" }}><span>{label}</span><span style={{ color: PALETTE.TEXT }}>{cur[side] ?? 0}</span></span>
-      <input type="range" min={min} max={BOX_MAX} step={1} value={cur[side] ?? 0} onChange={(e) => set(side, Number(e.target.value))}
-        style={{ width: "100%", accentColor: PALETTE.ACCENT }} />
+      {label}
+      <input type="number" value={cur[side] ?? 0} onChange={(e) => set(side, Number(e.target.value))}
+        style={{ ...inputStyle, padding: "4px 6px", width: "100%", boxSizing: "border-box" }} />
     </label>
   );
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
       {cell("top", "Top")}{cell("right", "Right")}{cell("bottom", "Bottom")}{cell("left", "Left")}
     </div>
   );
