@@ -47,6 +47,7 @@ export function App() {
   const editingBlockId = useStore((s) => s.editingBlockId);
   const setEditing = useStore((s) => s.setEditing);
   const moveBlockToPage = useStore((s) => s.moveBlockToPage);
+  const moveBlocksToPage = useStore((s) => s.moveBlocksToPage);
   const reflowBlock = useStore((s) => s.reflowBlock);
   const showGrid = useStore((s) => s.showGrid);
   const toggleGrid = useStore((s) => s.toggleGrid);
@@ -176,6 +177,7 @@ export function App() {
                         sectionId={s.id}
                         onChange={(next) => edit(s.id, next)}
                         onMoveAcross={(blockId, toId, area) => moveBlockToPage(s.id, blockId, toId, area)}
+                        onMoveGroupAcross={(ids, toId, dCol, dRow) => moveBlocksToPage(s.id, ids, toId, dCol, dRow)}
                         pageSize={pageSize}
                         selected={activeId === s.id ? selectedBlockIds : []}
                         onSelect={(id, additive) => { setActive(s.id); selectBlock(id, additive); }}

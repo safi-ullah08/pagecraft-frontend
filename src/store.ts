@@ -6,7 +6,7 @@ import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
 import { BLOCKS, splitDocAt } from "@pagecraft/model";
 import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock } from "./grid/types.ts";
-import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks } from "./grid/ops.ts";
+import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitIndex } from "./grid/measure.ts";
 import { insertSectionsAfter } from "./api.ts";
@@ -43,6 +43,7 @@ type Store = {
   fitBlock: (sectionId: string, blockId: string) => void;
   reflowBlock: (sectionId: string, blockId: string) => Promise<void>;
   moveBlockToPage: (fromId: string, blockId: string, toId: string, area?: GridArea) => void;
+  moveBlocksToPage: (fromId: string, ids: string[], toId: string, dCol: number, dRow: number) => void;
   load: () => Promise<void>;
   edit: (id: string, content: SectionContent) => void;
   addPage: () => Promise<void>;
@@ -257,6 +258,23 @@ export const useStore = create<Store>((set, get) => {
       edit(fromId, { ...from.content, blocks: from.content.blocks.filter((b) => b.id !== blockId) });
       edit(toId, { ...to.content, blocks: [...to.content.blocks, moved] });
       set({ activeId: toId, selectedBlockIds: [blockId] });
+    },
+    // Group cross-page move: relocate every selected block to another page, each
+    // shifted by the same cell delta (preserves the selection's relative layout).
+    moveBlocksToPage: (fromId, ids, toId, dCol, dRow) => {
+      if (fromId === toId || !ids.length) return;
+      const { sections, edit } = get();
+      const from = sections.find((s) => s.id === fromId);
+      const to = sections.find((s) => s.id === toId);
+      if (!from || !to || !isGridSection(from.content) || !isGridSection(to.content)) return;
+      const moving = new Set(ids);
+      const shifted = from.content.blocks
+        .filter((b) => moving.has(b.id))
+        .map((b) => ({ ...b, area: clampArea({ rowStart: b.area.rowStart + dRow, colStart: b.area.colStart + dCol, rowEnd: b.area.rowEnd + dRow, colEnd: b.area.colEnd + dCol }, BLOCKS[b.block].min) }));
+      if (!shifted.length) return;
+      edit(fromId, { ...from.content, blocks: from.content.blocks.filter((b) => !moving.has(b.id)) });
+      edit(toId, { ...to.content, blocks: [...to.content.blocks, ...shifted] });
+      set({ activeId: toId, selectedBlockIds: shifted.map((b) => b.id) });
     },
     load: async () => {
       if (loadStarted) return;

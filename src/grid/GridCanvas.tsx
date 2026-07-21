@@ -25,11 +25,12 @@ type Drag =
   | { id: string; kind: "move"; x: number; y: number; grabX: number; grabY: number; w: number; h: number; html: string; fp: Rect | null; group: string[] | null; dx: number; dy: number }
   | { id: string; kind: "resize"; area: GridArea };
 
-export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSize, selected, onSelect, editingId, onEdit, onReflow, showGrid }: {
+export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveGroupAcross, pageSize, selected, onSelect, editingId, onEdit, onReflow, showGrid }: {
   section: GridSection;
   sectionId: string;
   onChange: (s: GridSection) => void;
   onMoveAcross: (blockId: string, toSectionId: string, area: GridArea) => void;
+  onMoveGroupAcross: (ids: string[], toSectionId: string, dCol: number, dRow: number) => void;
   pageSize: PageSize;
   selected: string[]; // ids selected in this section (multi-select)
   onSelect: (id: string | null, additive?: boolean) => void;
@@ -106,11 +107,14 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, pageSiz
       if (raf) cancelAnimationFrame(raf);
       setDrag(null);
       if (!moved) { onSelect(b.id, shift); return; } // click: shift toggles, else single-select
-      if (group) { // move the whole selection by the same cell delta (same page)
-        const gr = gridRef.current!.getBoundingClientRect();
-        const dc = Math.round((ev.clientX - startX) / (gr.width / COLS));
-        const dr = Math.round((ev.clientY - startY) / (gr.height / ROWS));
-        onChange(moveBlocks(section, selected, dc, dr));
+      if (group) {
+        // Whole-selection move by the grabbed block's snapped cell delta. Route to
+        // the page under the cursor: same page → moveBlocks, other page → group cross-page.
+        const res = resolve(ev.clientX, ev.clientY);
+        if (!res) return; // dropped outside any page → cancel
+        const dc = res.area.colStart - orig.colStart, dr = res.area.rowStart - orig.rowStart;
+        if (res.sec === sectionId) onChange(moveBlocks(section, selected, dc, dr));
+        else onMoveGroupAcross(selected, res.sec, dc, dr);
         return;
       }
       if (!selected.includes(b.id)) onSelect(b.id, false); // a fresh single drag selects it
@@ -275,6 +279,10 @@ function BlockView({ b, ghosting, offset, selected, editing, onStartMove, onStar
         outline: selected ? `2px solid ${ACCENT}` : "none", outlineOffset: 1,
         opacity: ghosting ? 0.3 : offset ? 0.7 : 1,
         transform: offset ? `translate(${offset.x}px, ${offset.y}px)` : undefined,
+        // during a group drag the drag is driven by window listeners, so make the
+        // floating copies pointer-transparent — else they'd block elementFromPoint
+        // from seeing the target page grid under the cursor (cross-page detection).
+        pointerEvents: offset ? "none" : undefined,
         zIndex: editing ? 1000 : offset ? 900 : zBase,
         userSelect: editing ? "auto" : "none", WebkitUserSelect: editing ? "auto" : "none",
       }}
