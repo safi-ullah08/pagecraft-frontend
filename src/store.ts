@@ -4,12 +4,11 @@ import { type PageSize } from "./pages.ts";
 import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
 import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
-import { BLOCKS } from "@pagecraft/model";
+import { BLOCKS, serialize } from "@pagecraft/model";
 import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock } from "./grid/types.ts";
-import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea } from "./grid/ops.ts";
+import { addBlock as opsAddBlock, resizeBlock, removeBlocks, cloneBlocks, clampArea } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
-import { insertSectionsAfter } from "./api.ts";
 
 export type Section = { id: string; content: SectionContent; version: number };
 
@@ -41,7 +40,7 @@ type Store = {
   addBlock: (type: BlockType) => void;
   addBlockAt: (type: BlockType, toId: string, area: GridArea) => void;
   fitBlock: (sectionId: string, blockId: string) => void;
-  reflowBlock: (sectionId: string, blockId: string) => Promise<void>;
+  breakTextFrame: (sectionId: string, blockId: string) => void;
   moveBlockToPage: (fromId: string, blockId: string, toId: string, area?: GridArea) => void;
   moveBlocksToPage: (fromId: string, ids: string[], toId: string, dCol: number, dRow: number) => void;
   load: () => Promise<void>;
@@ -154,14 +153,9 @@ export const useStore = create<Store>((set, get) => {
       set({ selectedBlockIds: clones.map((c) => c.id), editingBlockId: null });
     },
     setEditing: (editingBlockId) => {
-      // Leaving a text FRAME → reflow it: grow to fit what you typed, and if it
-      // still overflows the page, break the overflow onto new page(s).
-      const { editingBlockId: prev, activeId, sections } = get();
-      if (prev && prev !== editingBlockId && activeId) {
-        const sec = sections.find((s) => s.id === activeId);
-        const blk = sec && isGridSection(sec.content) ? sec.content.blocks.find((b) => b.id === prev) : null;
-        if (blk?.block === "textFrame") void get().reflowBlock(activeId, prev);
-      }
+      // Leaving a text frame no longer auto-spills onto new pages (that shoved
+      // every following page down). The canvas still fits the box to content on
+      // exit; splitting into pages is now an explicit "Break" action.
       set({ editingBlockId, selectedBlockIds: editingBlockId ? [editingBlockId] : get().selectedBlockIds });
     },
     toggleGrid: () => set((s) => ({ showGrid: !s.showGrid })),
@@ -199,41 +193,52 @@ export const useStore = create<Store>((set, get) => {
       const rowEnd = rowStart + Math.max(min, Math.min(rows, ROWS - rowStart + 1));
       edit(sectionId, resizeBlock(sec.content, blockId, { ...block.area, rowEnd }));
     },
-    // Grow a text frame to fit, then if it STILL overflows at the page bottom, break
-    // the overflow into new page(s) after this one (Phase B). Node-boundary only —
-    // a single node taller than a page can't be split. Forward-only: pulling content
-    // back on later edits is Merge (Phase C), not automatic (would need threaded frames).
-    reflowBlock: async (sectionId, blockId) => {
-      get().fitBlock(sectionId, blockId); // grow on the page first
-      const { sections, theme, pageSize, documentId } = get();
-      if (!documentId) return;
+    // Break a text frame into smaller blocks on the SAME page (no new pages, no
+    // page-pushing). One block per paragraph; a lone overflowing paragraph is
+    // chunked by page-fit so it still breaks into pieces. Each piece is fit-sized
+    // and stacked below the previous — the user then arranges them freely.
+    breakTextFrame: (sectionId, blockId) => {
+      const { sections, theme, pageSize, edit } = get();
       const sec = sections.find((s) => s.id === sectionId);
       if (!sec || !isGridSection(sec.content)) return;
       const block = sec.content.blocks.find((b) => b.id === blockId);
       if (!block || block.block !== "textFrame") return;
       const doc = block.content as JSONContent;
       const nodes = doc.content ?? [];
-      if (nodes.length < 1) return;
       const cols = block.area.colEnd - block.area.colStart;
       const rows = block.area.rowEnd - block.area.rowStart;
       const widthPx = blockWidthPx(cols, pageSize) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
-      const maxHpx = blockHeightPx(rows, pageSize) - sidesY(block.style?.padding) - sidesY(block.style?.margin);
-      // splits between paragraphs, or WITHIN a paragraph (word boundary) when a
-      // single long paragraph overflows — so any overflowing text frame can spill.
-      const [docA, docB] = splitTextFrameAt(doc, widthPx, maxHpx, theme);
-      if (!docB.content?.length) return; // it all fits after the grow
-      // keep the fitting part in this block and shrink it to that content
-      get().edit(sectionId, updateBlockContent(sec.content, blockId, docA as SectionContent));
-      get().fitBlock(sectionId, blockId);
-      // paginate the overflow into new pages and insert them right after this one
-      const pages = (await parseBlocks([docB], theme, pageSize)).map((p) => assetsToCanonical(p));
-      const { sections: inserted } = await insertSectionsAfter(documentId, sectionId, pages);
-      set((st) => {
-        const arr = [...st.sections];
-        const idx = arr.findIndex((s) => s.id === sectionId);
-        arr.splice(idx + 1, 0, ...inserted.map((s) => ({ ...s, content: assetsToDisplay(s.content) })));
-        return { sections: arr };
+      const padY = sidesY(block.style?.padding) + sidesY(block.style?.margin);
+      const maxHpx = blockHeightPx(rows, pageSize) - padY;
+
+      let pieces: JSONContent[];
+      if (nodes.length >= 2) {
+        pieces = nodes.map((n) => ({ ...doc, content: [n] })); // one block per paragraph
+      } else {
+        pieces = []; // single paragraph → chunk it by page-fit
+        let rest: JSONContent = doc, guard = 0;
+        while ((rest.content?.length ?? 0) > 0 && guard++ < 100) {
+          const [a, b] = splitTextFrameAt(rest, widthPx, maxHpx, theme);
+          if (!a.content?.length) break;
+          pieces.push(a);
+          rest = b;
+        }
+      }
+      if (pieces.length < 2) return; // nothing to break
+
+      let row = block.area.rowStart;
+      const newBlocks: GridBlock[] = pieces.map((piece) => {
+        const h = measureHtmlHeight(serialize(piece), widthPx, theme) + padY;
+        const area = clampArea(
+          { rowStart: row, colStart: block.area.colStart, rowEnd: row + heightToRows(h, pageSize), colEnd: block.area.colEnd },
+          BLOCKS.textFrame.min,
+        );
+        row = area.rowEnd;
+        return { id: Math.random().toString(36).slice(2, 10), area, block: "textFrame", content: piece, style: block.style };
       });
+      const others = sec.content.blocks.filter((b) => b.id !== blockId);
+      edit(sectionId, { ...sec.content, blocks: [...others, ...newBlocks] });
+      set({ selectedBlockIds: newBlocks.map((b) => b.id), editingBlockId: null });
     },
     // add a palette block to a specific page at a specific area (drag-from-palette)
     addBlockAt: (type, toId, area) => {

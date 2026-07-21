@@ -48,7 +48,7 @@ export function App() {
   const setEditing = useStore((s) => s.setEditing);
   const moveBlockToPage = useStore((s) => s.moveBlockToPage);
   const moveBlocksToPage = useStore((s) => s.moveBlocksToPage);
-  const reflowBlock = useStore((s) => s.reflowBlock);
+  const breakTextFrame = useStore((s) => s.breakTextFrame);
   const showGrid = useStore((s) => s.showGrid);
   const toggleGrid = useStore((s) => s.toggleGrid);
   const zoom = useStore((s) => s.zoom);
@@ -183,7 +183,7 @@ export function App() {
                         onSelect={(id, additive) => { setActive(s.id); selectBlock(id, additive); }}
                         editingId={activeId === s.id ? editingBlockId : null}
                         onEdit={(id) => { setActive(s.id); setEditing(id); }}
-                        onReflow={(id) => void reflowBlock(s.id, id)}
+                        onBreak={(id) => breakTextFrame(s.id, id)}
                         showGrid={showGrid}
                       />
                     </div>
