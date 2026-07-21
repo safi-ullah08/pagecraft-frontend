@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { DEFAULT_THEME } from "./themes.ts";
-import { A4, type PageDims } from "./pages.ts";
+import { A4, presetOf, type PageDims } from "./pages.ts";
 import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
 import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
@@ -16,6 +16,7 @@ export type Section = { id: string; content: SectionContent; version: number };
 type Store = {
   theme: string;
   page: PageDims; // editor page size (mm); loaded from the doc, matches the PDF
+  customPage: PageDims | null; // the doc's non-preset size (e.g. from a docx), kept so it stays selectable
   documentId: string | null;
   loading: boolean; // true until load (incl. any auto flow→grid conversion) settles
   sections: Section[]; // ordered; ALL rendered at once (continuous scroll)
@@ -140,6 +141,7 @@ export const useStore = create<Store>((set, get) => {
   return {
     theme: DEFAULT_THEME,
     page: A4,
+    customPage: null,
     documentId: null,
     loading: true,
     sections: [],
@@ -392,9 +394,10 @@ export const useStore = create<Store>((set, get) => {
         const doc = await getDocument(id);
         // asset:// -> resolver URL so the editor can display imported images
         const sections = doc.sections.map((s) => ({ ...s, content: assetsToDisplay(s.content) }));
-        // page size comes from the document (e.g. a docx's page size); else A4
+        // page size comes from the document (e.g. a docx's page size); else A4.
+        // If it's not a preset, remember it as customPage so it stays selectable.
         const page = doc.pageWidthMm && doc.pageHeightMm ? { w: doc.pageWidthMm, h: doc.pageHeightMm } : A4;
-        set({ documentId: id, sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME, page });
+        set({ documentId: id, sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME, page, customPage: presetOf(page) ? null : page });
         // import path: flow is only a landing format — auto-paginate into grid on
         // first open, then it's grid forever (convert persists, so idempotent).
         if (sections.some((s) => !isGridSection(s.content))) {

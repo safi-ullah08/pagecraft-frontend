@@ -124,6 +124,7 @@ function DesignPanel() {
   const setTheme = useStore((s) => s.setTheme);
   const page = useStore((s) => s.page);
   const setPage = useStore((s) => s.setPage);
+  const customPage = useStore((s) => s.customPage);
   const preset = presetOf(page);
   return (
     <div>
@@ -131,7 +132,7 @@ function DesignPanel() {
         <Field label="Theme"><Select value={theme} options={themeNames().map((t) => ({ value: t, label: t }))} onChange={(v) => setTheme(v)} /></Field>
       </Section>
       <Section title="Page">
-        <Field label="Size"><Select value={preset ?? "custom"} options={[...Object.keys(PAGE_SIZES).map((p) => ({ value: p, label: p })), ...(preset ? [] : [{ value: "custom", label: `Custom ${page.w}×${page.h}mm` }])]} onChange={(v) => { if (v !== "custom") setPage(PAGE_SIZES[v as PageSize]); }} /></Field>
+        <Field label="Size"><Select value={preset ?? "custom"} options={[...Object.keys(PAGE_SIZES).map((p) => ({ value: p, label: p })), ...(customPage ? [{ value: "custom", label: `Custom ${customPage.w}×${customPage.h}mm` }] : [])]} onChange={(v) => { if (v === "custom") { if (customPage) setPage(customPage); } else setPage(PAGE_SIZES[v as PageSize]); }} /></Field>
       </Section>
     </div>
   );
