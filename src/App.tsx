@@ -55,6 +55,10 @@ export function App() {
   const toggleGrid = useStore((s) => s.toggleGrid);
   const zoom = useStore((s) => s.zoom);
   const setZoom = useStore((s) => s.setZoom);
+  const undo = useStore((s) => s.undo);
+  const redo = useStore((s) => s.redo);
+  const canUndo = useStore((s) => s.canUndo);
+  const canRedo = useStore((s) => s.canRedo);
 
   const [tab, setTab] = useState<Tab>("editor");
 
@@ -72,6 +76,10 @@ export function App() {
       const typing = editingBlockId || (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable));
       if (typing) return; // let the editor / inputs handle everything
       const meta = e.metaKey || e.ctrlKey;
+      // Undo/redo (in-block text typing is handled above by the `typing` guard →
+      // Tiptap's own history). Ctrl/⌘+Z undo, +Shift+Z or Ctrl+Y redo.
+      if (meta && e.key.toLowerCase() === "z" && !e.shiftKey) { e.preventDefault(); undo(); return; }
+      if (meta && (e.key.toLowerCase() === "y" || (e.key.toLowerCase() === "z" && e.shiftKey))) { e.preventDefault(); redo(); return; }
       if ((e.key === "Delete" || e.key === "Backspace") && selectedBlockIds.length) { e.preventDefault(); deleteSelected(); return; }
       if (meta && e.key.toLowerCase() === "a") { e.preventDefault(); selectAll(); return; }
       if (meta && e.key.toLowerCase() === "c") { e.preventDefault(); copySelected(); return; }
@@ -81,7 +89,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [editingBlockId, selectedBlockIds, setEditing, selectAll, deleteSelected, copySelected, cutSelected, paste, duplicateSelected]);
+  }, [editingBlockId, selectedBlockIds, setEditing, selectAll, deleteSelected, copySelected, cutSelected, paste, duplicateSelected, undo, redo]);
 
   const surfaceCss = useMemo(() => {
     try {
@@ -136,6 +144,12 @@ export function App() {
           <div style={{ flex: 1 }} />
           {tab === "editor" && (
             <>
+              <button onClick={() => undo()} disabled={!canUndo} title="Undo (⌘/Ctrl+Z)"
+                style={{ fontSize: 13, padding: "3px 8px", borderRadius: 4, border: "1px solid #ccc", background: "#fff",
+                  cursor: canUndo ? "pointer" : "default", color: canUndo ? "#333" : "#bbb" }}>↶</button>
+              <button onClick={() => redo()} disabled={!canRedo} title="Redo (⌘/Ctrl+Shift+Z)"
+                style={{ fontSize: 13, padding: "3px 8px", borderRadius: 4, border: "1px solid #ccc", background: "#fff",
+                  cursor: canRedo ? "pointer" : "default", color: canRedo ? "#333" : "#bbb", marginRight: 4 }}>↷</button>
               <button onClick={toggleGrid} title="toggle grid overlay"
                 style={{ fontSize: 12, padding: "3px 8px", borderRadius: 4, cursor: "pointer",
                   border: `1px solid ${showGrid ? "#E07A5F" : "#ccc"}`, background: showGrid ? "#fdeee9" : "#fff", color: showGrid ? "#E07A5F" : "#666" }}>

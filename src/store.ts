@@ -46,6 +46,10 @@ type Store = {
   mergeBlocks: (sectionId: string, sourceId: string, targetId: string, atIndex?: number) => void;
   moveBlockToPage: (fromId: string, blockId: string, toId: string, area?: GridArea) => void;
   moveBlocksToPage: (fromId: string, ids: string[], toId: string, dCol: number, dRow: number) => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  undo: () => void;
+  redo: () => void;
   load: () => Promise<void>;
   edit: (id: string, content: SectionContent) => void;
   addPage: () => Promise<void>;
@@ -81,6 +85,55 @@ export const useStore = create<Store>((set, get) => {
       // is logged, and the next keystroke reschedules a fresh save. Durable
       // retry/backoff + a conflict UI is a later phase.
       console.error("autosave failed (will retry on next edit):", e);
+    }
+  }
+
+  // --- Undo/redo history. Snapshots section CONTENT (keyed by id) before an edit,
+  // coalescing a burst (typing / a multi-edit op) into ONE step. In-block text
+  // typing also has Tiptap's own history; the Ctrl+Z handler routes to Tiptap while
+  // a block is being edited and to this store otherwise. Load/convert churn is
+  // ignored (guarded by `loading`). ponytail: content-by-id snapshots — undoes
+  // block ops within/among existing sections, not page add/remove (server rows).
+  type Snap = Record<string, SectionContent>;
+  let past: Snap[] = [];
+  let future: Snap[] = [];
+  let lastRecord = 0;
+  const snap = (): Snap => Object.fromEntries(get().sections.map((s) => [s.id, structuredClone(s.content)]));
+  function record() {
+    if (get().loading) return;
+    const now = Date.now();
+    if (now - lastRecord < 500) { lastRecord = now; return; } // coalesce a burst
+    lastRecord = now;
+    past.push(snap());
+    if (past.length > 60) past.shift();
+    future = [];
+    set({ canUndo: true, canRedo: false });
+  }
+  function restore(dir: "past" | "future") {
+    const src = dir === "past" ? past : future;
+    if (!src.length) return;
+    const other = dir === "past" ? future : past;
+    const target = src.pop()!;
+    other.push(snap()); // current state → the opposite stack
+    lastRecord = 0; // the next real edit starts a fresh checkpoint
+    const changed: string[] = [];
+    set((st) => ({
+      sections: st.sections.map((s) => {
+        if (target[s.id] !== undefined && JSON.stringify(s.content) !== JSON.stringify(target[s.id])) {
+          changed.push(s.id);
+          return { ...s, content: target[s.id]! };
+        }
+        return s;
+      }),
+      selectedBlockIds: [],
+      editingBlockId: null,
+      canUndo: past.length > 0,
+      canRedo: future.length > 0,
+    }));
+    for (const id of changed) {
+      const t = timers.get(id);
+      if (t) clearTimeout(t);
+      timers.set(id, setTimeout(() => { timers.delete(id); void flush(id); }, 300));
     }
   }
 
@@ -363,7 +416,12 @@ export const useStore = create<Store>((set, get) => {
     },
     // Edit ONE section (each mounted editor owns its own id). Per-section 800ms
     // debounce so editing section B never drops a pending save for section A.
+    canUndo: false,
+    canRedo: false,
+    undo: () => restore("past"),
+    redo: () => restore("future"),
     edit: (id, content) => {
+      record(); // history checkpoint (coalesced; a no-op during load)
       set((st) => ({ sections: st.sections.map((x) => (x.id === id ? { ...x, content } : x)) }));
       const t = timers.get(id);
       if (t) clearTimeout(t);
