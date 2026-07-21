@@ -5,6 +5,7 @@ import { scopeThemeCss } from "../scope-css.ts";
 import { PAGE_SIZES, PAGE_MARGIN_MM, type PageSize } from "../pages.ts";
 import { COLS, ROWS, type GridBlock } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
+import { splitInlineAt, countWords } from "./split-inline.ts";
 
 // Content measurement for fit-to-content (and later split). Geometry mirrors the
 // editor canvas (GridCanvas): margin = PAGE_MARGIN_MM, cell gap = 4mm, so a fit
@@ -53,6 +54,34 @@ export function splitIndex(nodes: JSONContent[], widthPx: number, maxHpx: number
     else break;
   }
   return k;
+}
+
+// Split a text-frame doc so part A fits within maxHpx, part B is the overflow.
+// Splits between paragraphs where possible; if the FIRST overflowing paragraph is
+// itself too tall, splits it INTERNALLY at the largest word count that still fits
+// (binary search). B is empty when everything fits. DOM-measured (browser only).
+export function splitTextFrameAt(doc: JSONContent, widthPx: number, maxHpx: number, theme: string): [JSONContent, JSONContent] {
+  const nodes = doc.content ?? [];
+  const fits = (ns: JSONContent[]) => measureHtmlHeight(serialize({ type: "doc", content: ns }), widthPx, theme) <= maxHpx;
+  let k = 0;
+  for (let i = 1; i <= nodes.length; i++) { if (fits(nodes.slice(0, i))) k = i; else break; }
+  if (k === nodes.length) return [doc, { ...doc, content: [] }]; // all fits
+
+  const head = nodes.slice(0, k);
+  const overflow = nodes[k];
+  if (overflow && (overflow.type === "paragraph" || overflow.type === "heading") && countWords(overflow) >= 2) {
+    let lo = 1, hi = countWords(overflow) - 1, best = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (fits([...head, splitInlineAt(overflow, mid)[0]])) { best = mid; lo = mid + 1; } else { hi = mid - 1; }
+    }
+    if (best >= 1) {
+      const [a, b] = splitInlineAt(overflow, best);
+      return [{ ...doc, content: [...head, a] }, { ...doc, content: [b, ...nodes.slice(k + 1)] }];
+    }
+  }
+  const at = Math.max(1, k); // fall back to a node boundary (never lose the block)
+  return [{ ...doc, content: nodes.slice(0, at) }, { ...doc, content: nodes.slice(at) }];
 }
 
 // whole rows needed to hold `heightPx` of content (accounts for row gaps)

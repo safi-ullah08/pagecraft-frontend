@@ -4,11 +4,11 @@ import { type PageSize } from "./pages.ts";
 import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
 import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
-import { BLOCKS, splitDocAt } from "@pagecraft/model";
+import { BLOCKS } from "@pagecraft/model";
 import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock } from "./grid/types.ts";
 import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
-import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitIndex } from "./grid/measure.ts";
+import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
 import { insertSectionsAfter } from "./api.ts";
 
 export type Section = { id: string; content: SectionContent; version: number };
@@ -213,14 +213,15 @@ export const useStore = create<Store>((set, get) => {
       if (!block || block.block !== "textFrame") return;
       const doc = block.content as JSONContent;
       const nodes = doc.content ?? [];
-      if (nodes.length < 2) return; // can't node-split a single node
+      if (nodes.length < 1) return;
       const cols = block.area.colEnd - block.area.colStart;
       const rows = block.area.rowEnd - block.area.rowStart;
       const widthPx = blockWidthPx(cols, pageSize) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
       const maxHpx = blockHeightPx(rows, pageSize) - sidesY(block.style?.padding) - sidesY(block.style?.margin);
-      const k = splitIndex(nodes, widthPx, maxHpx, theme);
-      if (k >= nodes.length) return; // it all fits after the grow
-      const [docA, docB] = splitDocAt(doc, k);
+      // splits between paragraphs, or WITHIN a paragraph (word boundary) when a
+      // single long paragraph overflows — so any overflowing text frame can spill.
+      const [docA, docB] = splitTextFrameAt(doc, widthPx, maxHpx, theme);
+      if (!docB.content?.length) return; // it all fits after the grow
       // keep the fitting part in this block and shrink it to that content
       get().edit(sectionId, updateBlockContent(sec.content, blockId, docA as SectionContent));
       get().fitBlock(sectionId, blockId);
