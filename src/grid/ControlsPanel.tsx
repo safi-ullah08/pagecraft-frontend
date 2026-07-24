@@ -150,8 +150,10 @@ const BG_KINDS = [
   { value: "image", label: "Image" },
 ];
 
-// Background for the ACTIVE page. Per-page by design — propagating one page's look
-// to the rest is post-MVP (cross-page CSS propagation), so this never touches siblings.
+// Background for the ACTIVE page, plus an explicit "apply to all pages" action.
+// Editing stays per-page (a cover shouldn't inherit body pages); propagation is an
+// action the user takes, not an implicit binding — so pages remain independently
+// editable afterwards. General cross-page CSS propagation is still post-MVP.
 function PageBackgroundControls() {
   const sections = useStore((s) => s.sections);
   const activeId = useStore((s) => s.activeId);
@@ -163,7 +165,18 @@ function PageBackgroundControls() {
   const bg = content.background;
   const kind = bg?.kind ?? "none";
   const pageNo = sections.findIndex((s) => s.id === section.id) + 1;
+  const gridPages = sections.filter((s) => isGridSection(s.content));
   const set = (next: PageBackground | undefined) => edit(section.id, { ...content, background: next });
+
+  // Copy THIS page's background onto every grid page (including clearing, when the
+  // type is None). One image ref is shared by all pages — the worker dedupes and
+  // bundles the asset once. Edits burst in a single tick, so undo takes it back in one.
+  const applyToAll = () => {
+    for (const s of gridPages) {
+      if (s.id === section.id) continue;
+      edit(s.id, { ...(s.content as typeof content), background: bg });
+    }
+  };
 
   const onKind = (k: string) => {
     if (k === "none") return set(undefined);
@@ -201,6 +214,14 @@ function PageBackgroundControls() {
           ? <img src={bg.src} alt="" style={{ maxWidth: "100%", borderRadius: 4, marginTop: 4 }} />
           : <div style={{ fontSize: 10, color: PALETTE.MUTED }}>No image yet — the colour above shows until you pick one.</div>}
       </>)}
+
+      {gridPages.length > 1 && (
+        <button onClick={applyToAll} title={bg ? "Copy this background onto every page" : "Clear the background on every page"}
+          style={{ marginTop: 8, width: "100%", padding: "7px 10px", borderRadius: 4, cursor: "pointer",
+            background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER_STRONG}`, color: PALETTE.TEXT, fontSize: 11 }}>
+          {bg ? `Apply to all ${gridPages.length} pages` : `Clear on all ${gridPages.length} pages`}
+        </button>
+      )}
     </Section>
   );
 }
