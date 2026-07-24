@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { collectToc, buildTocSection, isTocSection, tocPlaceholder } from "./toc.ts";
+import { buildCover } from "./covers.ts";
 
 // run: cd pagecraft-backend && node --import tsx --test ../pagecraft-frontend/src/grid/toc.test.ts
 
@@ -71,4 +72,22 @@ test("an empty document still builds a valid TOC page", () => {
   const sec = buildTocSection([]);
   assert.ok(isTocSection(sec));
   assert.equal(sec.blocks.length, 1);
+});
+
+test("a cover is not indexed but still occupies page 1", () => {
+  const cover = buildCover("centered", "My Book", "by me");
+  const pages = [cover, page(blk(heading("Chapter One")))];
+  const entries = collectToc(pages);
+  // the cover's own title is a heading — it must not appear as a TOC entry
+  assert.deepEqual(entries.map((e) => e.text), ["Chapter One"]);
+  assert.equal(entries[0]!.page, 2);
+});
+
+test("with a cover, the TOC lands on page 2 and shifts the rest", () => {
+  const cover = buildCover("band", "T", "S");
+  const content = [cover, page(blk(heading("Chapter")))];
+  // the store projects the TOC into slot 1 (after the cover)
+  const projected = [...content];
+  projected.splice(1, 0, tocPlaceholder());
+  assert.equal(collectToc(projected).find((e) => e.text === "Chapter")!.page, 3);
 });

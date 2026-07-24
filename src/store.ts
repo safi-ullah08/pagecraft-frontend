@@ -9,6 +9,7 @@ import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock } fr
 import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
 import { collectToc, buildTocSection, isTocSection, tocPlaceholder } from "./grid/toc.ts";
+import { buildCover, isCoverSection } from "./grid/covers.ts";
 import { insertSectionsAfter, updatePageNumbers } from "./api.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
 import { splitParagraphSentences } from "./grid/split-inline.ts";
@@ -59,6 +60,7 @@ type Store = {
   edit: (id: string, content: SectionContent) => void;
   addPage: () => Promise<void>;
   generateToc: () => Promise<void>;
+  addCover: (templateId: string) => Promise<void>;
   removePage: (id: string) => Promise<void>;
   convertToGrid: () => Promise<void>;
 };
@@ -482,9 +484,27 @@ export const useStore = create<Store>((set, get) => {
         set({ activeId: sections[existing]!.id });
         return;
       }
-      const projected = [tocPlaceholder(), ...contents]; // the TOC itself becomes page 1
+      // First page, EXCEPT after a cover — a cover always stays page 1.
+      const coverIdx = sections.findIndex((s) => isCoverSection(s.content));
+      const at = coverIdx >= 0 ? coverIdx + 1 : 0;
+      const projected = [...contents];
+      projected.splice(at, 0, tocPlaceholder());
       const toc = buildTocSection(collectToc(projected, startAt));
-      const { sections: inserted } = await insertSectionsAfter(documentId, null, [assetsToCanonical(toc as SectionContent)]);
+      const afterId = at === 0 ? null : sections[at - 1]!.id;
+      const { sections: inserted } = await insertSectionsAfter(documentId, afterId, [assetsToCanonical(toc as SectionContent)]);
+      set((st) => {
+        const arr = [...st.sections];
+        arr.splice(at, 0, ...inserted.map((s) => ({ ...s, content: assetsToDisplay(s.content) })));
+        return { sections: arr, activeId: inserted[0]?.id ?? st.activeId };
+      });
+    },
+    // Add a cover as page 1 (there is at most one). Inserted at the front, so an
+    // existing TOC/content shifts down; page numbering follows automatically.
+    addCover: async (templateId) => {
+      const { documentId, sections } = get();
+      if (!documentId || sections.some((s) => isCoverSection(s.content))) return;
+      const cover = buildCover(templateId, "", "");
+      const { sections: inserted } = await insertSectionsAfter(documentId, null, [assetsToCanonical(cover as SectionContent)]);
       set((st) => ({
         sections: [...inserted.map((s) => ({ ...s, content: assetsToDisplay(s.content) })), ...st.sections],
         activeId: inserted[0]?.id ?? st.activeId,

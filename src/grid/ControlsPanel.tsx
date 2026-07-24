@@ -7,6 +7,7 @@ import { PAGE_SIZES, presetOf, type PageSize } from "../pages.ts";
 import { COLS, ROWS, isGridSection } from "./types.ts";
 import { stackOrder, reorderLayer, type LayerMove } from "./ops.ts";
 import { isTocSection } from "./toc.ts";
+import { COVER_TEMPLATES, isCoverSection } from "./covers.ts";
 import { Inspector } from "./Inspector.tsx";
 import { Section, Field, Select, Slider, ColorPicker, inputStyle, PALETTE } from "./controls.tsx";
 
@@ -329,8 +330,10 @@ function LayersPanel() {
 function TemplatesPanel() {
   const addPage = useStore((s) => s.addPage);
   const generateToc = useStore((s) => s.generateToc);
+  const addCover = useStore((s) => s.addCover);
   const sections = useStore((s) => s.sections);
   const hasToc = sections.some((s) => isTocSection(s.content));
+  const hasCover = sections.some((s) => isCoverSection(s.content));
   return (
     <div>
       <Section title="Pages">
@@ -338,6 +341,22 @@ function TemplatesPanel() {
           style={{ background: PALETTE.SURFACE, border: `1px dashed ${PALETTE.BORDER_STRONG}`, color: PALETTE.MUTED, padding: "8px 10px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
           + Add blank page
         </button>
+      </Section>
+      <Section title="Cover">
+        {hasCover ? (
+          <div style={{ fontSize: 11, color: PALETTE.MUTED }}>
+            Page 1 is your cover — edit it like any other page. Delete it to pick a different design.
+          </div>
+        ) : (<>
+          <div style={{ fontSize: 10, color: PALETTE.MUTED, marginBottom: 2 }}>Pick a starting point — it becomes page 1 and is fully editable.</div>
+          {COVER_TEMPLATES.map((t) => (
+            <button key={t.id} onClick={() => void addCover(t.id)} title={t.hint}
+              style={{ textAlign: "left", background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER}`, borderRadius: 4, padding: "7px 9px", cursor: "pointer" }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: PALETTE.TEXT }}>{t.name}</div>
+              <div style={{ fontSize: 10, color: PALETTE.MUTED }}>{t.hint}</div>
+            </button>
+          ))}
+        </>)}
       </Section>
       <Section title="Contents">
         <button onClick={() => void generateToc()}

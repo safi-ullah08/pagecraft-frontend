@@ -12,6 +12,7 @@ import { scopeThemeCss } from "./scope-css.ts";
 import { PAGE_MARGIN_MM } from "./pages.ts";
 import { isGridSection, emptyGridSection } from "./grid/types.ts";
 import { GridCanvas } from "./grid/GridCanvas.tsx";
+import { isCoverSection } from "./grid/covers.ts";
 import { ControlsPanel } from "./grid/ControlsPanel.tsx";
 import { PlaceholderView } from "./grid/PlaceholderView.tsx";
 import type { JSONContent } from "@tiptap/react";
@@ -196,7 +197,7 @@ export function App() {
                         onMoveAcross={(blockId, toId, area) => moveBlockToPage(s.id, blockId, toId, area)}
                         onMoveGroupAcross={(ids, toId, dCol, dRow) => moveBlocksToPage(s.id, ids, toId, dCol, dRow)}
                         page={page}
-                        pageNumbers={pageNumbers}
+                        pageNumbers={isCoverSection(s.content) ? null : pageNumbers} /* a cover is never numbered — same rule as the worker */
                         pageIndex={i}
                         pageCount={sections.length}
                         selected={activeId === s.id ? selectedBlockIds : []}
