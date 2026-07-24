@@ -19,6 +19,11 @@ function mapSrc(node: any, fn: (src: string) => string): any {
   }
   // image blocks store the url as a bare `src` (not attrs.src) — round-trip it too
   if (typeof out.src === "string") out.src = fn(out.src);
+  // a page background image lives on the SECTION, not in a node — without this it
+  // would persist as a display URL and the worker couldn't bundle it into the PDF
+  if (out.background && typeof out.background.src === "string") {
+    out.background = { ...out.background, src: fn(out.background.src) };
+  }
   if (Array.isArray(out.content)) out.content = out.content.map((c: unknown) => mapSrc(c, fn));
   // grid sections: descend into each block's content (a Tiptap doc in a text frame)
   if (Array.isArray(out.blocks)) out.blocks = out.blocks.map((b: any) => ({ ...b, content: mapSrc(b.content, fn) }));

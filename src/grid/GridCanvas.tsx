@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEditor, EditorContent, BubbleMenu, type Editor, type JSONContent } from "@tiptap/react";
-import { extensions, blockStyleProps, blockMargin, renderTypedBlock, scopeCustomCss, stackOrder, type PageNumberConfig } from "@pagecraft/model";
+import { extensions, blockStyleProps, blockMargin, renderTypedBlock, scopeCustomCss, stackOrder, backgroundCss, type PageNumberConfig } from "@pagecraft/model";
 import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
 import { moveBlock, moveBlocks, resizeBlock, fitBlockRows, pushDownOverlaps, updateBlockContent, removeBlock, setBlockType, reorderLayer, clampArea, type LayerMove } from "./ops.ts";
@@ -243,6 +243,8 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     width: `${dim.w}mm`, height: `${dim.h}mm`, boxSizing: "border-box",
     padding: `${PAGE_MARGIN_MM}mm`, position: "relative", margin: "0 auto",
     background: "#fff", boxShadow: "0 1px 10px rgba(0,0,0,.28)",
+    // page background from the SAME builder the PDF uses (so canvas == print)
+    ...cssTextToObject(backgroundCss(section.background)),
   };
 
   return (

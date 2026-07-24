@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { BLOCKS, BLOCK_ORDER, PAGE_NUMBER_POSITIONS, type BlockCategory, type BlockType } from "@pagecraft/model";
+import { BLOCKS, BLOCK_ORDER, PAGE_NUMBER_POSITIONS, PAGE_BACKGROUND_FITS, type BlockCategory, type BlockType, type PageBackground, type PageBackgroundFit } from "@pagecraft/model";
 import { useStore } from "../store.ts";
+import { uploadAsset } from "../api.ts";
 import { themeNames } from "../themes.ts";
 import { PAGE_SIZES, presetOf, type PageSize } from "../pages.ts";
 import { COLS, ROWS, isGridSection } from "./types.ts";
 import { stackOrder, reorderLayer, type LayerMove } from "./ops.ts";
 import { Inspector } from "./Inspector.tsx";
-import { Section, Field, Select, inputStyle, PALETTE } from "./controls.tsx";
+import { Section, Field, Select, Slider, ColorPicker, inputStyle, PALETTE } from "./controls.tsx";
 
 // The right bar — a port of temp/src ControlsPanel: three tabs (Design / Blocks /
 // Templates). Blocks holds the palette (category-grouped tiles) and swaps to the
@@ -136,8 +137,71 @@ function DesignPanel() {
       <Section title="Page">
         <Field label="Size"><Select value={preset ?? "custom"} options={[...Object.keys(PAGE_SIZES).map((p) => ({ value: p, label: p })), ...(customPage ? [{ value: "custom", label: `Custom ${customPage.w}×${customPage.h}mm` }] : [])]} onChange={(v) => { if (v === "custom") { if (customPage) setPage(customPage); } else setPage(PAGE_SIZES[v as PageSize]); }} /></Field>
       </Section>
+      <PageBackgroundControls />
       <PageNumberControls />
     </div>
+  );
+}
+
+const BG_KINDS = [
+  { value: "none", label: "None" },
+  { value: "solid", label: "Solid colour" },
+  { value: "gradient", label: "Gradient" },
+  { value: "image", label: "Image" },
+];
+
+// Background for the ACTIVE page. Per-page by design — propagating one page's look
+// to the rest is post-MVP (cross-page CSS propagation), so this never touches siblings.
+function PageBackgroundControls() {
+  const sections = useStore((s) => s.sections);
+  const activeId = useStore((s) => s.activeId);
+  const edit = useStore((s) => s.edit);
+  const section = sections.find((s) => s.id === activeId);
+  const content = section?.content;
+  if (!section || !isGridSection(content)) return null;
+
+  const bg = content.background;
+  const kind = bg?.kind ?? "none";
+  const pageNo = sections.findIndex((s) => s.id === section.id) + 1;
+  const set = (next: PageBackground | undefined) => edit(section.id, { ...content, background: next });
+
+  const onKind = (k: string) => {
+    if (k === "none") return set(undefined);
+    if (k === "solid") return set({ kind: "solid", color: (bg as { color?: string })?.color || "#ffffff" });
+    if (k === "gradient") return set({ kind: "gradient", from: "#ffffff", to: "#dddddd", angle: 180 });
+    return set({ kind: "image", src: "", fit: "cover" });
+  };
+
+  return (
+    <Section title={`Page background${pageNo ? ` — page ${pageNo}` : ""}`}>
+      <Field label="Type"><Select value={kind} options={BG_KINDS} onChange={onKind} /></Field>
+
+      {bg?.kind === "solid" && (
+        <Field label="Colour"><ColorPicker value={bg.color} onChange={(color) => set({ kind: "solid", color })} /></Field>
+      )}
+
+      {bg?.kind === "gradient" && (<>
+        <Field label="From"><ColorPicker value={bg.from} onChange={(from) => set({ ...bg, from })} /></Field>
+        <Field label="To"><ColorPicker value={bg.to} onChange={(to) => set({ ...bg, to })} /></Field>
+        <Field label="Angle"><Slider value={bg.angle ?? 180} min={0} max={360} onChange={(angle) => set({ ...bg, angle })} /></Field>
+      </>)}
+
+      {bg?.kind === "image" && (<>
+        <Field label="Image">
+          <input type="file" accept="image/*" style={{ fontSize: 11, color: PALETTE.MUTED }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) uploadAsset(f).then((src) => set({ ...bg, src })).catch((err) => alert(err.message));
+              e.target.value = ""; // allow re-picking the same file
+            }} />
+        </Field>
+        <Field label="Fit"><Select value={bg.fit ?? "cover"} options={PAGE_BACKGROUND_FITS.map((f) => ({ value: f, label: f }))} onChange={(fit) => set({ ...bg, fit: fit as PageBackgroundFit })} /></Field>
+        <Field label="Behind"><ColorPicker value={bg.color ?? "#ffffff"} onChange={(color) => set({ ...bg, color })} /></Field>
+        {bg.src
+          ? <img src={bg.src} alt="" style={{ maxWidth: "100%", borderRadius: 4, marginTop: 4 }} />
+          : <div style={{ fontSize: 10, color: PALETTE.MUTED }}>No image yet — the colour above shows until you pick one.</div>}
+      </>)}
+    </Section>
   );
 }
 

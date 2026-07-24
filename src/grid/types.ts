@@ -1,7 +1,7 @@
 import type { JSONContent } from "@tiptap/react";
-import type { BlockStyleTokens, BlockType } from "@pagecraft/model";
+import type { BlockStyleTokens, BlockType, PageBackground } from "@pagecraft/model";
 
-export type { BlockStyleTokens, BlockType };
+export type { BlockStyleTokens, BlockType, PageBackground };
 
 // Mirrors @pagecraft/model's grid types (the worker + gridSerialize consume the
 // same shape). A grid SECTION is one page of placed blocks on a 12×12 grid.
@@ -18,7 +18,8 @@ export type GridArea = { rowStart: number; colStart: number; rowEnd: number; col
 // documents written before layering render exactly as they did.
 export type GridBlock = { id: string; area: GridArea; block: BlockType; content: JSONContent | Record<string, unknown>; style?: BlockStyleTokens; zIndex?: number };
 
-export type GridSection = { type: "grid"; blocks: GridBlock[] };
+// `background` paints the whole page, behind the grid (any page, not just covers).
+export type GridSection = { type: "grid"; blocks: GridBlock[]; background?: PageBackground };
 
 export function isGridSection(content: unknown): content is GridSection {
   return !!content && (content as { type?: string }).type === "grid";
