@@ -4,13 +4,13 @@ import { A4, presetOf, type PageDims } from "./pages.ts";
 import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
 import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
-import { BLOCKS, serialize, DEFAULT_PAGE_NUMBERS, type PageNumberConfig } from "@pagecraft/model";
+import { BLOCKS, serialize, DEFAULT_PAGE_NUMBERS, EMPTY_DESIGN, type PageNumberConfig, type DesignTokens } from "@pagecraft/model";
 import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock } from "./grid/types.ts";
 import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
 import { collectToc, buildTocSection, isTocSection, tocPlaceholder } from "./grid/toc.ts";
 import { buildCover, isCoverSection, isBackCoverSection } from "./grid/covers.ts";
-import { insertSectionsAfter, updatePageNumbers } from "./api.ts";
+import { insertSectionsAfter, updatePageNumbers, updateDesign } from "./api.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
 import { splitParagraphSentences } from "./grid/split-inline.ts";
 
@@ -21,6 +21,7 @@ type Store = {
   page: PageDims; // editor page size (mm); loaded from the doc, matches the PDF
   customPage: PageDims | null; // the doc's non-preset size (e.g. from a docx), kept so it stays selectable
   pageNumbers: PageNumberConfig; // document-level page numbering (position/format/…)
+  design: DesignTokens; // design-wizard overlay, applied AFTER the theme
   documentId: string | null;
   loading: boolean; // true until load (incl. any auto flow→grid conversion) settles
   sections: Section[]; // ordered; ALL rendered at once (continuous scroll)
@@ -33,6 +34,7 @@ type Store = {
   setTheme: (t: string) => void;
   setPage: (p: PageDims) => void;
   setPageNumbers: (patch: Partial<PageNumberConfig>) => void;
+  setDesign: (patch: Partial<DesignTokens> | null) => void; // null = reset to the pure theme
   setActive: (id: string) => void;
   selectBlock: (id: string | null, additive?: boolean) => void;
   selectAll: () => void;
@@ -150,6 +152,7 @@ export const useStore = create<Store>((set, get) => {
     page: A4,
     customPage: null,
     pageNumbers: DEFAULT_PAGE_NUMBERS,
+    design: EMPTY_DESIGN,
     documentId: null,
     loading: true,
     sections: [],
@@ -173,6 +176,14 @@ export const useStore = create<Store>((set, get) => {
       // Always persist the FULL config, including `enabled: false` — numbers are on
       // by default, so storing null for "off" would read back as "on" next load.
       if (id) void updatePageNumbers(id, pageNumbers).catch(() => {});
+    },
+    // Merge a wizard patch (or null to clear). Persisted per change — the overlay
+    // is small, and losing it on a refresh would be worse than a few PATCHes.
+    setDesign: (patch) => {
+      const design = patch === null ? {} : { ...get().design, ...patch };
+      set({ design });
+      const id = get().documentId;
+      if (id) void updateDesign(id, design).catch(() => {});
     },
     setActive: (activeId) => set({ activeId }),
     // Select a block. additive (shift) toggles it in the multi-selection; otherwise
@@ -427,7 +438,7 @@ export const useStore = create<Store>((set, get) => {
         // page size comes from the document (e.g. a docx's page size); else A4.
         // If it's not a preset, remember it as customPage so it stays selectable.
         const page = doc.pageWidthMm && doc.pageHeightMm ? { w: doc.pageWidthMm, h: doc.pageHeightMm } : A4;
-        set({ documentId: id, sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME, page, customPage: presetOf(page) ? null : page, pageNumbers: doc.pageNumbers ?? DEFAULT_PAGE_NUMBERS });
+        set({ documentId: id, sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME, page, customPage: presetOf(page) ? null : page, pageNumbers: doc.pageNumbers ?? DEFAULT_PAGE_NUMBERS, design: doc.designTokens ?? EMPTY_DESIGN });
         // import path: flow is only a landing format — auto-paginate into grid on
         // first open, then it's grid forever (convert persists, so idempotent).
         if (sections.some((s) => !isGridSection(s.content))) {

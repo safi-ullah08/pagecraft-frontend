@@ -1,6 +1,6 @@
 // Thin fetch wrapper to the backend (/api is proxied to :4000 in dev).
 import type { JSONContent } from "@tiptap/react";
-import type { PageNumberConfig } from "@pagecraft/model";
+import type { PageNumberConfig, DesignTokens } from "@pagecraft/model";
 import { DEFAULT_THEME } from "./themes.ts";
 import type { GridSection } from "./grid/types.ts";
 
@@ -29,7 +29,7 @@ async function authedFetch(input: string, init: RequestInit = {}) {
 // self-describes (grid = { type:"grid", … }). Both round-trip through the same PUT.
 export type SectionContent = JSONContent | GridSection;
 export type Section = { id: string; content: SectionContent; version: number };
-export type Document = { id: string; title: string; theme: string; sections: Section[]; pageWidthMm?: number | null; pageHeightMm?: number | null; pageNumbers?: PageNumberConfig | null };
+export type Document = { id: string; title: string; theme: string; sections: Section[]; pageWidthMm?: number | null; pageHeightMm?: number | null; pageNumbers?: PageNumberConfig | null; designTokens?: DesignTokens | null };
 
 // Persist the page-number config on the document (also read back by the export).
 export async function updatePageNumbers(documentId: string, pageNumbers: PageNumberConfig | null) {
@@ -189,6 +189,16 @@ export async function uploadAsset(file: File): Promise<string> {
   }
   const { ref } = (await res.json()) as { ref: string };
   return "/api/assets/resolve?key=" + encodeURIComponent(ref.replace("asset://", ""));
+}
+
+// Persist the design-wizard overlay ({} clears it back to the pure theme).
+export async function updateDesign(documentId: string, designTokens: DesignTokens | null) {
+  const res = await authedFetch(`/api/documents/${documentId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ designTokens: designTokens ?? {} }),
+  });
+  if (!res.ok) throw new Error(`save design failed: ${res.status}`);
 }
 
 export async function startExport(documentId: string, theme = DEFAULT_THEME) {

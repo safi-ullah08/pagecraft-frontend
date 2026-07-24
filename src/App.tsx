@@ -8,11 +8,13 @@ import { ExportButton } from "./components/ExportButton.tsx";
 import { ImportBar } from "./components/ImportBar.tsx";
 import { useStore } from "./store.ts";
 import { themeSkinCss } from "./themes.ts";
+import { designCss } from "@pagecraft/model";
 import { scopeThemeCss } from "./scope-css.ts";
 import { PAGE_MARGIN_MM } from "./pages.ts";
 import { isGridSection, emptyGridSection } from "./grid/types.ts";
 import { GridCanvas } from "./grid/GridCanvas.tsx";
 import { isAnyCover } from "./grid/covers.ts";
+import { DesignWizard } from "./grid/DesignWizard.tsx";
 import { ControlsPanel } from "./grid/ControlsPanel.tsx";
 import { PlaceholderView } from "./grid/PlaceholderView.tsx";
 import type { JSONContent } from "@tiptap/react";
@@ -33,6 +35,7 @@ export function App() {
   const theme = useStore((s) => s.theme);
   const page = useStore((s) => s.page);
   const pageNumbers = useStore((s) => s.pageNumbers);
+  const design = useStore((s) => s.design);
   const edit = useStore((s) => s.edit);
   const setActive = useStore((s) => s.setActive);
   const sections = useStore((s) => s.sections);
@@ -63,6 +66,16 @@ export function App() {
   const canRedo = useStore((s) => s.canRedo);
 
   const [tab, setTab] = useState<Tab>("editor");
+  // The wizard auto-opens once per document — the answer to "imported, now I'm
+  // staring at a blank grid". Dismissing it sticks (per document, per browser).
+  const [wizardOpen, setWizardOpen] = useState(false);
+  useEffect(() => {
+    if (loading || !documentId || !sections.length) return;
+    const key = `pc-wizard-seen:${documentId}`;
+    if (localStorage.getItem(key)) return;
+    localStorage.setItem(key, "1");
+    setWizardOpen(true);
+  }, [loading, documentId, sections.length]);
 
   useEffect(() => {
     void load();
@@ -95,11 +108,11 @@ export function App() {
 
   const surfaceCss = useMemo(() => {
     try {
-      return scopeThemeCss(themeSkinCss(theme), ".editor-surface");
+      return scopeThemeCss(themeSkinCss(theme) + "\n" + designCss(design), ".editor-surface");
     } catch {
       return "";
     }
-  }, [theme]);
+  }, [theme, design]);
 
   const dim = page;
   const sheetCss = `
@@ -119,11 +132,14 @@ export function App() {
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
+      {wizardOpen && <DesignWizard onClose={() => setWizardOpen(false)} />}
       <ChapterNav />
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
         <div style={{ display: "flex", gap: 8, padding: 8, borderBottom: "1px solid #ddd", alignItems: "center" }}>
           <Toolbar />
           <ImportBar />
+          <button onClick={() => setWizardOpen(true)} title="Open the design wizard"
+            style={{ padding: "6px 10px", fontSize: 12, borderRadius: 4, cursor: "pointer", border: "1px solid #ddd", background: "#fff" }}>✦ Design</button>
           {documentId && <ExportButton documentId={documentId} theme={theme} />}
           {/* UserButton only mounts under ClerkProvider (i.e. when a key is set) */}
           {import.meta.env.VITE_CLERK_PUBLISHABLE_KEY && (
