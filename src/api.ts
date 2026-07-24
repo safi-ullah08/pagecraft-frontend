@@ -1,5 +1,6 @@
 // Thin fetch wrapper to the backend (/api is proxied to :4000 in dev).
 import type { JSONContent } from "@tiptap/react";
+import type { PageNumberConfig } from "@pagecraft/model";
 import { DEFAULT_THEME } from "./themes.ts";
 import type { GridSection } from "./grid/types.ts";
 
@@ -28,7 +29,17 @@ async function authedFetch(input: string, init: RequestInit = {}) {
 // self-describes (grid = { type:"grid", … }). Both round-trip through the same PUT.
 export type SectionContent = JSONContent | GridSection;
 export type Section = { id: string; content: SectionContent; version: number };
-export type Document = { id: string; title: string; theme: string; sections: Section[]; pageWidthMm?: number | null; pageHeightMm?: number | null };
+export type Document = { id: string; title: string; theme: string; sections: Section[]; pageWidthMm?: number | null; pageHeightMm?: number | null; pageNumbers?: PageNumberConfig | null };
+
+// Persist the page-number config on the document (also read back by the export).
+export async function updatePageNumbers(documentId: string, pageNumbers: PageNumberConfig | null) {
+  const res = await authedFetch(`/api/documents/${documentId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ pageNumbers }),
+  });
+  if (!res.ok) throw new Error(`save page numbers failed: ${res.status}`);
+}
 
 export async function createDocument(title = "Untitled") {
   const res = await authedFetch("/api/documents", {
@@ -161,6 +172,22 @@ export async function uploadDocument(file: File) {
     throw new Error(msg ?? `upload failed: ${res.status}`);
   }
   return res.json() as Promise<{ documentId: string; sections: number }>;
+}
+
+// Upload one image file → re-hosted asset. Returns the editor display URL (the
+// resolver), which assetsToCanonical turns back into asset:// before persisting.
+export async function uploadAsset(file: File): Promise<string> {
+  const res = await authedFetch("/api/assets", {
+    method: "POST",
+    headers: { "content-type": file.type || "application/octet-stream" },
+    body: file,
+  });
+  if (!res.ok) {
+    const msg = await res.json().then((j) => j.error).catch(() => null);
+    throw new Error(msg ?? `image upload failed: ${res.status}`);
+  }
+  const { ref } = (await res.json()) as { ref: string };
+  return "/api/assets/resolve?key=" + encodeURIComponent(ref.replace("asset://", ""));
 }
 
 export async function startExport(documentId: string, theme = DEFAULT_THEME) {

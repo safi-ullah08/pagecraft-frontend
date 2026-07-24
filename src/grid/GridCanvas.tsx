@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEditor, EditorContent, BubbleMenu, type Editor, type JSONContent } from "@tiptap/react";
-import { extensions, blockStyleProps, blockMargin, renderTypedBlock, scopeCustomCss } from "@pagecraft/model";
+import { extensions, blockStyleProps, blockMargin, renderTypedBlock, scopeCustomCss, stackOrder, type PageNumberConfig } from "@pagecraft/model";
 import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
-import { moveBlock, moveBlocks, resizeBlock, fitBlockRows, pushDownOverlaps, updateBlockContent, removeBlock, clampArea } from "./ops.ts";
+import { moveBlock, moveBlocks, resizeBlock, fitBlockRows, pushDownOverlaps, updateBlockContent, removeBlock, setBlockType, reorderLayer, clampArea, type LayerMove } from "./ops.ts";
 import { PAGE_MARGIN_MM, type PageDims } from "../pages.ts";
 
 // Recreated grid designer with temp/src's interaction feel on OUR stack:
@@ -25,13 +25,50 @@ type Drag =
   | { id: string; kind: "move"; x: number; y: number; grabX: number; grabY: number; w: number; h: number; html: string; fp: Rect | null; group: string[] | null; dx: number; dy: number; mergeId: string | null; mergeLine: { left: number; right: number; top: number } | null }
   | { id: string; kind: "resize"; area: GridArea };
 
-export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveGroupAcross, selected, onSelect, editingId, onEdit, onReflow, onBreak, onMerge, page, showGrid }: {
+// "color:red;font-weight:700" -> a React style object. Naive split (good enough for
+// simple page-number declarations); indexOf(":") keeps colons inside values (url()).
+function cssTextToObject(css?: string): React.CSSProperties {
+  const out: Record<string, string> = {};
+  for (const decl of (css ?? "").split(";")) {
+    const i = decl.indexOf(":");
+    if (i < 0) continue;
+    const prop = decl.slice(0, i).trim().replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
+    const val = decl.slice(i + 1).trim();
+    if (prop && val) out[prop] = val;
+  }
+  return out as React.CSSProperties;
+}
+
+// Live-canvas page number. Mirrors the model's pageNumberHtml/.pc-pageno CSS with
+// inline styles (the grid CSS classes aren't loaded on the editing surface). The
+// sheet is position:relative with PAGE_MARGIN_MM padding, so this sits in the band.
+// ponytail: parallel to pageNumberHtml — keep the two in sync if format/position grows.
+function PageNumber({ cfg, index, total }: { cfg?: PageNumberConfig | null; index: number; total: number }) {
+  if (!cfg?.enabled) return null;
+  const n = (cfg.startAt ?? 1) + index;
+  const text = (cfg.format || "{n}").replace(/\{n\}/g, String(n)).replace(/\{total\}/g, String(total));
+  const [vert, horiz] = cfg.position.split("-") as ["top" | "bottom", "left" | "center" | "right"];
+  const style: React.CSSProperties = {
+    position: "absolute", fontSize: `${cfg.fontSize ?? 10}pt`, lineHeight: 1, color: "#000", pointerEvents: "none",
+    [vert]: `${PAGE_MARGIN_MM * 0.4}mm`,
+    ...(horiz === "center" ? { left: 0, right: 0, textAlign: "center" }
+      : horiz === "right" ? { right: `${PAGE_MARGIN_MM}mm`, textAlign: "right" }
+      : { left: `${PAGE_MARGIN_MM}mm` }),
+    ...cssTextToObject(cfg.css), // user CSS overrides the defaults above
+  };
+  return <div style={style}>{text}</div>;
+}
+
+export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveGroupAcross, selected, onSelect, editingId, onEdit, onReflow, onBreak, onMerge, page, pageNumbers, pageIndex, pageCount, showGrid }: {
   section: GridSection;
   sectionId: string;
   onChange: (s: GridSection) => void;
   onMoveAcross: (blockId: string, toSectionId: string, area: GridArea) => void;
   onMoveGroupAcross: (ids: string[], toSectionId: string, dCol: number, dRow: number) => void;
   page: PageDims;
+  pageNumbers?: PageNumberConfig | null; // document-level page numbering
+  pageIndex: number; // this page's 0-based index (for the number)
+  pageCount: number; // total pages (for {total})
   selected: string[]; // ids selected in this section (multi-select)
   onSelect: (id: string | null, additive?: boolean) => void;
   editingId: string | null;
@@ -188,12 +225,19 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       setDrag(null);
-      // growing a block via the handle opens room below too (same as fit-to-content)
-      onChange(pushDownOverlaps(resizeBlock(section, b.id, last), b.id));
+      // resize in place only — neighbours stay put (blocks may overlap; z = doc order)
+      onChange(resizeBlock(section, b.id, last));
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
   };
+
+  // Explicit stack positions, but only once the page actually uses layering —
+  // otherwise every block gets null and BlockView keeps the size heuristic.
+  const stackZ = useMemo(() => {
+    const layered = section.blocks.some((b) => typeof b.zIndex === "number");
+    return new Map(layered ? stackOrder(section.blocks).map((b, i) => [b.id, i] as const) : []);
+  }, [section.blocks]);
 
   const sheet: React.CSSProperties = {
     width: `${dim.w}mm`, height: `${dim.h}mm`, boxSizing: "border-box",
@@ -225,11 +269,15 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
                 onReflow={() => onReflow(b.id)}
                 onBreak={() => onBreak(b.id)}
                 onFit={(px) => fitBlock(b.id, px)}
+                onConvert={() => onChange(setBlockType(section, b.id, "textFrame"))}
+                stackZ={stackZ.get(b.id) ?? null}
+                onLayer={(move) => onChange(reorderLayer(section, b.id, move))}
                 onContent={(c) => onChange(updateBlockContent(section, b.id, c))}
                 onDelete={() => { onChange(removeBlock(section, b.id)); onSelect(null); }} />
             );
           })}
         </div>
+        <PageNumber cfg={pageNumbers} index={pageIndex} total={pageCount} />
       </div>
       {/* floating drag layer: the block travels above every page; footprint shows
           where it will land on the page under the cursor */}
@@ -255,7 +303,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
   );
 }
 
-function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, onStartMove, onStartResize, onSelect, onEdit, onReflow, onBreak, onFit, onContent, onDelete }: {
+function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ, onStartMove, onStartResize, onSelect, onEdit, onReflow, onBreak, onFit, onConvert, onLayer, onContent, onDelete }: {
   b: GridBlock;
   ghosting: boolean;
   offset: { x: number; y: number } | null; // live px translate during a group drag
@@ -269,15 +317,20 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, onStar
   onReflow: () => void;
   onBreak: () => void;
   onFit: (naturalPx: number) => void;
+  onConvert: () => void;
+  stackZ: number | null; // explicit stack position, or null while the page is unlayered
+  onLayer: (move: LayerMove) => void;
   onContent: (c: unknown) => void;
   onDelete: () => void;
 }) {
   const { rowStart, colStart, rowEnd, colEnd } = b.area;
   const reg = BLOCKS[b.block];
-  // Smaller blocks stack ABOVE larger ones, so a small element (e.g. an image)
-  // dropped over a full-page text frame is the one you click/drag — not the frame.
+  // Depth: once the page uses layering, the explicit stack position wins (stackZ,
+  // computed from the model's shared stackOrder so canvas == PDF). Until then, the
+  // legacy heuristic applies — smaller blocks stack ABOVE larger ones so a small
+  // image dropped on a full-page text frame is the one you click/drag.
   // Editing floats highest (it expands over everything).
-  const zBase = 200 - (rowEnd - rowStart) * (colEnd - colStart);
+  const zBase = stackZ ?? 200 - (rowEnd - rowStart) * (colEnd - colStart);
   // where the double-click landed → place the caret there on entering edit
   const [caret, setCaret] = useState<{ x: number; y: number } | null>(null);
   // overflow affordance: dashed bar when the content is taller than its box
@@ -377,6 +430,16 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, onStar
             {b.block === "textFrame" && (((b.content as { content?: unknown[] })?.content?.length ?? 0) >= 1) && (
               <button onClick={(e) => { e.stopPropagation(); onBreak(); }} title="Break into separate paragraph blocks on this page"
                 style={{ height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer", padding: "0 5px" }}>Break ⑃</button>
+            )}
+            {/* Layering: raise/lower this block in the page's stacking order */}
+            <button onClick={(e) => { e.stopPropagation(); onLayer("front"); }} title="Bring to front"
+              style={{ width: 18, height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 11, lineHeight: 1, cursor: "pointer" }}>⤒</button>
+            <button onClick={(e) => { e.stopPropagation(); onLayer("back"); }} title="Send to back"
+              style={{ width: 18, height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 11, lineHeight: 1, cursor: "pointer" }}>⤓</button>
+            {/* Convert a heading block into a text frame (so Split/Break/fit apply) */}
+            {b.block === "heading" && (
+              <button onClick={(e) => { e.stopPropagation(); onConvert(); }} title="Convert heading to a text frame"
+                style={{ height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer", padding: "0 5px" }}>→ Text</button>
             )}
             <button onClick={(e) => { e.stopPropagation(); onDelete(); }} title="Remove block"
               style={{ width: 18, height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 12, lineHeight: 1, cursor: "pointer" }}>×</button>

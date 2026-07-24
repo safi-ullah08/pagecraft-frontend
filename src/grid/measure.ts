@@ -5,7 +5,7 @@ import { scopeThemeCss } from "../scope-css.ts";
 import { PAGE_MARGIN_MM, type PageDims } from "../pages.ts";
 import { COLS, ROWS, type GridBlock } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
-import { splitInlineAt, countWords } from "./split-inline.ts";
+import { splitInlineAt, countWords, splitListAt, LIST_TYPES } from "./split-inline.ts";
 
 // Content measurement for fit-to-content (and later split). Geometry mirrors the
 // editor canvas (GridCanvas): margin = PAGE_MARGIN_MM, cell gap = 4mm, so a fit
@@ -67,6 +67,19 @@ export function splitTextFrameAt(doc: JSONContent, widthPx: number, maxHpx: numb
 
   const head = nodes.slice(0, k);
   const overflow = nodes[k];
+  // A list is one node — split it BY ITEMS so items past the edge spill to the next
+  // page (keep >=1 item here; ordered lists keep numbering via splitListAt).
+  if (overflow && LIST_TYPES.has(overflow.type ?? "") && (overflow.content?.length ?? 0) >= 2) {
+    const items = overflow.content ?? [];
+    let take = 1;
+    for (let i = 2; i <= items.length; i++) {
+      if (fits([...head, { ...overflow, content: items.slice(0, i) }])) take = i; else break;
+    }
+    if (take < items.length) {
+      const [listA, listB] = splitListAt(overflow, take);
+      return [{ ...doc, content: [...head, listA] }, { ...doc, content: [listB, ...nodes.slice(k + 1)] }];
+    }
+  }
   if (overflow && (overflow.type === "paragraph" || overflow.type === "heading") && countWords(overflow) >= 2) {
     let lo = 1, hi = countWords(overflow) - 1, best = 0;
     while (lo <= hi) {

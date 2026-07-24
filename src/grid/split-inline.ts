@@ -29,6 +29,19 @@ export function splitInlineAt(node: JSONContent, words: number): [JSONContent, J
   return [{ ...node, content: A }, { ...node, content: B }];
 }
 
+export const LIST_TYPES = new Set(["bulletList", "orderedList", "taskList"]);
+
+// Split a list node after `take` items into [listA, listB], preserving type/attrs.
+// An ordered list's second half continues the numbering (start += take) so a list
+// spilled across a page break stays 1,2,3… instead of restarting at 1.
+export function splitListAt(node: JSONContent, take: number): [JSONContent, JSONContent] {
+  const items = node.content ?? [];
+  const a = { ...node, content: items.slice(0, take) };
+  const startB = (node.attrs?.start ?? 1) + take;
+  const b = { ...node, ...(node.type === "orderedList" ? { attrs: { ...node.attrs, start: startB } } : {}), content: items.slice(take) };
+  return [a, b];
+}
+
 export function countWords(node: JSONContent): number {
   let n = 0;
   for (const inline of node.content ?? [])

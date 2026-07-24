@@ -31,6 +31,7 @@ export function App() {
   const documentId = useStore((s) => s.documentId);
   const theme = useStore((s) => s.theme);
   const page = useStore((s) => s.page);
+  const pageNumbers = useStore((s) => s.pageNumbers);
   const edit = useStore((s) => s.edit);
   const setActive = useStore((s) => s.setActive);
   const sections = useStore((s) => s.sections);
@@ -175,7 +176,7 @@ export function App() {
           ) : sections.length === 0 ? (
             <div style={{ padding: 16 }}>Loading…</div>
           ) : tab === "pdf" ? (
-            <Preview sections={contents} theme={theme} />
+            <Preview sections={contents} theme={theme} pageNumbers={pageNumbers} />
           ) : tab === "placeholder" ? (
             <PlaceholderView sections={contents} page={page} />
           ) : (
@@ -185,7 +186,7 @@ export function App() {
               <div data-scroll style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: 32, background: "#e6e6e6" }}>
                 <style>{surfaceCss + sheetCss}</style>
                 <div style={{ zoom }}>
-                {sections.map((s) =>
+                {sections.map((s, i) =>
                   isGridSection(s.content) ? (
                     <div key={s.id} id={`sec-${s.id}`} onPointerDown={() => setActive(s.id)}>
                       <GridCanvas
@@ -195,6 +196,9 @@ export function App() {
                         onMoveAcross={(blockId, toId, area) => moveBlockToPage(s.id, blockId, toId, area)}
                         onMoveGroupAcross={(ids, toId, dCol, dRow) => moveBlocksToPage(s.id, ids, toId, dCol, dRow)}
                         page={page}
+                        pageNumbers={pageNumbers}
+                        pageIndex={i}
+                        pageCount={sections.length}
                         selected={activeId === s.id ? selectedBlockIds : []}
                         onSelect={(id, additive) => { setActive(s.id); selectBlock(id, additive); }}
                         editingId={activeId === s.id ? editingBlockId : null}

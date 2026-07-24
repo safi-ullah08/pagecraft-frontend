@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { splitInlineAt, splitParagraphSentences } from "./split-inline.ts";
+import { splitInlineAt, splitParagraphSentences, splitListAt } from "./split-inline.ts";
 import type { JSONContent } from "@tiptap/react";
 
 // run: cd pagecraft-backend && node --import tsx --test ../pagecraft-frontend/src/grid/split.test.ts
@@ -40,6 +40,17 @@ test("splitParagraphSentences splits a paragraph into one node per sentence", ()
 test("splitParagraphSentences returns the node unchanged when there's nothing to split", () => {
   assert.equal(splitParagraphSentences(para(text("no sentence enders here"))).length, 1);
   assert.equal(splitParagraphSentences(para(text("word"))).length, 1);
+});
+
+test("splitListAt divides a list by item and keeps ordered numbering continuous", () => {
+  const li = (t: string): JSONContent => ({ type: "listItem", content: [para(text(t))] });
+  const ol: JSONContent = { type: "orderedList", attrs: { start: 1 }, content: [li("a"), li("b"), li("c"), li("d")] };
+  const [a, b] = splitListAt(ol, 2);
+  assert.equal(a.content?.length, 2);
+  assert.equal(b.content?.length, 2);
+  assert.equal(b.attrs?.start, 3); // second half resumes at item 3, not 1
+  const bul: JSONContent = { type: "bulletList", content: [li("x"), li("y")] };
+  assert.equal(splitListAt(bul, 1)[1].attrs?.start, undefined); // bullets carry no start
 });
 
 test("a non-text inline node goes to the side the boundary has reached", () => {

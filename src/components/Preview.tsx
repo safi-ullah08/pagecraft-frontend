@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { serialize, gridSerialize, type ThemeName, type GridSection } from "@pagecraft/model";
+import { serialize, gridSerialize, pageNumberHtml, type ThemeName, type GridSection, type PageNumberConfig } from "@pagecraft/model";
 import { documentCss, DEFAULT_THEME } from "../themes.ts";
 import { isGridSection } from "../grid/types.ts";
 import type { SectionContent } from "../api.ts";
@@ -9,7 +9,7 @@ import { Previewer } from "pagedjs";
 // SAME serialize + documentCss the worker uses. Flow docs paginate with paged.js;
 // grid docs are already explicitly paged (.page divs) so they render directly — no
 // paged.js. Read-only; the actual export stays server-side Gotenberg.
-export function Preview({ sections, theme = DEFAULT_THEME }: { sections: SectionContent[]; theme?: ThemeName }) {
+export function Preview({ sections, theme = DEFAULT_THEME, pageNumbers }: { sections: SectionContent[]; theme?: ThemeName; pageNumbers?: PageNumberConfig | null }) {
   const ref = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const runId = useRef(0);
@@ -27,7 +27,7 @@ export function Preview({ sections, theme = DEFAULT_THEME }: { sections: Section
         const isGrid = sections.length > 0 && sections.every(isGridSection);
         if (isGrid) {
           // grid pages are explicit + fixed-size — render straight, no paged.js.
-          const body = sections.map((s) => gridSerialize(s as GridSection)).join("\n");
+          const body = sections.map((s, i) => gridSerialize(s as GridSection, pageNumberHtml(pageNumbers, i, sections.length))).join("\n");
           const css = documentCss(theme, "grid") +
             "\n.page{margin:0 auto 16px;box-shadow:0 1px 8px rgba(0,0,0,.25)}";
           el.innerHTML = `<style>${css}</style>${body}`;
@@ -47,7 +47,7 @@ export function Preview({ sections, theme = DEFAULT_THEME }: { sections: Section
       }
     }, 400);
     return () => clearTimeout(timer.current);
-  }, [sections, theme]);
+  }, [sections, theme, pageNumbers]);
 
   return <div ref={ref} style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "auto", background: "#eee", padding: 16 }} />;
 }

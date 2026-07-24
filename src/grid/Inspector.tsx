@@ -1,6 +1,7 @@
 import type { JSONContent } from "@tiptap/react";
 import type { SideValues } from "@pagecraft/model";
 import { useStore } from "../store.ts";
+import { uploadAsset } from "../api.ts";
 import { isGridSection, type BlockStyleTokens, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
 import { moveBlock, updateBlockStyle, updateBlockContent, removeBlock } from "./ops.ts";
@@ -217,7 +218,18 @@ function ContentSection({ block, onContent }: { block: GridBlock; onContent: (c:
 
   switch (block.block) {
     case "image":
-      return wrap(<>{line("src", "Image URL")}{line("alt", "Alt text")}</>);
+      return wrap(<>
+        <Field label="Upload image">
+          <input type="file" accept="image/*" style={{ fontSize: 11, color: PALETTE.MUTED }}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) uploadAsset(f).then((src) => u({ src })).catch((err) => alert(err.message));
+              e.target.value = ""; // allow re-picking the same file
+            }} />
+        </Field>
+        {line("src", "Image URL")}{line("alt", "Alt text")}
+        {s("src") && <img src={s("src")} alt="" style={{ maxWidth: "100%", borderRadius: 4, marginTop: 4 }} />}
+      </>);
     case "heading": {
       const doc = block.content as JSONContent;
       const node = doc.content?.[0];

@@ -1,5 +1,6 @@
 import { COLS, ROWS, type BlockStyleTokens, type BlockType, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
+import { stackOrder } from "@pagecraft/model";
 
 // Pure grid ops (GridSection -> GridSection). The canvas computes new areas from
 // pointer deltas and calls these; the store persists the returned section.
@@ -34,6 +35,12 @@ export function moveBlock(section: GridSection, blockId: string, area: GridArea)
   return patch(section, blockId, (b) => ({ ...b, area: clampArea(area, BLOCKS[b.block].min) }));
 }
 
+// Reclassify a block (e.g. heading → textFrame so Split/Break/fit apply). Content is
+// kept as-is; the area is re-clamped to the new type's minimum.
+export function setBlockType(section: GridSection, blockId: string, block: BlockType): GridSection {
+  return patch(section, blockId, (b) => ({ ...b, block, area: clampArea(b.area, BLOCKS[block].min) }));
+}
+
 export function resizeBlock(section: GridSection, blockId: string, area: GridArea): GridSection {
   return moveBlock(section, blockId, area); // same clamp path; resize just changes the end edges
 }
@@ -59,6 +66,44 @@ export function updateBlockStyle(section: GridSection, blockId: string, tokens: 
     for (const k of Object.keys(merged)) if (merged[k] === undefined) delete merged[k];
     return { ...b, style: Object.keys(merged).length ? (merged as BlockStyleTokens) : undefined };
   });
+}
+
+// --- Layering -------------------------------------------------------------
+// Stacking order = explicit `zIndex` when set, else array position (how depth
+// worked before layering existed). Every layer op renormalizes zIndex to 0..n-1
+// AND reorders the array to match, so the two representations never disagree.
+
+export type LayerMove = "front" | "back" | "forward" | "backward";
+
+// stackOrder (bottom-first) comes from @pagecraft/model — the SAME function the
+// serializer uses, so the canvas and the PDF can't drift. Re-exported for the panel.
+export { stackOrder };
+
+function normalizeLayers(section: GridSection, ordered: GridBlock[]): GridSection {
+  return { ...section, blocks: ordered.map((b, i) => ({ ...b, zIndex: i })) };
+}
+
+// Move one block to an absolute slot in the stacking order (0 = back). Used by the
+// layers panel; `reorderLayer` is the relative wrapper the canvas buttons call.
+export function moveLayerTo(section: GridSection, blockId: string, to: number): GridSection {
+  const ordered = stackOrder(section.blocks);
+  const from = ordered.findIndex((b) => b.id === blockId);
+  const clamped = Math.max(0, Math.min(ordered.length - 1, to));
+  if (from < 0 || from === clamped) return section;
+  const next = [...ordered];
+  next.splice(clamped, 0, ...next.splice(from, 1));
+  return normalizeLayers(section, next);
+}
+
+export function reorderLayer(section: GridSection, blockId: string, move: LayerMove): GridSection {
+  const ordered = stackOrder(section.blocks);
+  const from = ordered.findIndex((b) => b.id === blockId);
+  if (from < 0) return section;
+  const to = move === "front" ? ordered.length - 1
+    : move === "back" ? 0
+    : move === "forward" ? from + 1
+    : from - 1;
+  return moveLayerTo(section, blockId, to);
 }
 
 export function removeBlock(section: GridSection, blockId: string): GridSection {

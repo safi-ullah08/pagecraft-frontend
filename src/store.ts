@@ -4,11 +4,11 @@ import { A4, presetOf, type PageDims } from "./pages.ts";
 import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
 import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
-import { BLOCKS, serialize } from "@pagecraft/model";
+import { BLOCKS, serialize, DEFAULT_PAGE_NUMBERS, type PageNumberConfig } from "@pagecraft/model";
 import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock } from "./grid/types.ts";
 import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
-import { insertSectionsAfter } from "./api.ts";
+import { insertSectionsAfter, updatePageNumbers } from "./api.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
 import { splitParagraphSentences } from "./grid/split-inline.ts";
 
@@ -18,6 +18,7 @@ type Store = {
   theme: string;
   page: PageDims; // editor page size (mm); loaded from the doc, matches the PDF
   customPage: PageDims | null; // the doc's non-preset size (e.g. from a docx), kept so it stays selectable
+  pageNumbers: PageNumberConfig; // document-level page numbering (position/format/…)
   documentId: string | null;
   loading: boolean; // true until load (incl. any auto flow→grid conversion) settles
   sections: Section[]; // ordered; ALL rendered at once (continuous scroll)
@@ -29,6 +30,7 @@ type Store = {
   zoom: number; // editor zoom (1 = 100%)
   setTheme: (t: string) => void;
   setPage: (p: PageDims) => void;
+  setPageNumbers: (patch: Partial<PageNumberConfig>) => void;
   setActive: (id: string) => void;
   selectBlock: (id: string | null, additive?: boolean) => void;
   selectAll: () => void;
@@ -143,6 +145,7 @@ export const useStore = create<Store>((set, get) => {
     theme: DEFAULT_THEME,
     page: A4,
     customPage: null,
+    pageNumbers: DEFAULT_PAGE_NUMBERS,
     documentId: null,
     loading: true,
     sections: [],
@@ -157,6 +160,14 @@ export const useStore = create<Store>((set, get) => {
     // theme persistence lands with the theme/template builder phase.
     setTheme: (theme) => set({ theme }),
     setPage: (page) => set({ page }),
+    // Page numbers: update view-state immediately, persist to the doc (fire-and-forget;
+    // the config is re-sanitized server-side). Reaches the PDF via the export read.
+    setPageNumbers: (patch) => {
+      const pageNumbers = { ...get().pageNumbers, ...patch };
+      set({ pageNumbers });
+      const id = get().documentId;
+      if (id) void updatePageNumbers(id, pageNumbers.enabled ? pageNumbers : null).catch(() => {});
+    },
     setActive: (activeId) => set({ activeId }),
     // Select a block. additive (shift) toggles it in the multi-selection; otherwise
     // it becomes the sole selection. null clears. Selecting exits inline edit.
@@ -252,10 +263,12 @@ export const useStore = create<Store>((set, get) => {
       const rowEnd = rowStart + Math.max(min, Math.min(rows, ROWS - rowStart + 1));
       edit(sectionId, resizeBlock(sec.content, blockId, { ...block.area, rowEnd }));
     },
-    // Split (spill): grow a text frame to fit, then flow any overflow onto NEW
-    // page(s) after this one. Manual only now — no longer auto-runs on edit-exit.
+    // Split (spill): keep what fits between the block's top and the PAGE's bottom
+    // edge, flow the rest onto NEW page(s) after this one. Splits at the page edge
+    // (relative to where the block sits), not the block's own box — so content that
+    // reaches/nears the edge breaks over even when it isn't a full page tall.
+    // Manual only now — no longer auto-runs on edit-exit.
     reflowBlock: async (sectionId, blockId) => {
-      get().fitBlock(sectionId, blockId); // grow on the page first
       const { sections, theme, page, documentId } = get();
       if (!documentId) return;
       const sec = sections.find((s) => s.id === sectionId);
@@ -266,13 +279,16 @@ export const useStore = create<Store>((set, get) => {
       const nodes = doc.content ?? [];
       if (nodes.length < 1) return;
       const cols = block.area.colEnd - block.area.colStart;
-      const rows = block.area.rowEnd - block.area.rowStart;
       const widthPx = blockWidthPx(cols, page) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
-      const maxHpx = blockHeightPx(rows, page) - sidesY(block.style?.padding) - sidesY(block.style?.margin);
+      // Room from the block's TOP to the page's bottom edge (not the box height).
+      const rowsToEdge = ROWS - block.area.rowStart + 1;
+      // ponytail: ~⅓-row cushion so content hugging the edge breaks over too; raise if edge-hug persists.
+      const cushion = blockHeightPx(1, page) / 3;
+      const maxHpx = blockHeightPx(rowsToEdge, page) - sidesY(block.style?.padding) - sidesY(block.style?.margin) - cushion;
       // splits between paragraphs, or WITHIN a paragraph (word boundary) when a
       // single long paragraph overflows — so any overflowing text frame can spill.
       const [docA, docB] = splitTextFrameAt(doc, widthPx, maxHpx, theme);
-      if (!docB.content?.length) return; // it all fits after the grow
+      if (!docB.content?.length) return; // fits above the edge with room to spare
       // keep the fitting part in this block and shrink it to that content
       get().edit(sectionId, updateBlockContent(sec.content, blockId, docA as SectionContent));
       get().fitBlock(sectionId, blockId);
@@ -405,7 +421,7 @@ export const useStore = create<Store>((set, get) => {
         // page size comes from the document (e.g. a docx's page size); else A4.
         // If it's not a preset, remember it as customPage so it stays selectable.
         const page = doc.pageWidthMm && doc.pageHeightMm ? { w: doc.pageWidthMm, h: doc.pageHeightMm } : A4;
-        set({ documentId: id, sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME, page, customPage: presetOf(page) ? null : page });
+        set({ documentId: id, sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME, page, customPage: presetOf(page) ? null : page, pageNumbers: doc.pageNumbers ?? DEFAULT_PAGE_NUMBERS });
         // import path: flow is only a landing format — auto-paginate into grid on
         // first open, then it's grid forever (convert persists, so idempotent).
         if (sections.some((s) => !isGridSection(s.content))) {

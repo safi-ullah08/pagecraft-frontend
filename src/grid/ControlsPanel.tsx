@@ -1,23 +1,24 @@
 import { useState } from "react";
-import { BLOCKS, BLOCK_ORDER, type BlockCategory, type BlockType } from "@pagecraft/model";
+import { BLOCKS, BLOCK_ORDER, PAGE_NUMBER_POSITIONS, type BlockCategory, type BlockType } from "@pagecraft/model";
 import { useStore } from "../store.ts";
 import { themeNames } from "../themes.ts";
 import { PAGE_SIZES, presetOf, type PageSize } from "../pages.ts";
-import { COLS, ROWS } from "./types.ts";
+import { COLS, ROWS, isGridSection } from "./types.ts";
+import { stackOrder, reorderLayer, type LayerMove } from "./ops.ts";
 import { Inspector } from "./Inspector.tsx";
-import { Section, Field, Select, PALETTE } from "./controls.tsx";
+import { Section, Field, Select, inputStyle, PALETTE } from "./controls.tsx";
 
 // The right bar — a port of temp/src ControlsPanel: three tabs (Design / Blocks /
 // Templates). Blocks holds the palette (category-grouped tiles) and swaps to the
 // block editor when a block is selected.
-type Panel = "design" | "blocks" | "templates";
+type Panel = "design" | "blocks" | "layers" | "templates";
 
 export function ControlsPanel() {
   const [panel, setPanel] = useState<Panel>("blocks");
   return (
     <div style={{ width: 264, flexShrink: 0, background: "#fff", borderLeft: `1px solid ${PALETTE.BORDER}`, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", borderBottom: `1px solid ${PALETTE.BORDER}` }}>
-        {(["design", "blocks", "templates"] as const).map((key) => (
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: `1px solid ${PALETTE.BORDER}` }}>
+        {(["design", "blocks", "layers", "templates"] as const).map((key) => (
           <button key={key} onClick={() => setPanel(key)}
             style={{ padding: "12px 8px", fontSize: 12, fontWeight: 500, textTransform: "capitalize", cursor: "pointer", border: "none",
               color: panel === key ? PALETTE.TEXT : PALETTE.MUTED,
@@ -30,6 +31,7 @@ export function ControlsPanel() {
       <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
         {panel === "design" && <DesignPanel />}
         {panel === "blocks" && <BlocksPanel />}
+        {panel === "layers" && <LayersPanel />}
         {panel === "templates" && <TemplatesPanel />}
       </div>
     </div>
@@ -134,7 +136,106 @@ function DesignPanel() {
       <Section title="Page">
         <Field label="Size"><Select value={preset ?? "custom"} options={[...Object.keys(PAGE_SIZES).map((p) => ({ value: p, label: p })), ...(customPage ? [{ value: "custom", label: `Custom ${customPage.w}×${customPage.h}mm` }] : [])]} onChange={(v) => { if (v === "custom") { if (customPage) setPage(customPage); } else setPage(PAGE_SIZES[v as PageSize]); }} /></Field>
       </Section>
+      <PageNumberControls />
     </div>
+  );
+}
+
+const PAGENO_FORMATS = [
+  { value: "{n}", label: "1" },
+  { value: "Page {n}", label: "Page 1" },
+  { value: "{n} / {total}", label: "1 / N" },
+  { value: "Page {n} of {total}", label: "Page 1 of N" },
+  { value: "- {n} -", label: "- 1 -" },
+];
+
+// Document-level page numbers: on/off + where (position) + how (format/size). Each
+// change persists to the doc (store.setPageNumbers) and shows in the PDF preview.
+function PageNumberControls() {
+  const cfg = useStore((s) => s.pageNumbers);
+  const set = useStore((s) => s.setPageNumbers);
+  const known = PAGENO_FORMATS.some((f) => f.value === cfg.format);
+  return (
+    <Section title="Page numbers">
+      <Field label="Show">
+        <input type="checkbox" checked={cfg.enabled} onChange={(e) => set({ enabled: e.target.checked })} />
+      </Field>
+      {cfg.enabled && <>
+        <Field label="Position"><Select value={cfg.position} options={PAGE_NUMBER_POSITIONS.map((p) => ({ value: p, label: p.replace("-", " ") }))} onChange={(v) => set({ position: v as typeof cfg.position })} /></Field>
+        <Field label="Format"><Select value={known ? cfg.format : "custom"} options={[...PAGENO_FORMATS, { value: "custom", label: "Custom…" }]} onChange={(v) => set({ format: v === "custom" ? cfg.format : v })} /></Field>
+        {!known && <Field label="Custom"><input value={cfg.format} onChange={(e) => set({ format: e.target.value })} placeholder="{n} of {total}" style={inputStyle} /></Field>}
+        <Field label="Start at"><input type="number" min={0} value={cfg.startAt ?? 1} onChange={(e) => set({ startAt: Number(e.target.value) })} style={inputStyle} /></Field>
+        <Field label="Size (pt)"><input type="number" min={6} max={72} value={cfg.fontSize ?? 10} onChange={(e) => set({ fontSize: Number(e.target.value) })} style={inputStyle} /></Field>
+        <Field label="Custom CSS"><textarea value={cfg.css ?? ""} onChange={(e) => set({ css: e.target.value })} rows={3} placeholder="color: #888; font-style: italic; letter-spacing: 1px" style={{ ...inputStyle, resize: "vertical", fontFamily: "monospace", fontSize: 11 }} /></Field>
+        <div style={{ fontSize: 10, color: PALETTE.MUTED }}>{"{n}"} = page number · {"{total}"} = total pages</div>
+      </>}
+    </Section>
+  );
+}
+
+// First bit of text inside a block, for a recognisable layer label.
+function previewText(content: unknown): string {
+  const walk = (n: unknown): string => {
+    if (!n || typeof n !== "object") return "";
+    const o = n as { type?: string; text?: string; content?: unknown[]; src?: string; title?: string };
+    if (typeof o.text === "string" && o.text.trim()) return o.text.trim();
+    for (const c of o.content ?? []) { const t = walk(c); if (t) return t; }
+    return "";
+  };
+  const t = walk(content) || (content as { title?: string })?.title || "";
+  return t.length > 22 ? t.slice(0, 22) + "…" : t;
+}
+
+// Layers = the active page's blocks in stacking order, TOP FIRST (how design tools
+// list them). Selection is the same store field the canvas uses, so clicking a row
+// selects on the page and vice-versa — and it's the only way to reach a block that
+// sits entirely behind a bigger one.
+function LayersPanel() {
+  const sections = useStore((s) => s.sections);
+  const activeId = useStore((s) => s.activeId);
+  const selected = useStore((s) => s.selectedBlockIds);
+  const selectBlock = useStore((s) => s.selectBlock);
+  const edit = useStore((s) => s.edit);
+
+  const section = sections.find((s) => s.id === activeId);
+  const content = section?.content;
+  if (!section || !isGridSection(content)) {
+    return <Section title="Layers"><div style={{ fontSize: 11, color: PALETTE.MUTED }}>Open a page to see its layers.</div></Section>;
+  }
+  const topFirst = [...stackOrder(content.blocks)].reverse();
+  const move = (id: string, m: LayerMove) => edit(section.id, reorderLayer(content, id, m));
+  const btn: React.CSSProperties = { width: 20, height: 20, borderRadius: 3, border: `1px solid ${PALETTE.BORDER}`, background: "#fff", color: PALETTE.MUTED, fontSize: 10, lineHeight: 1, cursor: "pointer", flexShrink: 0 };
+
+  return (
+    <Section title={`Layers (${topFirst.length})`}>
+      {topFirst.length === 0 && <div style={{ fontSize: 11, color: PALETTE.MUTED }}>This page has no blocks yet.</div>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        {topFirst.map((b, i) => {
+          const isSel = selected.includes(b.id);
+          const label = BLOCKS[b.block]?.label ?? b.block;
+          const preview = previewText(b.content);
+          return (
+            <div key={b.id} onClick={(e) => selectBlock(b.id, e.shiftKey)}
+              title={`${label}${preview ? ` — ${preview}` : ""}`}
+              style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 6px", borderRadius: 4, cursor: "pointer",
+                background: isSel ? "#E07A5F18" : PALETTE.SURFACE,
+                border: `1px solid ${isSel ? "#E07A5F" : "transparent"}` }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: BLOCKS[b.block]?.color ?? "#888", opacity: 0.7 }} />
+              <span style={{ flex: 1, minWidth: 0, fontSize: 11, color: PALETTE.TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {preview || label}
+              </span>
+              <button style={btn} title="Bring forward" disabled={i === 0}
+                onClick={(e) => { e.stopPropagation(); move(b.id, "forward"); }}>↑</button>
+              <button style={btn} title="Send backward" disabled={i === topFirst.length - 1}
+                onClick={(e) => { e.stopPropagation(); move(b.id, "backward"); }}>↓</button>
+            </div>
+          );
+        })}
+      </div>
+      {topFirst.length > 1 && (
+        <div style={{ fontSize: 10, color: PALETTE.MUTED, marginTop: 6 }}>Top of the list = front of the page. ⤒/⤓ on the block itself jump to front/back.</div>
+      )}
+    </Section>
   );
 }
 
