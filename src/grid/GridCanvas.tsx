@@ -394,7 +394,7 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ
       {b.style?.customCss && <style dangerouslySetInnerHTML={{ __html: scopeCustomCss(b.style.customCss, `pc-${b.id}`) }} />}
       {/* while editing, the block expands to show ALL its text (auto-height,
           overflow visible, elevated over neighbours); it snaps back on exit */}
-      <div ref={contentRef} className={b.style?.customCss ? `pc-${b.id}` : undefined} style={{
+      <div ref={contentRef} className={`block${b.style?.customCss ? ` pc-${b.id}` : ""}`} style={{
         height: editing ? "auto" : "100%", minHeight: editing ? "100%" : undefined,
         overflow: editing ? "visible" : "hidden",
         background: editing ? "#fff" : undefined, boxShadow: editing ? "0 4px 16px rgba(0,0,0,.18)" : undefined,

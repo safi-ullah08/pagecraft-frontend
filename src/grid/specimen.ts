@@ -60,5 +60,8 @@ export function extractSpecimen(sections: { content: unknown }[]): Specimen {
 // user text going into innerHTML.
 export function specimenHtml(s: Specimen): string {
   const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return `<h1>${esc(s.heading)}</h1>` + s.paragraphs.map((p) => `<p>${esc(p)}</p>`).join("");
+  // wrapped in .page-content so the body/measure/drop-cap rules — which target the
+  // page containers, not bare tags — actually apply in the preview.
+  const inner = `<h1>${esc(s.heading)}</h1>` + s.paragraphs.map((p) => `<p>${esc(p)}</p>`).join("");
+  return `<div class="page-content">${inner}</div>`;
 }
