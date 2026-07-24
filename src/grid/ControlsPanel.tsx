@@ -6,6 +6,7 @@ import { themeNames } from "../themes.ts";
 import { PAGE_SIZES, presetOf, type PageSize } from "../pages.ts";
 import { COLS, ROWS, isGridSection } from "./types.ts";
 import { stackOrder, reorderLayer, type LayerMove } from "./ops.ts";
+import { isTocSection } from "./toc.ts";
 import { Inspector } from "./Inspector.tsx";
 import { Section, Field, Select, Slider, ColorPicker, inputStyle, PALETTE } from "./controls.tsx";
 
@@ -327,6 +328,9 @@ function LayersPanel() {
 // Templates = the page actions we have today; presets/templates land later.
 function TemplatesPanel() {
   const addPage = useStore((s) => s.addPage);
+  const generateToc = useStore((s) => s.generateToc);
+  const sections = useStore((s) => s.sections);
+  const hasToc = sections.some((s) => isTocSection(s.content));
   return (
     <div>
       <Section title="Pages">
@@ -334,6 +338,18 @@ function TemplatesPanel() {
           style={{ background: PALETTE.SURFACE, border: `1px dashed ${PALETTE.BORDER_STRONG}`, color: PALETTE.MUTED, padding: "8px 10px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
           + Add blank page
         </button>
+      </Section>
+      <Section title="Contents">
+        <button onClick={() => void generateToc()}
+          title={hasToc ? "Rebuild the contents page from the current headings" : "Scan every page's headings and insert a contents page after the current one"}
+          style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER_STRONG}`, color: PALETTE.TEXT, padding: "8px 10px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
+          {hasToc ? "⟳ Refresh table of contents" : "+ Generate table of contents"}
+        </button>
+        <div style={{ fontSize: 10, color: PALETTE.MUTED }}>
+          {hasToc
+            ? "Rebuilt in place from every heading — page numbers stay correct."
+            : "Inserted after the page you're on, so put it after the cover. Re-run it after editing to refresh."}
+        </div>
       </Section>
       <Section title="Templates">
         <div style={{ fontSize: 11, color: PALETTE.MUTED }}>Page templates & grid presets coming soon.</div>

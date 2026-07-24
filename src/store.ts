@@ -8,6 +8,7 @@ import { BLOCKS, serialize, DEFAULT_PAGE_NUMBERS, type PageNumberConfig } from "
 import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock } from "./grid/types.ts";
 import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
+import { collectToc, buildTocSection, isTocSection, tocPlaceholder } from "./grid/toc.ts";
 import { insertSectionsAfter, updatePageNumbers } from "./api.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
 import { splitParagraphSentences } from "./grid/split-inline.ts";
@@ -57,6 +58,7 @@ type Store = {
   load: () => Promise<void>;
   edit: (id: string, content: SectionContent) => void;
   addPage: () => Promise<void>;
+  generateToc: () => Promise<void>;
   removePage: (id: string) => Promise<void>;
   convertToGrid: () => Promise<void>;
 };
@@ -461,6 +463,37 @@ export const useStore = create<Store>((set, get) => {
       if (!docId) return;
       const section = await addSection(docId);
       set((st) => ({ sections: [...st.sections, section], activeId: section.id }));
+    },
+    // Build (or refresh) the table of contents. Grid pages ARE pages, so a heading's
+    // page number is its section index — no paged.js page capture needed. Refreshing
+    // an existing TOC happens in place (page count unchanged); a new one is inserted
+    // after the active page, and the numbering is projected WITH it so the pages it
+    // pushes down are numbered correctly.
+    generateToc: async () => {
+      const { sections, documentId, activeId, pageNumbers, edit } = get();
+      if (!documentId || !sections.length) return;
+      const startAt = pageNumbers.enabled ? (pageNumbers.startAt ?? 1) : 1;
+      const contents = sections.map((s) => s.content);
+
+      const existing = sections.findIndex((s) => isTocSection(s.content));
+      if (existing >= 0) {
+        edit(sections[existing]!.id, buildTocSection(collectToc(contents, startAt)) as SectionContent);
+        set({ activeId: sections[existing]!.id });
+        return;
+      }
+      // insert after the active page (typically the cover) — there is no
+      // insert-at-front API, so page 1 can't be the TOC unless a page precedes it.
+      const afterId = activeId ?? sections[0]!.id;
+      const afterIdx = sections.findIndex((s) => s.id === afterId);
+      const projected = [...contents];
+      projected.splice(afterIdx + 1, 0, tocPlaceholder());
+      const toc = buildTocSection(collectToc(projected, startAt));
+      const { sections: inserted } = await insertSectionsAfter(documentId, afterId, [assetsToCanonical(toc as SectionContent)]);
+      set((st) => {
+        const arr = [...st.sections];
+        arr.splice(afterIdx + 1, 0, ...inserted.map((s) => ({ ...s, content: assetsToDisplay(s.content) })));
+        return { sections: arr, activeId: inserted[0]?.id ?? st.activeId };
+      });
     },
     removePage: async (id) => {
       if (get().sections.length <= 1) return; // always keep at least one page
