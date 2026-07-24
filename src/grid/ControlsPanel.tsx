@@ -341,14 +341,14 @@ function TemplatesPanel() {
       </Section>
       <Section title="Contents">
         <button onClick={() => void generateToc()}
-          title={hasToc ? "Rebuild the contents page from the current headings" : "Scan every page's headings and insert a contents page after the current one"}
+          title={hasToc ? "Rebuild the contents page from the current headings" : "Scan every page's headings and add a contents page as page 1"}
           style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER_STRONG}`, color: PALETTE.TEXT, padding: "8px 10px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
           {hasToc ? "⟳ Refresh table of contents" : "+ Generate table of contents"}
         </button>
         <div style={{ fontSize: 10, color: PALETTE.MUTED }}>
           {hasToc
             ? "Rebuilt in place from every heading — page numbers stay correct."
-            : "Inserted after the page you're on, so put it after the cover. Re-run it after editing to refresh."}
+            : "Added as page 1, shifting the rest down. Re-run it after editing to refresh."}
         </div>
       </Section>
       <Section title="Templates">

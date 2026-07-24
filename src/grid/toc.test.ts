@@ -37,15 +37,13 @@ test("the TOC page is never indexed, but still occupies a page number", () => {
   assert.equal(entries[1]!.page, 3); // the TOC still counts as page 2
 });
 
-test("inserting the TOC shifts later pages by one", () => {
+test("prepending the TOC as page 1 shifts every other page down by one", () => {
   const content = [page(blk(heading("Cover"))), page(blk(heading("Chapter")))];
   const before = collectToc(content);
-  assert.equal(before.find((e) => e.text === "Chapter")!.page, 2);
-  // project the insert at index 1 the way the store does
-  const projected = [...content];
-  projected.splice(1, 0, tocPlaceholder());
-  const after = collectToc(projected);
-  assert.equal(after.find((e) => e.text === "Chapter")!.page, 3);
+  assert.deepEqual(before.map((e) => e.page), [1, 2]);
+  // the store projects the TOC into slot 0 before numbering
+  const after = collectToc([tocPlaceholder(), ...content]);
+  assert.deepEqual(after.map((e) => e.page), [2, 3]);
 });
 
 test("maxLevel filters deep headings", () => {

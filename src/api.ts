@@ -104,7 +104,8 @@ export async function deleteSection(id: string) {
 }
 
 // insert new pages right after a section (split / break-to-next-page)
-export async function insertSectionsAfter(documentId: string, afterSectionId: string, pages: SectionContent[]) {
+// afterSectionId === null inserts at the FRONT (page 1) — used by the TOC.
+export async function insertSectionsAfter(documentId: string, afterSectionId: string | null, pages: SectionContent[]) {
   const res = await authedFetch(`/api/documents/${documentId}/sections/insert-after`, {
     method: "POST",
     headers: { "content-type": "application/json" },
