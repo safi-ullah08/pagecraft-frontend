@@ -96,7 +96,7 @@ export function Dashboard() {
 
       {plan === "free" && (
         <p style={{ fontSize: 12, color: "#888", marginTop: -14, marginBottom: 20 }}>
-          Free plan — exported PDFs are watermarked. Upgrade to Pro to remove it.
+          Free plan — exported PDFs carry a small “Made with PageCraft” line at the top of every page. Upgrade to Pro to remove it.
         </p>
       )}
 
