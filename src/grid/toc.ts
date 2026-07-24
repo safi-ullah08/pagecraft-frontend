@@ -1,7 +1,7 @@
 import type { JSONContent } from "@tiptap/react";
 import { BLOCKS } from "./blocks.ts";
 import { COLS, ROWS, isGridSection, type GridSection } from "./types.ts";
-import { isCoverSection } from "./covers.ts";
+import { isAnyCover } from "./covers.ts";
 
 // Automatic table of contents. In the GRID path every section IS a page, so a
 // heading's page number is just its section index — no page-number capture during
@@ -48,7 +48,7 @@ export function collectToc(pages: unknown[], startAt = 1, maxLevel = 6): TocEntr
   pages.forEach((content, i) => {
     // Skip the contents page itself AND the cover — a cover's title is a heading,
     // but "My Book … 1" is not a contents entry. Both still occupy a page number.
-    if (isTocSection(content) || isCoverSection(content)) return;
+    if (isTocSection(content) || isAnyCover(content)) return;
     for (const h of headingsOnPage(content)) {
       if (h.level <= maxLevel) out.push({ text: h.text, level: h.level, page: startAt + i });
     }

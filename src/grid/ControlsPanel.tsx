@@ -7,7 +7,7 @@ import { PAGE_SIZES, presetOf, type PageSize } from "../pages.ts";
 import { COLS, ROWS, isGridSection } from "./types.ts";
 import { stackOrder, reorderLayer, type LayerMove } from "./ops.ts";
 import { isTocSection } from "./toc.ts";
-import { COVER_TEMPLATES, isCoverSection } from "./covers.ts";
+import { frontCovers, backCovers, isCoverSection, isBackCoverSection, type CoverTemplate } from "./covers.ts";
 import { Inspector } from "./Inspector.tsx";
 import { Section, Field, Select, Slider, ColorPicker, inputStyle, PALETTE } from "./controls.tsx";
 
@@ -260,6 +260,42 @@ function PageNumberControls() {
   );
 }
 
+// One cover list (front or back). Templates bind to the theme's design tokens, so
+// the swatches below preview the CURRENT theme rather than a fixed palette.
+function CoverPicker({ title, templates, taken, takenNote, note, onPick }: {
+  title: string;
+  templates: CoverTemplate[];
+  taken: boolean;
+  takenNote: string;
+  note: string;
+  onPick: (id: string) => Promise<void>;
+}) {
+  return (
+    <Section title={title}>
+      {taken ? (
+        <div style={{ fontSize: 11, color: PALETTE.MUTED }}>{takenNote}</div>
+      ) : (<>
+        <div style={{ fontSize: 10, color: PALETTE.MUTED, marginBottom: 2 }}>{note}</div>
+        {templates.map((t) => (
+          <button key={t.id} onClick={() => void onPick(t.id)} title={t.hint}
+            style={{ display: "flex", alignItems: "center", gap: 8, textAlign: "left", background: PALETTE.SURFACE,
+              border: `1px solid ${PALETTE.BORDER}`, borderRadius: 4, padding: "7px 9px", cursor: "pointer" }}>
+            {/* live swatch: the theme tokens resolve against the editor surface */}
+            <span className="editor-surface" style={{ width: 22, height: 30, borderRadius: 2, flexShrink: 0,
+              border: `1px solid ${PALETTE.BORDER}`, background: "var(--pc-bg, #fff)", position: "relative", overflow: "hidden" }}>
+              <span style={{ position: "absolute", left: 3, right: 3, top: 11, height: 7, background: "var(--pc-accent, #999)" }} />
+            </span>
+            <span style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: PALETTE.TEXT }}>{t.name}</div>
+              <div style={{ fontSize: 10, color: PALETTE.MUTED }}>{t.hint}</div>
+            </span>
+          </button>
+        ))}
+      </>)}
+    </Section>
+  );
+}
+
 // First bit of text inside a block, for a recognisable layer label.
 function previewText(content: unknown): string {
   const walk = (n: unknown): string => {
@@ -334,6 +370,7 @@ function TemplatesPanel() {
   const sections = useStore((s) => s.sections);
   const hasToc = sections.some((s) => isTocSection(s.content));
   const hasCover = sections.some((s) => isCoverSection(s.content));
+  const hasBackCover = sections.some((s) => isBackCoverSection(s.content));
   return (
     <div>
       <Section title="Pages">
@@ -342,22 +379,12 @@ function TemplatesPanel() {
           + Add blank page
         </button>
       </Section>
-      <Section title="Cover">
-        {hasCover ? (
-          <div style={{ fontSize: 11, color: PALETTE.MUTED }}>
-            Page 1 is your cover — edit it like any other page. Delete it to pick a different design.
-          </div>
-        ) : (<>
-          <div style={{ fontSize: 10, color: PALETTE.MUTED, marginBottom: 2 }}>Pick a starting point — it becomes page 1 and is fully editable.</div>
-          {COVER_TEMPLATES.map((t) => (
-            <button key={t.id} onClick={() => void addCover(t.id)} title={t.hint}
-              style={{ textAlign: "left", background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER}`, borderRadius: 4, padding: "7px 9px", cursor: "pointer" }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: PALETTE.TEXT }}>{t.name}</div>
-              <div style={{ fontSize: 10, color: PALETTE.MUTED }}>{t.hint}</div>
-            </button>
-          ))}
-        </>)}
-      </Section>
+      <CoverPicker title="Front cover" templates={frontCovers()} taken={hasCover}
+        takenNote="Page 1 is your front cover — edit it like any other page. Delete it to pick another design."
+        note="Becomes page 1. Colours and fonts follow the current theme." onPick={addCover} />
+      <CoverPicker title="Back cover" templates={backCovers()} taken={hasBackCover}
+        takenNote="The last page is your back cover. Delete it to pick another design."
+        note="Added as the last page. Neither cover is numbered." onPick={addCover} />
       <Section title="Contents">
         <button onClick={() => void generateToc()}
           title={hasToc ? "Rebuild the contents page from the current headings" : "Scan every page's headings and add a contents page as page 1"}

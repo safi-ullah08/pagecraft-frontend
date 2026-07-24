@@ -75,19 +75,25 @@ test("an empty document still builds a valid TOC page", () => {
 });
 
 test("a cover is not indexed but still occupies page 1", () => {
-  const cover = buildCover("centered", "My Book", "by me");
+  const cover = buildCover("centered");
   const pages = [cover, page(blk(heading("Chapter One")))];
   const entries = collectToc(pages);
   // the cover's own title is a heading — it must not appear as a TOC entry
-  assert.deepEqual(entries.map((e) => e.text), ["Chapter One"]);
+  assert.deepEqual(entries.map((e) => e.text), ["Chapter One"]); // not the cover title
   assert.equal(entries[0]!.page, 2);
 });
 
 test("with a cover, the TOC lands on page 2 and shifts the rest", () => {
-  const cover = buildCover("band", "T", "S");
+  const cover = buildCover("band");
   const content = [cover, page(blk(heading("Chapter")))];
   // the store projects the TOC into slot 1 (after the cover)
   const projected = [...content];
   projected.splice(1, 0, tocPlaceholder());
   assert.equal(collectToc(projected).find((e) => e.text === "Chapter")!.page, 3);
+});
+
+test("a back cover is not indexed either, but still occupies the last page", () => {
+  const pages = [page(blk(heading("Chapter"))), buildCover("blurb")];
+  const entries = collectToc(pages);
+  assert.deepEqual(entries.map((e) => e.text), ["Chapter"]);
 });

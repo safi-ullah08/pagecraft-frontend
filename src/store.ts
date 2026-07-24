@@ -9,7 +9,7 @@ import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock } fr
 import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
 import { collectToc, buildTocSection, isTocSection, tocPlaceholder } from "./grid/toc.ts";
-import { buildCover, isCoverSection } from "./grid/covers.ts";
+import { buildCover, isCoverSection, isBackCoverSection } from "./grid/covers.ts";
 import { insertSectionsAfter, updatePageNumbers } from "./api.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
 import { splitParagraphSentences } from "./grid/split-inline.ts";
@@ -498,16 +498,22 @@ export const useStore = create<Store>((set, get) => {
         return { sections: arr, activeId: inserted[0]?.id ?? st.activeId };
       });
     },
-    // Add a cover as page 1 (there is at most one). Inserted at the front, so an
-    // existing TOC/content shifts down; page numbering follows automatically.
+    // Add a cover. A FRONT cover goes to the very front (page 1); a BACK cover is
+    // appended last. One of each, max. Numbering follows automatically since neither
+    // is numbered and both still occupy a page.
     addCover: async (templateId) => {
       const { documentId, sections } = get();
-      if (!documentId || sections.some((s) => isCoverSection(s.content))) return;
-      const cover = buildCover(templateId, "", "");
-      const { sections: inserted } = await insertSectionsAfter(documentId, null, [assetsToCanonical(cover as SectionContent)]);
+      if (!documentId) return;
+      const cover = buildCover(templateId);
+      const back = isBackCoverSection(cover);
+      const taken = sections.some((s) => (back ? isBackCoverSection(s.content) : isCoverSection(s.content)));
+      if (taken) return;
+      const afterId = back ? (sections[sections.length - 1]?.id ?? null) : null;
+      const { sections: inserted } = await insertSectionsAfter(documentId, afterId, [assetsToCanonical(cover as SectionContent)]);
+      const added = inserted.map((s) => ({ ...s, content: assetsToDisplay(s.content) }));
       set((st) => ({
-        sections: [...inserted.map((s) => ({ ...s, content: assetsToDisplay(s.content) })), ...st.sections],
-        activeId: inserted[0]?.id ?? st.activeId,
+        sections: back ? [...st.sections, ...added] : [...added, ...st.sections],
+        activeId: added[0]?.id ?? st.activeId,
       }));
     },
     removePage: async (id) => {
