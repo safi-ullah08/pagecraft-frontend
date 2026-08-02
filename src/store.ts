@@ -10,7 +10,7 @@ import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks,
 import { parseBlocks } from "./grid/parseBlocks.ts";
 import { collectToc, buildTocSection, isTocSection, tocPlaceholder } from "./grid/toc.ts";
 import { buildCover, isCoverSection, isBackCoverSection } from "./grid/covers.ts";
-import { insertSectionsAfter, updatePageNumbers, updateDesign, updateTheme } from "./api.ts";
+import { insertSectionsAfter, updatePageNumbers, updateDesign, updateTheme, renameDocument } from "./api.ts";
 import { parseTemplateId, IMPORT_COVER, type Template } from "./grid/templates.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
 import { splitParagraphSentences } from "./grid/split-inline.ts";
@@ -18,6 +18,7 @@ import { splitParagraphSentences } from "./grid/split-inline.ts";
 export type Section = { id: string; content: SectionContent; version: number };
 
 type Store = {
+  title: string; // document title — editable from the editor's top bar
   theme: string;
   page: PageDims; // editor page size (mm); loaded from the doc, matches the PDF
   customPage: PageDims | null; // the doc's non-preset size (e.g. from a docx), kept so it stays selectable
@@ -33,6 +34,7 @@ type Store = {
   showGrid: boolean; // canvas grid-guide overlay
   zoom: number; // editor zoom (1 = 100%)
   setTheme: (t: string) => void;
+  rename: (title: string) => void;
   setPage: (p: PageDims) => void;
   setPageNumbers: (patch: Partial<PageNumberConfig>) => void;
   setDesign: (patch: Partial<DesignTokens> | null) => void; // null = reset to the pure theme
@@ -155,6 +157,7 @@ export const useStore = create<Store>((set, get) => {
     customPage: null,
     pageNumbers: DEFAULT_PAGE_NUMBERS,
     design: EMPTY_DESIGN,
+    title: "Untitled",
     documentId: null,
     loading: true,
     sections: [],
@@ -168,6 +171,12 @@ export const useStore = create<Store>((set, get) => {
     // switching is NOT persisted back yet (export/preview honour it live). DB
     // theme persistence lands with the theme/template builder phase.
     setTheme: (theme) => set({ theme }),
+    // Optimistic rename; persisted fire-and-forget (server re-sanitizes).
+    rename: (title) => {
+      set({ title });
+      const id = get().documentId;
+      if (id) void renameDocument(id, title).catch(() => {});
+    },
     setPage: (page) => set({ page }),
     // Page numbers: update view-state immediately, persist to the doc (fire-and-forget;
     // the config is re-sanitized server-side). Reaches the PDF via the export read.
@@ -440,7 +449,7 @@ export const useStore = create<Store>((set, get) => {
         // page size comes from the document (e.g. a docx's page size); else A4.
         // If it's not a preset, remember it as customPage so it stays selectable.
         const page = doc.pageWidthMm && doc.pageHeightMm ? { w: doc.pageWidthMm, h: doc.pageHeightMm } : A4;
-        set({ documentId: id, sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME, page, customPage: presetOf(page) ? null : page, pageNumbers: doc.pageNumbers ?? DEFAULT_PAGE_NUMBERS, design: doc.designTokens ?? EMPTY_DESIGN });
+        set({ documentId: id, title: doc.title || "Untitled", sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME, page, customPage: presetOf(page) ? null : page, pageNumbers: doc.pageNumbers ?? DEFAULT_PAGE_NUMBERS, design: doc.designTokens ?? EMPTY_DESIGN });
         // import path: flow is only a landing format — auto-paginate into grid on
         // first open, then it's grid forever (convert persists, so idempotent).
         if (sections.some((s) => !isGridSection(s.content))) {
@@ -565,12 +574,33 @@ export const useStore = create<Store>((set, get) => {
     convertToGrid: async () => {
       const { documentId, sections, theme, page } = get();
       if (!documentId) return;
-      // Keep display URLs here so parseBlocks can LOAD each image to read its natural
-      // size; canonicalize (→ asset://) only the resulting pages before persisting.
-      const chapters = sections.map((s) => s.content).filter((c) => !isGridSection(c)) as JSONContent[];
-      if (chapters.length === 0) return; // already all grid
-      const pages = (await parseBlocks(chapters, theme, page)).map((p) => assetsToCanonical(p));
-      const { sections: fresh } = await convertDocument(documentId, pages);
+      if (!sections.some((s) => !isGridSection(s.content))) return; // already all grid
+      // Order-preserving and mixed-aware: existing grid pages pass through
+      // UNTOUCHED in place; each contiguous run of flow chapters paginates where
+      // it sat. convertDocument replaces the whole document with what we send,
+      // so dropping the grid pages here (the old behavior: filter to flow only)
+      // destroyed them — e.g. appending imported flow chapters to a grid book,
+      // then reloading, wiped the book.
+      // Keep display URLs while paginating so parseBlocks can LOAD each image to
+      // read its natural size; canonicalize (→ asset://) everything persisted.
+      const out: SectionContent[] = [];
+      let run: JSONContent[] = [];
+      const flushRun = async () => {
+        if (run.length === 0) return;
+        const pages = await parseBlocks(run, theme, page);
+        out.push(...pages.map((p) => assetsToCanonical(p)));
+        run = [];
+      };
+      for (const s of sections) {
+        if (isGridSection(s.content)) {
+          await flushRun();
+          out.push(assetsToCanonical(s.content));
+        } else {
+          run.push(s.content as JSONContent);
+        }
+      }
+      await flushRun();
+      const { sections: fresh } = await convertDocument(documentId, out);
       set({
         sections: fresh.map((s) => ({ ...s, content: assetsToDisplay(s.content) })),
         activeId: fresh[0]?.id ?? null,

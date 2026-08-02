@@ -4,6 +4,7 @@ import { ClerkProvider, SignedIn, SignedOut, SignIn, useAuth } from "@clerk/cler
 import { App } from "./App.tsx";
 import { Dashboard } from "./components/Dashboard.tsx";
 import { setTokenGetter } from "./api.ts";
+import "./ui-theme.css";
 import "./styles.css";
 
 // Router-free split: ?doc=<id> opens the editor, anything else the dashboard.

@@ -1,0 +1,45 @@
+/* Book-page chrome theme (deckle.studio-inspired): parchment surfaces, coffee
+   ink, serif type, leather-brown accents. CHROME ONLY — the document canvas
+   lives under .editor-surface and is styled exclusively by the document's own
+   theme skin, so nothing here may target it. */
+:root {
+  --ui-bg: #F5EEDC;            /* parchment app background */
+  --ui-bg-deep: #E9DFC5;       /* editor canvas backdrop (the "desk") */
+  --ui-panel: #FBF7EB;         /* raised panels, modals, cards */
+  --ui-paper: #FFFDF6;         /* brightest surface: inputs, doc cards */
+  --ui-ink: #33261A;           /* coffee-brown text */
+  --ui-muted: #8C7A61;
+  --ui-border: #DFD2B4;
+  --ui-border-strong: #C9B893;
+  --ui-accent: #8A5A2B;        /* leather brown — links, active states */
+  --ui-accent-soft: #F1E4CB;   /* accent wash for active/hover fills */
+  --ui-primary: #3E2C18;       /* dark coffee — primary buttons */
+  --ui-primary-ink: #F7F0DE;
+  --ui-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+}
+
+html, body { margin: 0; }
+body {
+  background: var(--ui-bg);
+  color: var(--ui-ink);
+  font-family: var(--ui-serif);
+}
+
+/* Quiet parchment defaults for chrome form controls. Components override inline
+   where they need to; the document canvas renders no native form controls, so
+   nothing here reaches it. */
+button, select, input, textarea { font-family: inherit; }
+button {
+  color: var(--ui-ink);
+  background: var(--ui-panel);
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+select, textarea,
+input[type="text"], input[type="number"], input[type="url"], input:not([type]) {
+  color: var(--ui-ink);
+  background: var(--ui-paper);
+  border: 1px solid var(--ui-border);
+  border-radius: 6px;
+}

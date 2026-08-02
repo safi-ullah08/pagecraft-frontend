@@ -1,13 +1,13 @@
 import type { CSSProperties, ReactNode } from "react";
 
-// Inspector form controls (ported from temp/src/_shared, CSS vars → concrete
-// colors so they don't depend on app-level design tokens).
-const TEXT = "#111";
-const MUTED = "#666";
-const SURFACE = "#f5f5f5";
-const BORDER = "#ddd";
-const BORDER_STRONG = "#bbb";
-const ACCENT = "#E07A5F";
+// Inspector form controls. Colors reference the chrome theme layer
+// (src/ui-theme.css) so every panel re-skins with the app.
+const TEXT = "var(--ui-ink)";
+const MUTED = "var(--ui-muted)";
+const SURFACE = "var(--ui-bg)";
+const BORDER = "var(--ui-border)";
+const BORDER_STRONG = "var(--ui-border-strong)";
+const ACCENT = "var(--ui-accent)";
 
 export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (

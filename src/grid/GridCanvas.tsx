@@ -13,7 +13,7 @@ import { PAGE_MARGIN_MM, type PageDims } from "../pages.ts";
 // portal above every page) so it travels across page boundaries seamlessly, with a
 // live landing footprint on the page under the cursor and edge auto-scroll. Resize
 // from right / bottom / corner. See UX-PARITY.md.
-const ACCENT = "#E07A5F";
+const ACCENT = "#8A5A2B"; // chrome selection accent (hex: alpha suffixes are concatenated below)
 const DRAG_THRESHOLD = 4; // px before a press becomes a drag (else it's a click)
 const EDGE = 48; // px from the scroll edge that triggers auto-scroll
 const SCROLL_SPEED = 14; // px/frame while auto-scrolling
@@ -242,7 +242,10 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
   const sheet: React.CSSProperties = {
     width: `${dim.w}mm`, height: `${dim.h}mm`, boxSizing: "border-box",
     padding: `${PAGE_MARGIN_MM}mm`, position: "relative", margin: "0 auto",
-    background: "#fff", boxShadow: "0 1px 10px rgba(0,0,0,.28)",
+    // Default page bg = the THEME's --pc-bg (set on .editor-surface by the scoped
+    // skin), matching the PDF where .page inherits the skin's body background —
+    // a hardcoded #fff here made e.g. luxe-dark pages white in the editor only.
+    background: "var(--pc-bg, #fff)", boxShadow: "0 1px 10px rgba(0,0,0,.28)",
     // page background from the SAME builder the PDF uses (so canvas == print)
     ...cssTextToObject(backgroundCss(section.background)),
   };
@@ -338,15 +341,27 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ
   // overflow affordance: dashed bar when the content is taller than its box
   const contentRef = useRef<HTMLDivElement>(null);
   const [overflow, setOverflow] = useState(false);
+  // Natural content height (the inner child auto-sizes; the box is height:100%), so
+  // the SELECTION ring can hug the content instead of the whole grid cell — a short
+  // block in a tall area was showing a border much bigger than its text.
+  const [contentH, setContentH] = useState(0);
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
-    const check = () => setOverflow(el.scrollHeight > el.clientHeight + 2);
+    const check = () => {
+      setOverflow(el.scrollHeight > el.clientHeight + 2);
+      const child = el.firstElementChild as HTMLElement | null;
+      setContentH(child ? child.scrollHeight : el.scrollHeight);
+    };
     check();
     const obs = new ResizeObserver(check);
     obs.observe(el);
+    if (el.firstElementChild) obs.observe(el.firstElementChild); // child grows without resizing the fixed-height box
     return () => obs.disconnect();
   }, [b.area, b.content]);
+  // Fill blocks (colour panels, images, dividers, typed .pc-* blocks) legitimately
+  // occupy their whole cell — keep a full-box ring for them. Text-ish blocks hug.
+  const fill = !reg.text || !!b.style?.backgroundColor;
   // Snap the box to wrap content exactly: on demand (Fit button) and automatically
   // when a text block leaves edit mode (content just settled).
   const fit = () => { if (contentRef.current) onFit(contentRef.current.scrollHeight); };
@@ -371,7 +386,9 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ
         gridArea: `${rowStart} / ${colStart} / ${rowEnd} / ${colEnd}`, position: "relative",
         cursor: editing ? "text" : "grab",
         margin: blockMargin(b.style), // space between blocks/cols (per-side)
-        outline: mergeTarget ? `3px solid ${ACCENT}` : selected ? `2px solid ${ACCENT}` : "none",
+        // selected ring is a content-hugging overlay (below); the wrapper only shows
+        // the merge-target highlight now.
+        outline: mergeTarget ? `3px solid ${ACCENT}` : "none",
         outlineOffset: 1, boxShadow: mergeTarget ? `inset 0 0 0 100vmax ${ACCENT}18` : undefined,
         opacity: ghosting ? 0.3 : offset ? 0.7 : 1,
         transform: offset ? `translate(${offset.x}px, ${offset.y}px)` : undefined,
@@ -402,6 +419,15 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ
       }}>
         <BlockBody b={b} editing={editing} caret={caret} onContent={onContent} />
       </div>
+      {/* Selection ring: hugs the actual content height (capped at the box) for text
+          blocks; full box for fill/image/typed blocks. Overlay so it never mutates
+          layout. Hidden while editing (the box expands to auto-height then). */}
+      {selected && !ghosting && !mergeTarget && !editing && (
+        <div style={{ position: "absolute", top: 0, left: 0, right: 0,
+          height: fill || !contentH ? "100%" : contentH, maxHeight: "100%",
+          outline: `2px solid ${ACCENT}`, outlineOffset: 1, borderRadius: 2,
+          pointerEvents: "none", zIndex: 6 }} />
+      )}
       {overflow && !ghosting && (
         <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); fit(); }}
           title="content overflows — click to grow the box to fit"

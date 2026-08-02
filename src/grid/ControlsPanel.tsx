@@ -19,14 +19,14 @@ type Panel = "design" | "blocks" | "layers" | "templates";
 export function ControlsPanel() {
   const [panel, setPanel] = useState<Panel>("blocks");
   return (
-    <div style={{ width: 264, flexShrink: 0, background: "#fff", borderLeft: `1px solid ${PALETTE.BORDER}`, display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <div style={{ width: 264, flexShrink: 0, background: "var(--ui-panel)", borderLeft: `1px solid ${PALETTE.BORDER}`, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: `1px solid ${PALETTE.BORDER}` }}>
         {(["design", "blocks", "layers", "templates"] as const).map((key) => (
           <button key={key} onClick={() => setPanel(key)}
             style={{ padding: "12px 8px", fontSize: 12, fontWeight: 500, textTransform: "capitalize", cursor: "pointer", border: "none",
               color: panel === key ? PALETTE.TEXT : PALETTE.MUTED,
               background: panel === key ? PALETTE.SURFACE : "transparent",
-              borderBottom: panel === key ? "2px solid #E07A5F" : "2px solid transparent" }}>
+              borderBottom: panel === key ? "2px solid var(--ui-accent)" : "2px solid transparent" }}>
             {key}
           </button>
         ))}
@@ -327,7 +327,7 @@ function LayersPanel() {
   }
   const topFirst = [...stackOrder(content.blocks)].reverse();
   const move = (id: string, m: LayerMove) => edit(section.id, reorderLayer(content, id, m));
-  const btn: React.CSSProperties = { width: 20, height: 20, borderRadius: 3, border: `1px solid ${PALETTE.BORDER}`, background: "#fff", color: PALETTE.MUTED, fontSize: 10, lineHeight: 1, cursor: "pointer", flexShrink: 0 };
+  const btn: React.CSSProperties = { width: 20, height: 20, borderRadius: 3, border: `1px solid ${PALETTE.BORDER}`, background: "var(--ui-panel)", color: PALETTE.MUTED, fontSize: 10, lineHeight: 1, cursor: "pointer", flexShrink: 0 };
 
   return (
     <Section title={`Layers (${topFirst.length})`}>
@@ -341,8 +341,8 @@ function LayersPanel() {
             <div key={b.id} onClick={(e) => selectBlock(b.id, e.shiftKey)}
               title={`${label}${preview ? ` — ${preview}` : ""}`}
               style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 6px", borderRadius: 4, cursor: "pointer",
-                background: isSel ? "#E07A5F18" : PALETTE.SURFACE,
-                border: `1px solid ${isSel ? "#E07A5F" : "transparent"}` }}>
+                background: isSel ? "var(--ui-accent-soft)" : PALETTE.SURFACE,
+                border: `1px solid ${isSel ? "var(--ui-accent)" : "transparent"}` }}>
               <span style={{ width: 8, height: 8, borderRadius: 2, flexShrink: 0, background: BLOCKS[b.block]?.color ?? "#888", opacity: 0.7 }} />
               <span style={{ flex: 1, minWidth: 0, fontSize: 11, color: PALETTE.TEXT, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {preview || label}

@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/react";
+import type { PageNumberConfig } from "@pagecraft/model";
 import { ROWS, COLS, type BlockStyleTokens, type GridBlock, type GridSection, type PageBackground } from "./types.ts";
 import { buildCover } from "./covers.ts";
 import { buildTocSection } from "./toc.ts";
@@ -25,14 +26,21 @@ const BG = "var(--pc-bg)", INK = "var(--pc-ink)", ACCENT = "var(--pc-accent)";
 const ON_ACCENT = "var(--pc-on-accent)", DISPLAY = "var(--pc-display)", BODY = "var(--pc-body)";
 const UPPER = "text-transform: uppercase";
 
-// A placed text block: [rowStart, colStart, rowEnd, colEnd] on the 12×12 grid.
-type BlockSpec = { at: [number, number, number, number]; nodes: JSONContent[]; style?: BlockStyleTokens; z?: number };
+// A placed block: [rowStart, colStart, rowEnd, colEnd] on the 12×12 grid.
+// `image: true` = an empty image slot (the editor shows a click-to-fill placeholder).
+type BlockSpec = { at: [number, number, number, number]; nodes?: JSONContent[]; style?: BlockStyleTokens; z?: number; image?: true };
 type PageSpec =
   | { kind: "blocks"; background?: PageBackground; cover?: true; blocks: BlockSpec[] } // cover:true = hand-crafted cover, excluded from numbering/TOC
   | { kind: "cover"; cover: string }   // reuse a covers.ts front/back design
   | { kind: "toc" };                    // a "Contents" placeholder; user regenerates
 export type DocType = "leadMagnet" | "ebook" | "report";
-export type StructureSpec = { key: DocType; name: string; pages: PageSpec[] };
+// Structures beyond the original three (one per docType) get their own key but
+// still belong to a docType for gallery grouping + import covers.
+export type StructKey = DocType | "guidebook" | "wellness";
+export type StructureSpec = {
+  key: StructKey; docType: DocType; name: string; pages: PageSpec[];
+  pageNumbers?: PageNumberConfig; // set on the new doc when the structure wants a specific look (e.g. wellness's corner tab)
+};
 
 // ---- interpreter --------------------------------------------------------
 export function interpret(spec: StructureSpec): GridSection[] {
@@ -51,8 +59,8 @@ function toBlock(b: BlockSpec, i: number): GridBlock {
   return {
     id: rid(),
     area: { rowStart, colStart, rowEnd, colEnd },
-    block: "textFrame",
-    content: doc(b.nodes),
+    block: b.image ? "image" : "textFrame",
+    content: b.image ? { src: "", alt: "" } : doc(b.nodes ?? [emptyP]),
     zIndex: b.z ?? i, // explicit so text sits above any page background
     ...(b.style ? { style: b.style } : {}),
   };
@@ -85,6 +93,12 @@ const DROPCAP: BlockStyleTokens = { fontSize: 15, textColor: INK, fontFamily: BO
   "p:first-child::first-letter{float:left;font-family:var(--pc-display);font-size:3.3em;line-height:.8;font-weight:700;color:var(--pc-accent);padding:.02em .12em 0 0}" };
 
 const kicker = (text: string, at: [number, number, number, number]): BlockSpec => ({ at, nodes: [para(text)], style: KICKER });
+// An empty image slot the user fills with their own photo.
+const img = (at: [number, number, number, number], z?: number): BlockSpec => ({ at, image: true, ...(z !== undefined ? { z } : {}) });
+// A coloured background panel (z:0 so content stacks above it).
+const panel = (at: [number, number, number, number], color: string): BlockSpec => ({ at, nodes: [emptyP], style: { backgroundColor: color }, z: 0 });
+// A numbered list (the guidebook's 1/2/3 page).
+const ol = (...items: string[]): JSONContent => ({ type: "orderedList", content: items.map((t) => ({ type: "listItem", content: [para(t)] })) });
 // A short centred accent rule (temp's 32×1px bar under chapter titles).
 const rule = (at: [number, number, number, number]): BlockSpec => ({ at, nodes: [emptyP], style: { customCss: "width:44px;height:2px;background:var(--pc-accent)" } });
 // Oversized accent numeral + uppercase muted label, stacked and centred.
@@ -97,7 +111,7 @@ const stat = (value: string, label: string, at: [number, number, number, number]
 
 // ---- the 3 structures ---------------------------------------------------
 const leadMagnet: StructureSpec = {
-  key: "leadMagnet", name: "Lead magnet",
+  key: "leadMagnet", docType: "leadMagnet", name: "Lead magnet",
   pages: [
     { kind: "cover", cover: "band" },
     { kind: "blocks", blocks: [
@@ -126,7 +140,7 @@ const runHead = (text: string): BlockSpec => ({ at: [1, 2, 2, 12], nodes: [para(
   style: { fontSize: 10, letterSpacing: 0.14, textColor: MUTED, fontFamily: BODY, customCss: `text-transform:uppercase;border-bottom:1px solid ${BORDER};padding-bottom:7px` } });
 
 const ebook: StructureSpec = {
-  key: "ebook", name: "Ebook",
+  key: "ebook", docType: "ebook", name: "Ebook",
   pages: [
     // 1 — hand-crafted editorial cover (unnumbered, not in contents)
     { kind: "blocks", cover: true, background: { kind: "solid", color: BG }, blocks: [
@@ -182,7 +196,7 @@ const ebook: StructureSpec = {
 };
 
 const report: StructureSpec = {
-  key: "report", name: "Report",
+  key: "report", docType: "report", name: "Report",
   pages: [
     { kind: "blocks", blocks: [
       kicker("Quarterly report", [3, 2, 4, 10]),
@@ -208,23 +222,202 @@ const report: StructureSpec = {
   ],
 };
 
-export const STRUCTURES: Record<DocType, StructureSpec> = { leadMagnet, ebook, report };
+// ---- Guidebook — page-for-page from the "Entrepreneur" ebook design (Canva
+// DAHQxublRs4 pp. 2–13): accent cover with inset light panel, welcome/colophon,
+// contents, banner chapter opener, two-column body, numbered-list panel,
+// thank-you and back cover. Pairs 1:1 with the indigo-press skin; renders under
+// any theme via the --pc-* tokens. Placeholder copy — the user types over it.
+const HAIR_ON_ACCENT: BlockStyleTokens = { customCss: "border-top:1px solid var(--pc-on-accent)" };
+const HAIR_ACCENT: BlockStyleTokens = { customCss: "border-top:1px solid var(--pc-accent)" };
+
+const guidebook: StructureSpec = {
+  key: "guidebook", docType: "ebook", name: "Guidebook",
+  pages: [
+    // 1 — cover: full-bleed accent, inset panel, serif title, author strip
+    { kind: "blocks", cover: true, background: { kind: "solid", color: ACCENT }, blocks: [
+      panel([2, 2, 9, 12], BG),
+      { at: [3, 3, 7, 11], nodes: [heading("How to Become an Entrepreneur")], style: { textAlign: "center", fontSize: 40, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY, customCss: "line-height:1.15" } },
+      { at: [7, 3, 8, 11], nodes: [para("A step-by-step guide to level up your skills")], style: { textAlign: "center", fontSize: 15, textColor: ACCENT, fontFamily: BODY } },
+      { at: [10, 3, 11, 11], nodes: [emptyP], style: HAIR_ON_ACCENT },
+      { at: [11, 3, 13, 11], nodes: [para("By An Author"), para("CEO · Entrepreneur")], style: { textAlign: "center", textColor: ON_ACCENT, fontFamily: BODY, fontSize: 13, customCss:
+        "p:first-child{font-family:var(--pc-display);font-weight:700;letter-spacing:.12em;text-transform:uppercase}" +
+        "p:last-child{letter-spacing:.1em;text-transform:uppercase;font-size:12px;margin-top:5px}" } },
+    ] },
+    // 2 — welcome / colophon: lavender panel, accent corner square, photo slot
+    { kind: "blocks", blocks: [
+      panel([1, 11, 2, 12], ACCENT),
+      panel([2, 1, 10, 9], SURFACE),
+      { at: [4, 2, 6, 8], nodes: [para("Hello and welcome!")], style: { fontSize: 32, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY } },
+      { at: [6, 2, 9, 8], nodes: [para("Title of the book"), para("Author name"), para("Edition / Year"), para("All rights reserved")], style: { fontSize: 13, textColor: INK, fontFamily: BODY, customCss: "p:first-child{font-weight:700}p+p{margin-top:5px}" } },
+      img([7, 8, 11, 12]),
+      { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT },
+    ] },
+    // 3 — contents (dotted-leader page in the source; regenerate for live numbers)
+    { kind: "toc" },
+    // 4 — chapter opener: accent banner, subhead, photo column + body
+    { kind: "blocks", blocks: [
+      panel([1, 1, 5, 13], ACCENT),
+      { at: [2, 2, 3, 8], nodes: [para("Chapter 01")], style: { ...KICKER, textColor: ON_ACCENT, letterSpacing: 0.2 } },
+      { at: [3, 2, 5, 12], nodes: [heading("Introduction")], style: { fontSize: 32, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.08em" } },
+      { at: [5, 2, 6, 12], nodes: [heading("Introduce the next section with a subheading", 3)] },
+      img([6, 2, 12, 5]),
+      { at: [6, 5, 13, 12], nodes: [
+        para("Open the chapter with the idea the reader came for. Keep the first paragraph short — it sets the pace for everything that follows."),
+        para("Then widen out: give the background, the stakes, and the one thing the reader should hold onto as they move through the pages ahead."),
+        para("Close the opener by pointing at what comes next, so turning the page feels like the obvious move."),
+      ], style: BODY_S },
+    ] },
+    // 5 — body: two columns under an orange subhead, hairline foot rule
+    { kind: "blocks", blocks: [
+      { at: [1, 2, 3, 7], nodes: [heading("Introduce the next section with a subheading", 3)] },
+      { at: [3, 2, 12, 7], nodes: [
+        para("Body copy flows down the left column first. Keep paragraphs short — three to five lines reads best at this measure."),
+        para("Use the second paragraph to develop the point, and save examples for the facing column so the spread stays balanced."),
+      ], style: BODY_S },
+      { at: [1, 7, 12, 12], nodes: [
+        para("The right column continues the thought. A reader should be able to skim the subheads alone and still follow the argument."),
+        para("When a section ends mid-page, let the white space stand — the rule at the foot of the page closes the spread."),
+      ], style: BODY_S },
+      { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT, z: 20 },
+    ] },
+    // 6 — numbered list on a lavender panel, landscape photo below
+    { kind: "blocks", blocks: [
+      panel([1, 1, 9, 13], SURFACE),
+      { at: [2, 2, 3, 11], nodes: [heading("Subheadings break the monotony of long articles", 3)] },
+      { at: [3, 2, 9, 12], nodes: [ol(
+        "Lead with the step itself — one sentence of instruction the reader can act on immediately.",
+        "Follow with the why: a line or two on what this step unlocks and the mistake it prevents.",
+        "End each item with the checkpoint — how the reader knows it worked before moving on.",
+      )], style: { ...BODY_S, customCss: "line-height:1.7;ol{margin:0;padding-left:1.6em}li{margin-bottom:14px;padding-left:.4em}li::marker{font-family:var(--pc-display);font-size:1.35em;color:var(--pc-accent)}" } },
+      img([10, 2, 12, 12]),
+    ] },
+    // 7 — thank you: italic serif accent title, body left, photo right
+    { kind: "blocks", blocks: [
+      { at: [1, 2, 3, 8], nodes: [para("Thank you!")], style: { fontSize: 36, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY, customCss: "font-style:italic" } },
+      { at: [3, 2, 11, 7], nodes: [
+        para("Sign off in your own voice. Thank the reader for their time, and tell them the one thing to do next — visit a site, try the first step, reply with a question."),
+        para("A short closing note beats a long one; this page is a handshake, not another chapter."),
+      ], style: BODY_S },
+      img([3, 7, 9, 12]),
+      { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT },
+    ] },
+    // 8 — back cover: accent page, centred blurb, colophon strip
+    { kind: "blocks", cover: true, background: { kind: "solid", color: ACCENT }, blocks: [
+      { at: [4, 3, 8, 11], nodes: [para("“This book is for anyone who's ever thought ‘I should start something' and didn't know where to begin.”")], style: { textAlign: "center", fontSize: 17, textColor: ON_ACCENT, fontFamily: BODY, customCss: "line-height:1.75" } },
+      { at: [8, 4, 9, 10], nodes: [para("Author name")], style: { textAlign: "center", fontSize: 14, textColor: ON_ACCENT, fontFamily: BODY } },
+      { at: [10, 3, 11, 11], nodes: [emptyP], style: HAIR_ON_ACCENT },
+      { at: [11, 3, 12, 11], nodes: [para("Issue date"), para("All rights reserved")], style: { textAlign: "center", textColor: ON_ACCENT, fontFamily: BODY, fontSize: 11, customCss: "text-transform:uppercase;letter-spacing:.16em;p+p{margin-top:5px}" } },
+    ] },
+  ],
+};
+
+// ---- Wellness — page-for-page from the "Health" ebook design (Canva
+// DAHQxublRs4 pp. 14–23): photo cover under a huge display title, contents,
+// highlight-block chapter openers with a corner-tab page number, two-column
+// body with photo slots, quadrant framework, glossary, photo back cover.
+// Pairs 1:1 with the fresh-lime skin; renders under any theme via tokens.
+const HIGHLIGHT = "color-mix(in srgb, var(--pc-accent) 30%, var(--pc-bg))";
+const QUAD_LABEL: BlockStyleTokens = { fontSize: 11, fontWeight: 700, textAlign: "center", textColor: INK, fontFamily: BODY, customCss: `${UPPER};letter-spacing:.14em;border:1px solid ${BORDER};padding-top:10px` };
+
+const wellness: StructureSpec = {
+  key: "wellness", docType: "ebook", name: "Wellness",
+  // The source pages carry their number in an accent corner tab, top-right.
+  pageNumbers: { enabled: true, position: "top-right", format: "0{n}", startAt: 1, fontSize: 11,
+    css: "background:var(--pc-accent);color:var(--pc-on-accent);padding:5px 10px;font-weight:800;letter-spacing:.08em" },
+  pages: [
+    // 1 — cover: display title over a photo, letterspaced strapline + author
+    { kind: "blocks", cover: true, background: { kind: "solid", color: BG }, blocks: [
+      { at: [1, 3, 2, 11], nodes: [para("Let's talk about")], style: { textAlign: "center", fontSize: 21, fontWeight: 800, textColor: ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.04em" } },
+      { at: [2, 2, 4, 12], nodes: [para("Health")], style: { textAlign: "center", fontSize: 72, fontWeight: 800, textColor: ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";line-height:1" } },
+      { at: [4, 2, 5, 12], nodes: [para("Benefits of exercise and a good lifestyle")], style: { textAlign: "center", fontSize: 13, fontWeight: 700, textColor: INK, fontFamily: BODY, customCss: UPPER + ";letter-spacing:.2em;border-top:1px solid var(--pc-accent);padding-top:12px" } },
+      img([5, 2, 11, 12]),
+      { at: [11, 3, 12, 11], nodes: [para("Author Name")], style: { textAlign: "center", fontSize: 13, fontWeight: 700, textColor: INK, fontFamily: BODY, customCss: UPPER + ";letter-spacing:.18em" } },
+    ] },
+    // 2 — contents (letterspaced chapter list in the source; regenerate for live numbers)
+    { kind: "toc" },
+    // 3 — chapter opener: highlight block behind a big display title
+    { kind: "blocks", blocks: [
+      panel([1, 1, 2, 4], HIGHLIGHT),
+      { at: [1, 2, 3, 12], nodes: [heading("Introduction")] },
+      { at: [3, 2, 13, 12], nodes: [
+        para("Open with the promise: what changes for the reader by the end of this book. One paragraph, plain words."),
+        para("Then set the terms. Define the two or three ideas the chapters keep coming back to, so nothing later needs a detour."),
+        para("Keep sentences short and the tone direct — this design pairs bold headings with calm, generous body text."),
+        para("End the introduction with a bridge into chapter one: the first question the reader wants answered."),
+      ], style: BODY_S },
+    ] },
+    // 4 — body: subhead, two columns, photo slot bottom-right
+    { kind: "blocks", blocks: [
+      { at: [1, 2, 2, 12], nodes: [heading("A short subheading focuses the reader's attention", 3)] },
+      { at: [2, 2, 13, 7], nodes: [
+        para("Body copy flows down the left column. Keep paragraphs to a few lines each; the airy leading is part of the look."),
+        para("Use the left column for the argument and the right for support — examples, numbers, a photo."),
+        para("When a point deserves emphasis, give it its own short paragraph rather than bold text."),
+      ], style: BODY_S },
+      { at: [2, 7, 7, 12], nodes: [
+        para("The right column carries the supporting material. A reader skimming only this column should still catch the gist."),
+      ], style: BODY_S },
+      img([7, 7, 13, 12]),
+    ] },
+    // 5 — chapter opener variant: title, subhead, body, two photo slots
+    { kind: "blocks", blocks: [
+      { at: [1, 2, 3, 12], nodes: [heading("Chapter 2")] },
+      { at: [3, 2, 4, 12], nodes: [heading("A short subheading introduces the chapter", 3)] },
+      { at: [4, 2, 9, 12], nodes: [
+        para("Chapters in this design open full-width, then break into imagery. State the chapter's single idea in the first paragraph."),
+        para("Develop it in two or three more, and let the photographs below carry the mood — captions are optional."),
+      ], style: BODY_S },
+      img([9, 2, 12, 7]),
+      img([9, 7, 12, 12]),
+    ] },
+    // 6 — framework: intro + labelled quadrant grid (the source's values/vision page)
+    { kind: "blocks", blocks: [
+      { at: [1, 2, 4, 12], nodes: [
+        para("Use this page for a simple framework. Introduce it in a short paragraph, then let the reader fill the four quadrants — in print, with a pen."),
+      ], style: BODY_S },
+      { at: [4, 2, 8, 7], nodes: [para("Values")], style: QUAD_LABEL },
+      { at: [4, 7, 8, 12], nodes: [para("Vision")], style: QUAD_LABEL },
+      { at: [8, 2, 12, 7], nodes: [para("Unique qualities")], style: QUAD_LABEL },
+      { at: [8, 7, 12, 12], nodes: [para("Consistent messages")], style: QUAD_LABEL },
+    ] },
+    // 7 — glossary: highlight block behind the title, two columns of terms
+    { kind: "blocks", blocks: [
+      panel([1, 1, 2, 3], HIGHLIGHT),
+      { at: [1, 2, 3, 10], nodes: [para("Glossary")], style: { fontSize: 40, fontWeight: 800, textColor: ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";line-height:1" } },
+      { at: [3, 2, 13, 7], nodes: [
+        para("Term — a one-line definition in plain language, no circular references."),
+        para("Term — keep entries alphabetical so the page works as a reference."),
+      ], style: BODY_S },
+      { at: [3, 7, 13, 12], nodes: [
+        para("Term — the second column continues the list; aim for balance between the two."),
+        para("Term — cut any entry the chapters already define in passing."),
+      ], style: BODY_S },
+    ] },
+    // 8 — back cover: full-page photo, letterspaced strapline beneath
+    { kind: "blocks", cover: true, background: { kind: "solid", color: BG }, blocks: [
+      img([1, 2, 12, 12]),
+      { at: [12, 2, 13, 12], nodes: [para("Simple habits. Lasting health")], style: { textAlign: "center", fontSize: 12, fontWeight: 700, textColor: ACCENT, fontFamily: BODY, customCss: UPPER + ";letter-spacing:.22em" } },
+    ] },
+  ],
+};
+
+export const STRUCTURES: Record<StructKey, StructureSpec> = { leadMagnet, ebook, guidebook, wellness, report };
 
 // ---- catalog (Step 2) ---------------------------------------------------
 // A user-facing template = one structure bound to one theme. The 15 are the
 // cross-product themes × STRUCTURES — no per-template file. `themes` is passed in
 // (the browser's themeNames() uses import.meta.glob, which can't run under tests),
 // so this stays pure and node-testable.
-const DOC_ORDER: DocType[] = ["leadMagnet", "ebook", "report"];
+const STRUCT_ORDER: StructKey[] = ["leadMagnet", "ebook", "guidebook", "wellness", "report"];
 export const DOC_LABELS: Record<DocType, string> = { leadMagnet: "Lead magnets", ebook: "Ebooks", report: "Reports" };
 
-export type Template = { id: string; name: string; docType: DocType; theme: string; structKey: DocType };
+export type Template = { id: string; name: string; docType: DocType; theme: string; structKey: StructKey };
 
 export function listTemplates(themes: string[]): Template[] {
   const out: Template[] = [];
   for (const theme of themes) {
-    for (const key of DOC_ORDER) {
-      out.push({ id: `${theme}:${key}`, name: STRUCTURES[key].name, docType: key, theme, structKey: key });
+    for (const key of STRUCT_ORDER) {
+      out.push({ id: `${theme}:${key}`, name: STRUCTURES[key].name, docType: STRUCTURES[key].docType, theme, structKey: key });
     }
   }
   return out;
@@ -247,9 +440,9 @@ export function parseTemplateId(id: string): Template | null {
   const i = id.lastIndexOf(":");
   if (i < 0) return null;
   const theme = id.slice(0, i);
-  const key = id.slice(i + 1) as DocType;
-  if (!theme || !DOC_ORDER.includes(key)) return null;
-  return { id, name: STRUCTURES[key].name, docType: key, theme, structKey: key };
+  const key = id.slice(i + 1) as StructKey;
+  if (!theme || !STRUCT_ORDER.includes(key)) return null;
+  return { id, name: STRUCTURES[key].name, docType: STRUCTURES[key].docType, theme, structKey: key };
 }
 
 // Guard used by templates.test.ts: every placed block must fit the 12×12 grid.

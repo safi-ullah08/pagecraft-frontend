@@ -3,7 +3,7 @@ import type { JSONContent } from "@tiptap/react";
 import type { PageNumberConfig, DesignTokens } from "@pagecraft/model";
 import { DEFAULT_THEME } from "./themes.ts";
 import type { GridSection } from "./grid/types.ts";
-import { templateSections, type Template } from "./grid/templates.ts";
+import { STRUCTURES, templateSections, type Template } from "./grid/templates.ts";
 
 // Clerk's getToken(), injected at startup by <AuthBridge> (see main.tsx).
 // When Clerk is on, requests must wait for it to be wired or they fire tokenless
@@ -59,7 +59,72 @@ export async function createDocument(title = "Untitled", theme?: string) {
 export async function createFromTemplate(t: Template): Promise<string> {
   const { document } = await createDocument(t.name, t.theme);
   await convertDocument(document.id, templateSections(t));
+  // Structures that want a specific page-number look (e.g. wellness's accent
+  // corner tab) set it on the new doc; others keep the default bottom-centre.
+  const pn = STRUCTURES[t.structKey].pageNumbers;
+  if (pn) await updatePageNumbers(document.id, pn);
   return document.id;
+}
+
+// ---- integration connections + content pickers (ImportHub) ----------------
+
+export type ConnectionSource = "wordpress" | "notion" | "googledocs";
+export type ConnectionInfo = { source: ConnectionSource; label: string | null; connectedAt: string };
+export type SourceItem = { id: string; title: string; date?: string };
+
+export async function listConnections(): Promise<ConnectionInfo[]> {
+  const res = await authedFetch("/api/integrations/connections");
+  if (!res.ok) throw new Error(`connections failed: ${res.status}`);
+  return (await res.json()).connections as ConnectionInfo[];
+}
+
+export async function disconnectSource(source: ConnectionSource) {
+  const res = await authedFetch(`/api/integrations/connections/${source}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`disconnect failed: ${res.status}`);
+}
+
+export async function connectWordpress(body: { siteUrl: string; username: string; appPassword: string }): Promise<{ label: string }> {
+  const res = await authedFetch("/api/integrations/wordpress/connect", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.message || `connect failed: ${res.status}`);
+  return json as { label: string };
+}
+
+// One page of pickable content. 409 = not connected (surface as a typed error
+// so the hub flips to its connect pane).
+export async function listSourceContent(source: ConnectionSource, query: string, cursor?: string): Promise<{ items: SourceItem[]; nextCursor?: string }> {
+  const qs = new URLSearchParams({ ...(query ? { query } : {}), ...(cursor ? { cursor } : {}) });
+  const res = await authedFetch(`/api/integrations/${source}/list?${qs}`);
+  if (res.status === 409) throw new Error("not_connected");
+  if (!res.ok) throw new Error(`list failed: ${res.status}`);
+  return (await res.json()) as { items: SourceItem[]; nextCursor?: string };
+}
+
+// Import selected items as chapters — into a new document, or appended to an
+// existing one when dest is given.
+export async function importItems(source: ConnectionSource, items: Array<{ id: string }>, dest?: { documentId: string; afterSectionId?: string | null }) {
+  const res = await authedFetch(`/api/integrations/${source}/import`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ items, ...(dest ? { documentId: dest.documentId, afterSectionId: dest.afterSectionId ?? null } : {}) }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.message || json.error || `import failed: ${res.status}`);
+  return json as { documentId: string; sections: number; appended: boolean };
+}
+
+// Rename a document (dashboard cards + the editor's title field).
+export async function renameDocument(documentId: string, title: string) {
+  const res = await authedFetch(`/api/documents/${documentId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) throw new Error(`rename failed: ${res.status}`);
 }
 
 // Persist the document's theme (the look). Used when applying a template to an

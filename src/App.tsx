@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { UserButton } from "@clerk/clerk-react";
 import { ChapterNav } from "./components/ChapterNav.tsx";
 import { Editor } from "./components/Editor.tsx";
-import { Preview } from "./components/Preview.tsx";
 import { Toolbar } from "./components/Toolbar.tsx";
 import { ExportButton } from "./components/ExportButton.tsx";
 import { ImportBar } from "./components/ImportBar.tsx";
+import { ImportHub } from "./components/ImportHub.tsx";
 import { useStore } from "./store.ts";
 import { themeSkinCss, typedBlockCss } from "./themes.ts";
 import { designCss } from "@pagecraft/model";
@@ -16,19 +16,37 @@ import { GridCanvas } from "./grid/GridCanvas.tsx";
 import { isAnyCover } from "./grid/covers.ts";
 import { DesignWizard } from "./grid/DesignWizard.tsx";
 import { ControlsPanel } from "./grid/ControlsPanel.tsx";
-import { PlaceholderView } from "./grid/PlaceholderView.tsx";
 import type { JSONContent } from "@tiptap/react";
 
-type Tab = "editor" | "placeholder" | "pdf";
-const TABS: { id: Tab; label: string }[] = [
-  { id: "editor", label: "Editor" },
-  { id: "placeholder", label: "Placeholder preview" },
-  { id: "pdf", label: "PDF preview" },
-];
+// Document title in the top bar: click to edit, Enter/blur to save, Esc to cancel.
+// Commits once (the store PATCHes fire-and-forget) instead of per keystroke.
+function TitleField() {
+  const title = useStore((s) => s.title);
+  const rename = useStore((s) => s.rename);
+  const [draft, setDraft] = useState<string | null>(null);
+  useEffect(() => { document.title = `${title} — Kator.io`; }, [title]);
+  const commit = () => {
+    if (draft !== null && draft.trim() && draft.trim() !== title) rename(draft.trim());
+    setDraft(null);
+  };
+  return (
+    <input value={draft ?? title} onChange={(e) => setDraft(e.target.value)} size={1}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") { setDraft(null); (e.target as HTMLInputElement).blur(); }
+      }}
+      title="Document title — click to rename"
+      style={{ fontFamily: "var(--ui-serif)", fontSize: 15, fontWeight: 700, color: "var(--ui-ink)",
+        background: "transparent", border: "1px solid transparent", borderRadius: 6, padding: "4px 8px",
+        width: 220, minWidth: 0, textOverflow: "ellipsis" }}
+      onFocus={(e) => { e.target.style.borderColor = "var(--ui-border-strong)"; e.target.style.background = "var(--ui-paper)"; e.target.select(); }}
+      onBlurCapture={(e) => { e.target.style.borderColor = "transparent"; e.target.style.background = "transparent"; }} />
+  );
+}
 
-// Shell = sections layout (ChapterNav | editor area). A 3-tab bar above the editor
-// area switches the VIEW of the same document: Editor (flow sheets / grid canvas),
-// Placeholder preview (wireframe), PDF preview (paged.js 1:1). All read one store.
+// Shell = sections layout (ChapterNav | editor area). The editor area shows the
+// document (flow -> page sheet, grid -> canvas) with the block Inspector docked right.
 export function App() {
   const load = useStore((s) => s.load);
   const documentId = useStore((s) => s.documentId);
@@ -65,10 +83,10 @@ export function App() {
   const canUndo = useStore((s) => s.canUndo);
   const canRedo = useStore((s) => s.canRedo);
 
-  const [tab, setTab] = useState<Tab>("editor");
   // The wizard auto-opens once per document — the answer to "imported, now I'm
   // staring at a blank grid". Dismissing it sticks (per document, per browser).
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [hubOpen, setHubOpen] = useState(false);
   useEffect(() => {
     if (loading || !documentId || !sections.length) return;
     const key = `pc-wizard-seen:${documentId}`;
@@ -122,11 +140,9 @@ export function App() {
 
   const dim = page;
   const sheetCss = `
-.page-sheet { width: ${dim.w}mm; box-sizing: border-box; margin: 0 auto 24px; box-shadow: 0 1px 10px rgba(0,0,0,.28); overflow: hidden; background: #fff; }
+.page-sheet { width: ${dim.w}mm; box-sizing: border-box; margin: 0 auto 24px; box-shadow: 0 2px 14px rgba(74,52,24,.25); overflow: hidden; background: #fff; }
 .page-sheet > .editor-surface { min-height: ${dim.h}mm; box-sizing: border-box; padding: ${PAGE_MARGIN_MM}mm; }
 `;
-
-  const contents = useMemo(() => sections.map((s) => s.content), [sections]);
 
   const active = sections.find((s) => s.id === activeId) ?? null;
   const toggleLayout = () => {
@@ -139,13 +155,23 @@ export function App() {
   return (
     <div style={{ display: "flex", height: "100vh" }}>
       {wizardOpen && <DesignWizard onClose={() => setWizardOpen(false)} />}
+      {hubOpen && documentId && (
+        <ImportHub
+          onClose={() => setHubOpen(false)}
+          appendTo={{ documentId, afterSectionId: sections[sections.length - 1]?.id ?? null }}
+          onImported={() => window.location.reload()} /* store.load converts the appended flow chapters in place */
+        />
+      )}
       <ChapterNav />
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <div style={{ display: "flex", gap: 8, padding: 8, borderBottom: "1px solid #ddd", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, padding: 8, borderBottom: "1px solid var(--ui-border)", alignItems: "center" }}>
+          <TitleField />
           <Toolbar />
           <ImportBar />
+          <button onClick={() => setHubOpen(true)} title="Add chapters from WordPress, Notion or Google Docs"
+            style={{ padding: "6px 10px", fontSize: 12, borderRadius: 4, cursor: "pointer", border: "1px solid var(--ui-border)", background: "var(--ui-panel)" }}>⇩ Add chapters</button>
           <button onClick={() => setWizardOpen(true)} title="Open the design wizard"
-            style={{ padding: "6px 10px", fontSize: 12, borderRadius: 4, cursor: "pointer", border: "1px solid #ddd", background: "#fff" }}>✦ Design</button>
+            style={{ padding: "6px 10px", fontSize: 12, borderRadius: 4, cursor: "pointer", border: "1px solid var(--ui-border)", background: "var(--ui-panel)" }}>✦ Design</button>
           {documentId && <ExportButton documentId={documentId} theme={theme} />}
           {/* UserButton only mounts under ClerkProvider (i.e. when a key is set) */}
           {import.meta.env.VITE_CLERK_PUBLISHABLE_KEY && (
@@ -155,39 +181,29 @@ export function App() {
           )}
         </div>
 
-        {/* view tabs + active-section layout toggle */}
-        <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "0 8px", borderBottom: "1px solid #ddd", background: "#fafafa" }}>
-          {TABS.map((t) => (
-            <button key={t.id} onClick={() => setTab(t.id)}
-              style={{ padding: "8px 12px", fontSize: 13, border: "none", background: "transparent", cursor: "pointer",
-                borderBottom: tab === t.id ? "2px solid #E07A5F" : "2px solid transparent",
-                fontWeight: tab === t.id ? 600 : 400, color: tab === t.id ? "#111" : "#666" }}>
-              {t.label}
-            </button>
-          ))}
+        {/* editor toolbar + active-section layout toggle */}
+        <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderBottom: "1px solid var(--ui-border)", background: "var(--ui-bg)" }}>
           <div style={{ flex: 1 }} />
-          {tab === "editor" && (
-            <>
+          <>
               <button onClick={() => undo()} disabled={!canUndo} title="Undo (⌘/Ctrl+Z)"
-                style={{ fontSize: 13, padding: "3px 8px", borderRadius: 4, border: "1px solid #ccc", background: "#fff",
-                  cursor: canUndo ? "pointer" : "default", color: canUndo ? "#333" : "#bbb" }}>↶</button>
+                style={{ fontSize: 13, padding: "3px 8px", borderRadius: 4, border: "1px solid var(--ui-border-strong)", background: "var(--ui-panel)",
+                  cursor: canUndo ? "pointer" : "default", color: canUndo ? "var(--ui-ink)" : "var(--ui-border-strong)" }}>↶</button>
               <button onClick={() => redo()} disabled={!canRedo} title="Redo (⌘/Ctrl+Shift+Z)"
-                style={{ fontSize: 13, padding: "3px 8px", borderRadius: 4, border: "1px solid #ccc", background: "#fff",
-                  cursor: canRedo ? "pointer" : "default", color: canRedo ? "#333" : "#bbb", marginRight: 4 }}>↷</button>
+                style={{ fontSize: 13, padding: "3px 8px", borderRadius: 4, border: "1px solid var(--ui-border-strong)", background: "var(--ui-panel)",
+                  cursor: canRedo ? "pointer" : "default", color: canRedo ? "var(--ui-ink)" : "var(--ui-border-strong)", marginRight: 4 }}>↷</button>
               <button onClick={toggleGrid} title="toggle grid overlay"
                 style={{ fontSize: 12, padding: "3px 8px", borderRadius: 4, cursor: "pointer",
-                  border: `1px solid ${showGrid ? "#E07A5F" : "#ccc"}`, background: showGrid ? "#fdeee9" : "#fff", color: showGrid ? "#E07A5F" : "#666" }}>
+                  border: `1px solid ${showGrid ? "var(--ui-accent)" : "var(--ui-border-strong)"}`, background: showGrid ? "var(--ui-accent-soft)" : "var(--ui-panel)", color: showGrid ? "var(--ui-accent)" : "var(--ui-muted)" }}>
                 ▦ Grid
               </button>
               <select value={zoom} onChange={(e) => setZoom(Number(e.target.value))} title="zoom"
-                style={{ fontSize: 12, padding: "3px 4px", borderRadius: 4, border: "1px solid #ccc", background: "#fff" }}>
+                style={{ fontSize: 12, padding: "3px 4px", borderRadius: 4, border: "1px solid var(--ui-border-strong)", background: "var(--ui-panel)" }}>
                 {[0.5, 0.75, 1, 1.25, 1.5].map((z) => <option key={z} value={z}>{Math.round(z * 100)}%</option>)}
               </select>
             </>
-          )}
           {active && (
             <button onClick={toggleLayout} title="convert the active section's layout"
-              style={{ fontSize: 12, padding: "3px 8px", border: "1px solid #ccc", borderRadius: 4, background: "#fff", cursor: "pointer" }}>
+              style={{ fontSize: 12, padding: "3px 8px", border: "1px solid var(--ui-border-strong)", borderRadius: 4, background: "var(--ui-panel)", cursor: "pointer" }}>
               {isGridSection(active.content) ? "▦ Grid → ¶ Flow" : "¶ Flow → ▦ Grid"}
             </button>
           )}
@@ -195,18 +211,14 @@ export function App() {
 
         <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
           {loading ? (
-            <div style={{ padding: 16, color: "#666" }}>Preparing editor…</div>
+            <div style={{ padding: 16, color: "var(--ui-muted)" }}>Preparing editor…</div>
           ) : sections.length === 0 ? (
             <div style={{ padding: 16 }}>Loading…</div>
-          ) : tab === "pdf" ? (
-            <Preview sections={contents} theme={theme} pageNumbers={pageNumbers} />
-          ) : tab === "placeholder" ? (
-            <PlaceholderView sections={contents} page={page} />
           ) : (
             // Editor: sections stacked (flow -> page sheet, grid -> canvas) with the
             // block Inspector docked right when the active section is a grid.
             <>
-              <div data-scroll style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: 32, background: "#e6e6e6" }}>
+              <div data-scroll style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: 32, background: "var(--ui-bg-deep)" }}>
                 <style>{surfaceCss + sheetCss}</style>
                 <div style={{ zoom }}>
                 {sections.map((s, i) =>

@@ -59,32 +59,32 @@ export function ChapterNav() {
   };
 
   return (
-    <nav style={{ width: 220, borderRight: "1px solid #ddd", display: "flex", flexDirection: "column", minHeight: 0, background: "#fafafa" }}>
-      <div style={{ padding: "12px 14px 8px", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, color: "#666", fontWeight: 600 }}>
+    <nav style={{ width: 220, borderRight: "1px solid var(--ui-border)", display: "flex", flexDirection: "column", minHeight: 0, background: "var(--ui-bg)" }}>
+      <div style={{ padding: "12px 14px 8px", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, color: "var(--ui-muted)", fontWeight: 600 }}>
         Pages · {sections.length}
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "0 8px" }}>
         {sections.map((s, i) => (
           <div key={s.id} ref={s.id === activeId ? activeRef : undefined} onClick={() => go(s.id)} title={titleOf(s.content, i)}
             style={{ marginBottom: 10, padding: 8, borderRadius: 4, cursor: "pointer",
-              background: s.id === activeId ? "#fff" : "transparent",
-              border: `1px solid ${s.id === activeId ? "#bbb" : "transparent"}`, transition: "background .12s" }}>
+              background: s.id === activeId ? "var(--ui-panel)" : "transparent",
+              border: `1px solid ${s.id === activeId ? "var(--ui-border-strong)" : "transparent"}`, transition: "background .12s" }}>
             <Thumb content={s.content} aspect={aspect} />
             <div style={{ marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
-              <span style={{ fontSize: 11, fontWeight: 500, color: "#222", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <span style={{ fontSize: 11, fontWeight: 500, color: "var(--ui-ink)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {i + 1}. {titleOf(s.content, i)}
               </span>
               {sections.length > 1 && (
                 <button onClick={(e) => { e.stopPropagation(); if (confirm("Delete this page?")) void removePage(s.id); }}
                   title="delete page"
-                  style={{ border: "none", background: "transparent", color: "#999", cursor: "pointer", fontSize: 13, lineHeight: 1, flexShrink: 0 }}>×</button>
+                  style={{ border: "none", background: "transparent", color: "var(--ui-muted)", cursor: "pointer", fontSize: 13, lineHeight: 1, flexShrink: 0 }}>×</button>
               )}
             </div>
           </div>
         ))}
       </div>
       <button onClick={() => void addPage()}
-        style={{ margin: 10, padding: "8px 10px", border: "1px dashed #bbb", borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
+        style={{ margin: 10, padding: "8px 10px", border: "1px dashed var(--ui-border-strong)", borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
         + Add page
       </button>
     </nav>

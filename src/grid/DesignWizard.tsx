@@ -70,7 +70,7 @@ export function DesignWizard({ onClose }: { onClose: () => void }) {
       style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 10000,
         display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div onClick={(e) => e.stopPropagation()}
-        style={{ background: "#fff", borderRadius: 8, width: "min(900px, 100%)", maxHeight: "100%",
+        style={{ background: "var(--ui-panel)", borderRadius: 8, width: "min(900px, 100%)", maxHeight: "100%",
           display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 12px 48px rgba(0,0,0,.35)" }}>
 
         {/* header + steps */}
@@ -80,8 +80,8 @@ export function DesignWizard({ onClose }: { onClose: () => void }) {
             {STEPS.map((s, i) => (
               <button key={s} onClick={() => setStep(i)}
                 style={{ fontSize: 11, padding: "4px 10px", borderRadius: 99, cursor: "pointer",
-                  border: `1px solid ${i === step ? "#E07A5F" : PALETTE.BORDER}`,
-                  background: i === step ? "#E07A5F18" : "transparent",
+                  border: `1px solid ${i === step ? "var(--ui-accent)" : PALETTE.BORDER}`,
+                  background: i === step ? "var(--ui-accent-soft)" : "transparent",
                   color: i === step ? PALETTE.TEXT : PALETTE.MUTED }}>
                 {i + 1}. {s}
               </button>
@@ -100,7 +100,7 @@ export function DesignWizard({ onClose }: { onClose: () => void }) {
                   {themeNames().map((t) => (
                     <button key={t} onClick={() => setTheme(t)}
                       style={{ textAlign: "left", padding: 0, borderRadius: 5, cursor: "pointer", overflow: "hidden",
-                        border: `2px solid ${t === theme ? "#E07A5F" : PALETTE.BORDER}`, background: "#fff" }}>
+                        border: `2px solid ${t === theme ? "var(--ui-accent)" : PALETTE.BORDER}`, background: "#fff" }}>
                       <div style={{ fontSize: 11, fontWeight: 600, color: PALETTE.TEXT, padding: "5px 8px", background: PALETTE.SURFACE }}>{t}</div>
                       <div style={{ transform: "scale(.92)", transformOrigin: "top left", width: "108%" }}>
                         <Preview theme={t} design={design} html={html} height={104} />
@@ -118,7 +118,7 @@ export function DesignWizard({ onClose }: { onClose: () => void }) {
                 <Field label="Weight"><Slider value={design.headingWeight ?? 700} min={300} max={900} step={100} onChange={(v) => set({ headingWeight: v })} /></Field>
                 <Field label="Colour"><ColorPicker value={design.headingColor ?? "#000000"} onChange={(v) => set({ headingColor: v })} /></Field>
                 <Field label="Align"><Select value={design.headingAlign ?? "left"} options={[{ value: "left", label: "Left" }, { value: "center", label: "Centred" }]} onChange={(v) => set({ headingAlign: v as "left" | "center" })} /></Field>
-                <Field label="Accent"><ColorPicker value={design.accent ?? "#E07A5F"} onChange={(v) => set({ accent: v })} /></Field>
+                <Field label="Accent"><ColorPicker value={design.accent ?? "var(--ui-accent)"} onChange={(v) => set({ accent: v })} /></Field>
               </Section>
             )}
 
@@ -149,8 +149,8 @@ export function DesignWizard({ onClose }: { onClose: () => void }) {
           </div>
 
           {/* live preview — their content, current theme + overrides */}
-          <div style={{ flex: 1, minWidth: 0, overflowY: "auto", background: "#eee", padding: 18 }}>
-            <div style={{ fontSize: 10, color: "#777", marginBottom: 8 }}>
+          <div style={{ flex: 1, minWidth: 0, overflowY: "auto", background: "var(--ui-bg-deep)", padding: 18 }}>
+            <div style={{ fontSize: 10, color: "var(--ui-muted)", marginBottom: 8 }}>
               {usingTheirs ? "Your content, previewed live" : "Sample content — import a document to preview your own"}
             </div>
             <div style={{ background: "#fff", boxShadow: "0 1px 8px rgba(0,0,0,.2)", borderRadius: 3 }}>
@@ -173,10 +173,10 @@ export function DesignWizard({ onClose }: { onClose: () => void }) {
           )}
           {step < STEPS.length - 1 ? (
             <button onClick={() => setStep(step + 1)}
-              style={{ fontSize: 12, padding: "7px 16px", borderRadius: 4, cursor: "pointer", border: "none", background: "#E07A5F", color: "#fff", fontWeight: 600 }}>Next</button>
+              style={{ fontSize: 12, padding: "7px 16px", borderRadius: 4, cursor: "pointer", border: "none", background: "var(--ui-accent)", color: "#fff", fontWeight: 600 }}>Next</button>
           ) : (
             <button onClick={onClose}
-              style={{ fontSize: 12, padding: "7px 16px", borderRadius: 4, cursor: "pointer", border: "none", background: "#E07A5F", color: "#fff", fontWeight: 600 }}>Done</button>
+              style={{ fontSize: 12, padding: "7px 16px", borderRadius: 4, cursor: "pointer", border: "none", background: "var(--ui-accent)", color: "#fff", fontWeight: 600 }}>Done</button>
           )}
         </div>
       </div>
