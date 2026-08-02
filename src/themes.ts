@@ -27,10 +27,28 @@ export function themeNames(): ThemeName[] {
 export function documentCss(theme: ThemeName, layoutMode: LayoutMode = "flow"): string {
   // Match the model's ordering: grid = skin first then gridBaseCss (grid @page +
   // layout win); flow = base first then skin (skin typography wins).
+  // TOKEN_BRIDGE: the typed .pc-* blocks (stat/cta/chapter/author/verse…) still read
+  // the legacy --accent/--ink names; the skins only declare --pc-*. Alias them on
+  // .page so those blocks re-skin instead of falling back to hardcoded coral.
   return layoutMode === "grid"
-    ? `${themeSkinCss(theme)}\n${gridBaseCss}`
+    ? `${themeSkinCss(theme)}\n${gridBaseCss}\n${TOKEN_BRIDGE}`
     : `${baseCss}\n${themeSkinCss(theme)}`;
 }
+
+// Legacy→current token alias (see documentCss). Reused by the editor canvas too.
+export const TOKEN_BRIDGE = ".page{--accent:var(--pc-accent);--ink:var(--pc-ink)}";
+
+// The typed-block (.pc-*) rules live in gridBaseCss, which the editor CANVAS never
+// loads (it only scopes the skin) — so typed blocks render unstyled there while the
+// PDF styles them. Extract just those flat rules (excluding page-number + structural
+// ones that would fight the canvas layout) so the canvas can inject them. Single
+// source: sliced from gridBaseCss, no duplication.
+export const typedBlockCss = gridBaseCss
+  .split("}")
+  .map((r) => r.trim())
+  .filter((r) => r.includes(".pc-") && !r.includes(".pc-pageno"))
+  .map((r) => r + "}")
+  .join("\n");
 
 // Just the theme skin (no structural baseCss) — the editing surface scopes THIS
 // onto its container so editing looks like output. baseCss is pagination-only.

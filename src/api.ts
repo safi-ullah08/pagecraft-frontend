@@ -3,6 +3,7 @@ import type { JSONContent } from "@tiptap/react";
 import type { PageNumberConfig, DesignTokens } from "@pagecraft/model";
 import { DEFAULT_THEME } from "./themes.ts";
 import type { GridSection } from "./grid/types.ts";
+import { templateSections, type Template } from "./grid/templates.ts";
 
 // Clerk's getToken(), injected at startup by <AuthBridge> (see main.tsx).
 // When Clerk is on, requests must wait for it to be wired or they fire tokenless
@@ -41,14 +42,35 @@ export async function updatePageNumbers(documentId: string, pageNumbers: PageNum
   if (!res.ok) throw new Error(`save page numbers failed: ${res.status}`);
 }
 
-export async function createDocument(title = "Untitled") {
+export async function createDocument(title = "Untitled", theme?: string) {
   const res = await authedFetch("/api/documents", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ title }),
+    body: JSON.stringify({ title, ...(theme ? { theme } : {}) }),
   });
   if (!res.ok) throw new Error(`create failed: ${res.status}`);
   return res.json() as Promise<{ document: { id: string }; section: Section }>;
+}
+
+// Create a new document from a catalog template: theme is set at creation (so the
+// look survives reload), then the blank page is replaced with the template's pages
+// (convertDocument replaces all sections in one transaction). Returns the new id;
+// the caller navigates.
+export async function createFromTemplate(t: Template): Promise<string> {
+  const { document } = await createDocument(t.name, t.theme);
+  await convertDocument(document.id, templateSections(t));
+  return document.id;
+}
+
+// Persist the document's theme (the look). Used when applying a template to an
+// existing doc — createDocument sets it for new docs.
+export async function updateTheme(documentId: string, theme: string) {
+  const res = await authedFetch(`/api/documents/${documentId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ theme }),
+  });
+  if (!res.ok) throw new Error(`save theme failed: ${res.status}`);
 }
 
 export type DocumentSummary = { id: string; title: string; createdAt: string; pages: number };

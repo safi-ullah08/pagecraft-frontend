@@ -7,7 +7,7 @@ import { Toolbar } from "./components/Toolbar.tsx";
 import { ExportButton } from "./components/ExportButton.tsx";
 import { ImportBar } from "./components/ImportBar.tsx";
 import { useStore } from "./store.ts";
-import { themeSkinCss } from "./themes.ts";
+import { themeSkinCss, typedBlockCss } from "./themes.ts";
 import { designCss } from "@pagecraft/model";
 import { scopeThemeCss } from "./scope-css.ts";
 import { PAGE_MARGIN_MM } from "./pages.ts";
@@ -108,7 +108,13 @@ export function App() {
 
   const surfaceCss = useMemo(() => {
     try {
-      return scopeThemeCss(themeSkinCss(theme) + "\n" + designCss(design), ".editor-surface");
+      // The scoped skin + design overlay, PLUS the typed-block (.pc-*) rules the
+      // canvas otherwise lacks and the legacy-token bridge (--accent/--ink → --pc-*),
+      // both scoped to .editor-surface — so stat/cta/chapter/author blocks look the
+      // same in the editor as the PDF and re-skin with the theme.
+      const skin = scopeThemeCss(themeSkinCss(theme) + "\n" + designCss(design), ".editor-surface");
+      const typed = ".editor-surface{--accent:var(--pc-accent);--ink:var(--pc-ink)}\n" + scopeThemeCss(typedBlockCss, ".editor-surface");
+      return skin + "\n" + typed;
     } catch {
       return "";
     }

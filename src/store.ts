@@ -10,7 +10,8 @@ import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks,
 import { parseBlocks } from "./grid/parseBlocks.ts";
 import { collectToc, buildTocSection, isTocSection, tocPlaceholder } from "./grid/toc.ts";
 import { buildCover, isCoverSection, isBackCoverSection } from "./grid/covers.ts";
-import { insertSectionsAfter, updatePageNumbers, updateDesign } from "./api.ts";
+import { insertSectionsAfter, updatePageNumbers, updateDesign, updateTheme } from "./api.ts";
+import { parseTemplateId, IMPORT_COVER, type Template } from "./grid/templates.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
 import { splitParagraphSentences } from "./grid/split-inline.ts";
 
@@ -35,6 +36,7 @@ type Store = {
   setPage: (p: PageDims) => void;
   setPageNumbers: (patch: Partial<PageNumberConfig>) => void;
   setDesign: (patch: Partial<DesignTokens> | null) => void; // null = reset to the pure theme
+  applyImportedTemplate: (t: Template) => Promise<void>; // imported doc: apply look + cover + TOC
   setActive: (id: string) => void;
   selectBlock: (id: string | null, additive?: boolean) => void;
   selectAll: () => void;
@@ -448,6 +450,18 @@ export const useStore = create<Store>((set, get) => {
             console.error("auto flow→grid failed (staying flow):", e);
           }
         }
+        // ?tpl=<catalog id>: apply a template to this freshly-imported doc (look +
+        // cover + TOC), then drop the param so a refresh doesn't re-apply it.
+        const tpl = new URLSearchParams(location.search).get("tpl");
+        if (tpl) {
+          const t = parseTemplateId(tpl);
+          if (t) {
+            try { await get().applyImportedTemplate(t); } catch (e) { console.error("apply template failed:", e); }
+          }
+          const u = new URL(location.href);
+          u.searchParams.delete("tpl");
+          history.replaceState(null, "", u.toString());
+        }
       } else {
         // No ?doc: the editor shouldn't be here — creation lives on the dashboard.
         location.assign(location.pathname);
@@ -526,6 +540,17 @@ export const useStore = create<Store>((set, get) => {
         sections: back ? [...st.sections, ...added] : [...added, ...st.sections],
         activeId: added[0]?.id ?? st.activeId,
       }));
+    },
+    // Apply a template to an ALREADY-loaded (imported) doc: keep the content, add the
+    // look + front matter. Order matters — theme first so the cover/TOC render themed,
+    // cover before TOC so generateToc places the TOC AFTER the cover (page 2).
+    applyImportedTemplate: async (t) => {
+      const docId = get().documentId;
+      if (!docId) return;
+      set({ theme: t.theme });
+      try { await updateTheme(docId, t.theme); } catch (e) { console.error("theme persist failed:", e); }
+      await get().addCover(IMPORT_COVER[t.docType]);
+      await get().generateToc();
     },
     removePage: async (id) => {
       if (get().sections.length <= 1) return; // always keep at least one page

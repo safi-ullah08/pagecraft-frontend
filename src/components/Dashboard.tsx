@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { listDocuments, createDocument, deleteDocument, getBillingStatus, startCheckout, uploadDocument, type DocumentSummary } from "../api.ts";
 import { ImportBar } from "./ImportBar.tsx";
+import { TemplateGallery } from "./TemplateGallery.tsx";
 
 // The landing view (no ?doc in the URL): list / create / import / open / delete
 // my documents. Navigation is a real reload to ?doc=<id> — the editor bootstraps
@@ -15,6 +16,8 @@ export function Dashboard() {
   const [creating, setCreating] = useState(false);
   const [plan, setPlan] = useState<"free" | "pro" | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [importedDocId, setImportedDocId] = useState<string | null>(null); // set = gallery in "apply to import" mode
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -28,7 +31,11 @@ export function Dashboard() {
     setErr(null);
     try {
       const { documentId } = await uploadDocument(file);
-      openDoc(documentId); // reload into the imported doc
+      // Prompt to apply a template to the freshly-imported doc (keeps content).
+      // Dismissing the gallery opens the doc as-is.
+      setImportedDocId(documentId);
+      setGalleryOpen(true);
+      setUploading(false);
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
       setUploading(false);
@@ -68,6 +75,12 @@ export function Dashboard() {
 
   return (
     <div style={{ maxWidth: 960, margin: "0 auto", padding: "40px 24px" }}>
+      {galleryOpen && (
+        <TemplateGallery
+          applyToDocId={importedDocId ?? undefined}
+          onClose={() => { if (importedDocId) openDoc(importedDocId); else setGalleryOpen(false); }}
+        />
+      )}
       <header style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 28 }}>
         <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, flex: 1 }}>My documents</h1>
         {plan === "pro" ? (
@@ -86,6 +99,11 @@ export function Dashboard() {
           style={{ padding: "8px 14px", fontSize: 14, fontWeight: 600, color: "#E07A5F", background: "#fff",
             border: "1px solid #E07A5F", borderRadius: 6, cursor: "pointer" }}>
           {uploading ? "Uploading…" : "↑ Upload doc"}
+        </button>
+        <button onClick={() => { setImportedDocId(null); setGalleryOpen(true); }} title="Start from a ready-made template"
+          style={{ padding: "8px 14px", fontSize: 14, fontWeight: 600, color: "#E07A5F", background: "#fff",
+            border: "1px solid #E07A5F", borderRadius: 6, cursor: "pointer" }}>
+          ◆ Templates
         </button>
         <button onClick={create} disabled={creating}
           style={{ padding: "8px 14px", fontSize: 14, fontWeight: 600, color: "#fff", background: "#E07A5F",
