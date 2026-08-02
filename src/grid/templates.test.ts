@@ -8,7 +8,7 @@ import { isTocSection } from "./toc.ts";
 
 test("every structure interprets to the expected page count", () => {
   assert.equal(interpret(STRUCTURES.leadMagnet).length, 3);
-  assert.equal(interpret(STRUCTURES.ebook).length, 4);
+  assert.equal(interpret(STRUCTURES.ebook).length, 6);
   assert.equal(interpret(STRUCTURES.report).length, 4);
 });
 
@@ -21,7 +21,7 @@ test("cover / toc pages keep their flags so they're excluded from numbering + co
   assert.ok(isCoverSection(em[0]), "lead magnet page 1 is a cover");
   const eb = interpret(STRUCTURES.ebook);
   assert.ok(isCoverSection(eb[0]), "ebook page 1 is a cover");
-  assert.ok(isTocSection(eb[1]), "ebook page 2 is a toc");
+  assert.ok(isTocSection(eb[2]), "ebook page 3 is a toc");
 });
 
 test("catalog is the themes × structures cross-product with unique, resolvable ids", () => {

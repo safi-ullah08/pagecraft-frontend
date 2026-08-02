@@ -28,7 +28,7 @@ const UPPER = "text-transform: uppercase";
 // A placed text block: [rowStart, colStart, rowEnd, colEnd] on the 12×12 grid.
 type BlockSpec = { at: [number, number, number, number]; nodes: JSONContent[]; style?: BlockStyleTokens; z?: number };
 type PageSpec =
-  | { kind: "blocks"; background?: PageBackground; blocks: BlockSpec[] }
+  | { kind: "blocks"; background?: PageBackground; cover?: true; blocks: BlockSpec[] } // cover:true = hand-crafted cover, excluded from numbering/TOC
   | { kind: "cover"; cover: string }   // reuse a covers.ts front/back design
   | { kind: "toc" };                    // a "Contents" placeholder; user regenerates
 export type DocType = "leadMagnet" | "ebook" | "report";
@@ -41,11 +41,10 @@ export function interpret(spec: StructureSpec): GridSection[] {
 function toSection(p: PageSpec): GridSection {
   if (p.kind === "cover") return buildCover(p.cover);
   if (p.kind === "toc") return buildTocSection([]); // "Contents" + empty; regenerate for real page numbers
-  return {
-    type: "grid",
-    ...(p.background ? { background: p.background } : {}),
-    blocks: p.blocks.map(toBlock),
-  };
+  const sec: GridSection & { cover?: true } = { type: "grid", blocks: p.blocks.map(toBlock) };
+  if (p.cover) sec.cover = true;
+  if (p.background) sec.background = p.background;
+  return sec;
 }
 function toBlock(b: BlockSpec, i: number): GridBlock {
   const [rowStart, colStart, rowEnd, colEnd] = b.at;
@@ -122,26 +121,62 @@ const leadMagnet: StructureSpec = {
   ],
 };
 
+// Running head for ebook body pages — small uppercase muted tag on a hairline rule.
+const runHead = (text: string): BlockSpec => ({ at: [1, 2, 2, 12], nodes: [para(text)],
+  style: { fontSize: 10, letterSpacing: 0.14, textColor: MUTED, fontFamily: BODY, customCss: `text-transform:uppercase;border-bottom:1px solid ${BORDER};padding-bottom:7px` } });
+
 const ebook: StructureSpec = {
   key: "ebook", name: "Ebook",
   pages: [
-    { kind: "cover", cover: "rule" },
-    { kind: "toc" },
-    { kind: "blocks", blocks: [
-      { at: [4, 2, 5, 12], nodes: [para("Chapter one")], style: { ...KICKER, textAlign: "center", letterSpacing: 0.2 } },
-      { at: [5, 2, 8, 12], nodes: [heading("The title of your first chapter")], style: { ...TITLE, textAlign: "center", fontSize: 46 } },
-      rule([8, 5, 9, 9]),
-      { at: [9, 3, 11, 11], nodes: [para("A one-line promise of what this chapter delivers.")], style: { textAlign: "center", fontSize: 16, textColor: MUTED, fontFamily: BODY, customCss: "font-style:italic" } },
+    // 1 — hand-crafted editorial cover (unnumbered, not in contents)
+    { kind: "blocks", cover: true, background: { kind: "solid", color: BG }, blocks: [
+      { at: [2, 2, 3, 9], nodes: [para("The complete guide")], style: { ...KICKER, fontSize: 12, letterSpacing: 0.22 } },
+      { at: [3, 2, 4, 3], nodes: [emptyP], style: { customCss: "width:56px;height:3px;background:var(--pc-accent)" } },
+      { at: [5, 2, 9, 11], nodes: [heading("Designing Beautiful Ebooks")], style: { fontFamily: DISPLAY, fontWeight: 700, fontSize: 56, textColor: INK, customCss: "line-height:1.05" } },
+      { at: [9, 2, 10, 10], nodes: [para("A practical guide to type, layout and rhythm on the page.")], style: { fontSize: 17, textColor: MUTED, fontFamily: BODY, customCss: "font-style:italic" } },
+      { at: [11, 2, 12, 8], nodes: [para("By Author Name")], style: { ...KICKER, textColor: INK, letterSpacing: 0.12 } },
     ] },
+    // 2 — epigraph: centred, airy
     { kind: "blocks", blocks: [
-      { at: [2, 2, 3, 9], nodes: [heading("Section heading", 2)], style: H2 },
-      { at: [3, 2, 12, 8], nodes: [
-        para("Start writing here. This opening paragraph inherits the theme's body font, measure and colour, so it always matches the cover — the drop cap gives it an editorial feel."),
-        para("Add as many paragraphs as you need; the frame grows and breaks across pages."),
-        para("A second idea develops the argument and keeps the rhythm going."),
+      { at: [5, 3, 8, 11], nodes: [para("“Good design is as little design as possible.”")], style: { textAlign: "center", fontSize: 26, textColor: INK, fontFamily: DISPLAY, customCss: "font-style:italic;line-height:1.4" } },
+      { at: [8, 4, 9, 10], nodes: [para("— Dieter Rams")], style: { textAlign: "center", fontSize: 14, textColor: MUTED, fontFamily: BODY, customCss: "letter-spacing:.04em" } },
+    ] },
+    // 3 — contents
+    { kind: "toc" },
+    // 4 — chapter opener: oversized accent numeral
+    { kind: "blocks", blocks: [
+      { at: [2, 2, 6, 7], nodes: [para("1")], style: { fontFamily: DISPLAY, fontWeight: 700, fontSize: 150, textColor: ACCENT, customCss: "line-height:.8" } },
+      { at: [6, 2, 7, 9], nodes: [para("Chapter one")], style: { ...KICKER, letterSpacing: 0.2 } },
+      { at: [7, 2, 10, 11], nodes: [heading("Where good books begin")], style: { ...TITLE, fontSize: 46, customCss: "line-height:1.1" } },
+      rule([10, 2, 11, 5]),
+      { at: [11, 2, 12, 10], nodes: [para("A one-line promise of what this chapter delivers to the reader.")], style: { fontSize: 16, textColor: MUTED, fontFamily: BODY, customCss: "font-style:italic" } },
+    ] },
+    // 5 — body: drop-cap opener with a right-hand pull quote + margin note
+    { kind: "blocks", blocks: [
+      runHead("Chapter one · Where good books begin"),
+      { at: [2, 2, 12, 8], nodes: [
+        para("Every good book begins with restraint. Before a single ornament, the page needs a measure the eye can follow, a rhythm between blocks, and one colour doing the work of ten. This opening paragraph inherits the theme's body font and leading, so it always matches the cover — and the drop cap sets the tone."),
+        para("Set your measure first. A column that is too wide tires the reader; too narrow and the rhythm stutters. Everything after is detail."),
+        para("From there, hierarchy does the rest: a confident heading, generous space, and quiet secondary text that never competes with the argument."),
       ], style: DROPCAP },
-      { at: [3, 8, 7, 12], nodes: [pq("A short line worth pulling out and remembering.")], style: {} },
-      { at: [7, 8, 11, 12], nodes: [aside("A margin note — a definition, a source, or a quick aside that supports the main text.")], style: {} },
+      { at: [3, 8, 6, 12], nodes: [pq("One colour, doing the work of ten.")], style: {} },
+      { at: [8, 8, 12, 12], nodes: [aside("Measure — the length of a line of text, ideally 55–75 characters. It is the single biggest lever on readability.")], style: {} },
+    ] },
+    // 6 — body: subhead, list, and a key-idea callout
+    { kind: "blocks", blocks: [
+      runHead("Chapter one · Where good books begin"),
+      { at: [2, 2, 3, 10], nodes: [heading("The three principles", 2)], style: H2 },
+      { at: [3, 2, 8, 8], nodes: [
+        para("Good pages share a small set of habits. None of them are decorative; each one removes a decision the reader would otherwise have to make."),
+        para("Hold to these and the rest of the design falls into place almost on its own."),
+      ], style: BODY_S },
+      { at: [3, 8, 8, 12], nodes: [{ type: "bulletList", content: [
+        { type: "listItem", content: [para("Set the measure before anything else.")] },
+        { type: "listItem", content: [para("Let one accent carry the whole book.")] },
+        { type: "listItem", content: [para("Give headings room to breathe.")] },
+      ] }], style: BODY_S },
+      { at: [8, 2, 11, 12], nodes: [callout("Key idea", "Design is not decoration — it is the order that makes the meaning obvious at a glance.")], style: {} },
+      { at: [11, 2, 13, 12], nodes: [para("Carry these principles into the next chapter, where we put them to work on a real spread.")], style: BODY_S },
     ] },
   ],
 };
