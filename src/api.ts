@@ -94,6 +94,25 @@ export async function connectWordpress(body: { siteUrl: string; username: string
   return json as { label: string };
 }
 
+// Begin an OAuth connect flow: the backend returns the provider consent URL
+// (and sets the browser-bound nonce cookie); caller navigates to it.
+export async function startOauth(source: ConnectionSource): Promise<string> {
+  const res = await authedFetch(`/api/integrations/${source}/oauth/start`);
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.message || `connect unavailable (${res.status})`);
+  return json.url as string;
+}
+
+// Google picker bootstrap: a live access token (+ optional apiKey/appId from
+// the same Cloud project) the client-side picker needs.
+export async function getPickerToken(): Promise<{ accessToken: string; apiKey: string | null; appId: string | null }> {
+  const res = await authedFetch("/api/integrations/googledocs/picker-token");
+  if (res.status === 409) throw new Error("not_connected");
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.message || `picker token failed: ${res.status}`);
+  return json as { accessToken: string; apiKey: string | null; appId: string | null };
+}
+
 // One page of pickable content. 409 = not connected (surface as a typed error
 // so the hub flips to its connect pane).
 export async function listSourceContent(source: ConnectionSource, query: string, cursor?: string): Promise<{ items: SourceItem[]; nextCursor?: string }> {

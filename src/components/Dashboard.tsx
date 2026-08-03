@@ -22,6 +22,26 @@ export function Dashboard() {
   const [importedDocId, setImportedDocId] = useState<string | null>(null); // set = gallery in "apply to import" mode
   const fileInput = useRef<HTMLInputElement>(null);
 
+  // Returning from an OAuth consent screen: reopen the hub on that source's tab
+  // (or surface the failure), then drop the param so refresh doesn't repeat it.
+  const [hubTab, setHubTab] = useState<"wordpress" | "notion" | "googledocs" | undefined>();
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const connected = params.get("connected");
+    const connectError = params.get("connect_error");
+    if (connected === "notion" || connected === "googledocs" || connected === "wordpress") {
+      setHubTab(connected);
+      setHubOpen(true);
+    }
+    if (connectError) setErr(`Connection failed: ${connectError}`);
+    if (connected || connectError) {
+      const u = new URL(location.href);
+      u.searchParams.delete("connected");
+      u.searchParams.delete("connect_error");
+      history.replaceState(null, "", u.toString());
+    }
+  }, []);
+
   useEffect(() => {
     listDocuments().then(setDocs).catch((e) => setErr(String(e instanceof Error ? e.message : e)));
     getBillingStatus().then((s) => setPlan(s.plan)).catch(() => setPlan("free"));
@@ -112,6 +132,7 @@ export function Dashboard() {
         )}
         {hubOpen && (
           <ImportHub
+            initialTab={hubTab}
             onClose={() => setHubOpen(false)}
             onImported={(documentId) => {
               // same flow as file upload: offer a template for the fresh import
@@ -158,7 +179,7 @@ export function Dashboard() {
         {plan === "free" && (
           <p style={{ fontSize: 12, color: "var(--ui-accent)", background: "var(--ui-accent-soft)", border: "1px solid var(--ui-border)",
             borderRadius: 8, padding: "8px 12px", margin: "10px 0 0", display: "inline-block" }}>
-            Free plan — exported PDFs carry a small “Made with Kator.io” line on every page. Upgrade to Pro to remove it.
+            Free plan — exported PDFs carry a small “Made with Kitaabio” line on every page. Upgrade to Pro to remove it.
           </p>
         )}
 
@@ -178,8 +199,11 @@ export function Dashboard() {
               <p style={{ fontSize: 14, color: "var(--ui-muted)", margin: "0 0 20px" }}>
                 Start from a beautiful template, upload a file, or begin with a blank page.
               </p>
-              <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
                 <button onClick={() => { setImportedDocId(null); setGalleryOpen(true); }} style={ghostBtn}>◆ Browse templates</button>
+                <button onClick={() => { setHubTab("wordpress"); setHubOpen(true); }} style={ghostBtn}>Ⓦ WordPress</button>
+                <button onClick={() => { setHubTab("notion"); setHubOpen(true); }} style={ghostBtn}>◨ Notion</button>
+                <button onClick={() => { setHubTab("googledocs"); setHubOpen(true); }} style={ghostBtn}>▤ Google Docs</button>
                 <button onClick={create} disabled={creating}
                   style={{ padding: "9px 16px", fontSize: 14, fontWeight: 700, color: "var(--ui-primary-ink)", background: "var(--ui-primary)", border: "none", borderRadius: 8, cursor: "pointer" }}>
                   {creating ? "Creating…" : "+ New document"}

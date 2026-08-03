@@ -24,7 +24,7 @@ function TitleField() {
   const title = useStore((s) => s.title);
   const rename = useStore((s) => s.rename);
   const [draft, setDraft] = useState<string | null>(null);
-  useEffect(() => { document.title = `${title} — Kator.io`; }, [title]);
+  useEffect(() => { document.title = `${title} — Kitaabio`; }, [title]);
   const commit = () => {
     if (draft !== null && draft.trim() && draft.trim() !== title) rename(draft.trim());
     setDraft(null);
