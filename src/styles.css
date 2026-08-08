@@ -25,12 +25,14 @@ h1, h2, h3 { font-family: var(--font-display); }
   padding-right: 0.06em;
 }
 
-/* 12-col grid. Multi-block rows are ATOMIC: a columns row that doesn't fit
-   moves wholesale to the next page. This one line is the atomicity guarantee. */
-.columns {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap: 1rem;
-  break-inside: avoid;
-}
-.column { grid-column: span var(--span, 6); }
+/* Side-by-side columns — SAME flex + data-span rules as baseCss/gridBaseCss
+   (canvas, flow PDF and grid PDF must agree). The old grid impl read a --span
+   var nothing ever set, so every column rendered span 6 regardless of data. */
+.columns { display: flex; gap: 1.5rem; break-inside: avoid; }
+.column { flex: 1 1 0; min-width: 0; }
+.column[data-span="1"]{flex-grow:1}.column[data-span="2"]{flex-grow:2}
+.column[data-span="3"]{flex-grow:3}.column[data-span="4"]{flex-grow:4}
+.column[data-span="5"]{flex-grow:5}.column[data-span="6"]{flex-grow:6}
+.column[data-span="7"]{flex-grow:7}.column[data-span="8"]{flex-grow:8}
+.column[data-span="9"]{flex-grow:9}.column[data-span="10"]{flex-grow:10}
+.column[data-span="11"]{flex-grow:11}.column[data-span="12"]{flex-grow:12}

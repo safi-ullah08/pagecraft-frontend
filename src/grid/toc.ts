@@ -58,29 +58,47 @@ export function collectToc(pages: unknown[], startAt = 1, maxLevel = 6): TocEntr
 
 const rid = () => Math.random().toString(36).slice(2, 10);
 
-// A full-page TOC section: one text frame holding a title + one line per entry.
-// ponytail: plain "Title — 12" lines, indented by heading level. Dot leaders and
-// right-aligned numbers need measured tab stops — styling is the deferred half.
+// The generated entries live in a tocList typed block (dot leaders, tabular
+// numbers, per-level indent — all skin-restyled). Filling entries preserves the
+// page's DESIGN: a template's contents page keeps its panels/title/areas across
+// refreshes; only the tocList block's entries are replaced.
+export function hasTocList(section: GridSection): boolean {
+  return section.blocks.some((b) => b.block === "tocList");
+}
+export function fillTocEntries(section: GridSection, entries: TocEntry[]): GridSection {
+  return {
+    ...section,
+    blocks: section.blocks.map((b) =>
+      b.block === "tocList" ? { ...b, content: { ...(b.content as object), entries } } : b,
+    ),
+  };
+}
+
+// The DEFAULT contents page (untemplated docs, and templates' `kind:"toc"`
+// sugar): a title frame over a tocList. Templates wanting a bespoke design
+// author their own page with a `slot:"toc"` block instead.
 export function buildTocSection(entries: TocEntry[], title = "Contents"): TocSection {
-  const line = (text: string): JSONContent => ({ type: "paragraph", content: [{ type: "text", text }] });
-  const doc: JSONContent = {
+  const heading: JSONContent = {
     type: "doc",
-    content: [
-      { type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: title }] },
-      ...(entries.length
-        ? entries.map((e) => line(`${"  ".repeat(Math.max(0, e.level - 1))}${e.text} — ${e.page}`))
-        : [line("No headings found yet.")]),
-    ],
+    content: [{ type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: title }] }],
   };
   return {
     type: "grid",
     toc: true,
-    blocks: [{
-      id: rid(),
-      area: { rowStart: 1, colStart: 1, rowEnd: ROWS + 1, colEnd: COLS + 1 },
-      block: "textFrame",
-      content: doc,
-    }],
+    blocks: [
+      {
+        id: rid(),
+        area: { rowStart: 1, colStart: 2, rowEnd: 3, colEnd: 12 },
+        block: "textFrame",
+        content: heading,
+      },
+      {
+        id: rid(),
+        area: { rowStart: 3, colStart: 2, rowEnd: ROWS + 1, colEnd: 12 },
+        block: "tocList",
+        content: { entries, leader: "dots", showNumbers: true, maxLevel: 3 },
+      },
+    ],
   };
 }
 

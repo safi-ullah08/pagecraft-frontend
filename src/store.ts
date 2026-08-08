@@ -5,10 +5,10 @@ import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
 import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
 import { BLOCKS, serialize, DEFAULT_PAGE_NUMBERS, EMPTY_DESIGN, type PageNumberConfig, type DesignTokens } from "@pagecraft/model";
-import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock } from "./grid/types.ts";
+import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock, type GridSection } from "./grid/types.ts";
 import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
-import { collectToc, buildTocSection, isTocSection, tocPlaceholder } from "./grid/toc.ts";
+import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries } from "./grid/toc.ts";
 import { buildCover, isCoverSection, isBackCoverSection } from "./grid/covers.ts";
 import { insertSectionsAfter, updatePageNumbers, updateDesign, updateTheme, renameDocument } from "./api.ts";
 import { parseTemplateId, IMPORT_COVER, type Template } from "./grid/templates.ts";
@@ -514,7 +514,12 @@ export const useStore = create<Store>((set, get) => {
 
       const existing = sections.findIndex((s) => isTocSection(s.content));
       if (existing >= 0) {
-        edit(sections[existing]!.id, buildTocSection(collectToc(contents, startAt)) as SectionContent);
+        // Fill the tocList slot IN PLACE so a template's designed contents page
+        // (panels/title/areas) survives the refresh; a legacy all-text TOC page
+        // is upgraded wholesale to the current default design.
+        const cur = sections[existing]!.content as GridSection;
+        const entries = collectToc(contents, startAt);
+        edit(sections[existing]!.id, (hasTocList(cur) ? fillTocEntries(cur, entries) : buildTocSection(entries)) as SectionContent);
         set({ activeId: sections[existing]!.id });
         return;
       }

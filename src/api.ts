@@ -268,10 +268,12 @@ export async function importSource(source: string, body: Record<string, unknown>
 
 // Upload a document file (.docx/.md/.txt) → parse+import into a NEW document.
 // Raw bytes + the filename in a header (matches the backend's raw-body route).
-export async function uploadDocument(file: File) {
+// mode (docx only): "reskin" strips Word's inline styling so a template owns the
+// look; "verbatim" (default) reproduces the file 1:1 under the neutral theme.
+export async function uploadDocument(file: File, mode: "verbatim" | "reskin" = "verbatim") {
   const res = await authedFetch("/api/integrations/upload", {
     method: "POST",
-    headers: { "content-type": file.type || "application/octet-stream", "x-filename": file.name },
+    headers: { "content-type": file.type || "application/octet-stream", "x-filename": file.name, "x-import-mode": mode },
     body: file,
   });
   if (!res.ok) {

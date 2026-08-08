@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { collectToc, buildTocSection, isTocSection, tocPlaceholder } from "./toc.ts";
+import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries } from "./toc.ts";
 import { buildCover } from "./covers.ts";
 
 // run: cd pagecraft-backend && node --import tsx --test ../pagecraft-frontend/src/grid/toc.test.ts
@@ -57,21 +57,30 @@ test("non-grid and empty pages are counted but contribute nothing", () => {
   assert.deepEqual(entries, [{ text: "Third", level: 1, page: 3 }]);
 });
 
-test("built section is marked, full-page, and lists every entry", () => {
-  const sec = buildTocSection([{ text: "Alpha", level: 1, page: 2 }, { text: "Beta", level: 2, page: 4 }]);
+test("built section is marked: a title frame over a tocList carrying the entries", () => {
+  const entries = [{ text: "Alpha", level: 1, page: 2 }, { text: "Beta", level: 2, page: 4 }];
+  const sec = buildTocSection(entries);
   assert.ok(isTocSection(sec));
-  assert.equal(sec.blocks.length, 1);
-  assert.deepEqual(sec.blocks[0]!.area, { rowStart: 1, colStart: 1, rowEnd: 13, colEnd: 13 });
-  const lines = (sec.blocks[0]!.content as { content: { content?: { text: string }[] }[] }).content;
-  assert.equal(lines[0]!.content![0]!.text, "Contents");
-  assert.match(lines[1]!.content![0]!.text, /Alpha — 2/);
-  assert.match(lines[2]!.content![0]!.text, /Beta — 4/); // level 2 indented
+  assert.ok(hasTocList(sec));
+  assert.equal(sec.blocks.length, 2);
+  const title = (sec.blocks[0]!.content as { content: { content?: { text: string }[] }[] }).content;
+  assert.equal(title[0]!.content![0]!.text, "Contents");
+  assert.deepEqual((sec.blocks[1]!.content as { entries: unknown }).entries, entries);
+});
+
+test("fillTocEntries swaps entries and keeps the page's design blocks intact", () => {
+  const sec = buildTocSection([{ text: "Old", level: 1, page: 1 }]);
+  const beforeIds = sec.blocks.map((b) => b.id);
+  const filled = fillTocEntries(sec, [{ text: "New", level: 1, page: 7 }]);
+  assert.deepEqual(filled.blocks.map((b) => b.id), beforeIds); // same blocks, same areas
+  assert.deepEqual((filled.blocks[1]!.content as { entries: Array<{ text: string }> }).entries.map((e) => e.text), ["New"]);
+  assert.equal((filled.blocks[1]!.content as { leader: string }).leader, "dots"); // other props untouched
 });
 
 test("an empty document still builds a valid TOC page", () => {
   const sec = buildTocSection([]);
   assert.ok(isTocSection(sec));
-  assert.equal(sec.blocks.length, 1);
+  assert.ok(hasTocList(sec));
 });
 
 test("a cover is not indexed but still occupies page 1", () => {

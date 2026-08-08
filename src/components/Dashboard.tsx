@@ -47,20 +47,24 @@ export function Dashboard() {
     getBillingStatus().then((s) => setPlan(s.plan)).catch(() => setPlan("free"));
   }, []);
 
-  async function upload(file: File) {
-    if (uploading) return;
+  // File uploads open the gallery FIRST — the pick/skip decides the docx import
+  // mode (template picked ⇒ "reskin", Word's inline styling stripped so the
+  // template owns the look; skipped ⇒ "verbatim", 1:1 reproduction). The file is
+  // held here and only uploaded once the choice is made.
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+
+  async function uploadPending(tplId?: string) {
+    if (!pendingFile || uploading) return;
     setUploading(true);
     setErr(null);
     try {
-      const { documentId } = await uploadDocument(file);
-      // Prompt to apply a template to the freshly-imported doc (keeps content).
-      // Dismissing the gallery opens the doc as-is.
-      setImportedDocId(documentId);
-      setGalleryOpen(true);
-      setUploading(false);
+      const { documentId } = await uploadDocument(pendingFile, tplId ? "reskin" : "verbatim");
+      window.location.search = tplId ? `?doc=${documentId}&tpl=${tplId}` : `?doc=${documentId}`;
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
       setUploading(false);
+      setPendingFile(null);
+      setGalleryOpen(false);
     }
   }
 
@@ -127,7 +131,11 @@ export function Dashboard() {
         {galleryOpen && (
           <TemplateGallery
             applyToDocId={importedDocId ?? undefined}
-            onClose={() => { if (importedDocId) openDoc(importedDocId); else setGalleryOpen(false); }}
+            onPick={pendingFile ? (t) => uploadPending(t.id) : undefined}
+            onClose={() => {
+              if (pendingFile) { void uploadPending(); return; } // skip = verbatim upload
+              if (importedDocId) openDoc(importedDocId); else setGalleryOpen(false);
+            }}
           />
         )}
         {hubOpen && (
@@ -159,7 +167,7 @@ export function Dashboard() {
           )}
           <ImportBar />
           <input ref={fileInput} type="file" accept=".docx,.md,.markdown,.txt" style={{ display: "none" }}
-            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) void upload(f); }} />
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) { setPendingFile(f); setImportedDocId(null); setGalleryOpen(true); } }} />
           <button onClick={() => setHubOpen(true)} title="Import posts from WordPress, Notion or Google Docs" style={ghostBtn}>
             ⇩ Import from…
           </button>

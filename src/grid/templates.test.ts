@@ -51,6 +51,18 @@ test("parseTemplateId round-trips every catalog id and rejects junk", () => {
   assert.equal(parseTemplateId(":ebook"), null);
 });
 
+test("slot:'toc' pages carry a fillable tocList and the toc flag", () => {
+  const gb = interpret(STRUCTURES.guidebook)[2]!;
+  assert.ok(isTocSection(gb), "guidebook contents keeps the toc flag");
+  const toc = gb.blocks.find((b) => b.block === "tocList");
+  assert.ok(toc, "guidebook contents page carries a tocList");
+  assert.deepEqual((toc!.content as { entries: unknown[] }).entries, []); // filled by the store
+  // the design around the slot survives: panel + kicker + title + rule
+  assert.ok(gb.blocks.length >= 4, "bespoke design blocks placed around the slot");
+  const wl = interpret(STRUCTURES.wellness)[1]!;
+  assert.ok(isTocSection(wl) && wl.blocks.some((b) => b.block === "tocList"));
+});
+
 test("blocks reference theme tokens, never hardcoded colour (so they re-skin)", () => {
   for (const spec of Object.values(STRUCTURES)) {
     const json = JSON.stringify(interpret(spec));

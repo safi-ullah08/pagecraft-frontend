@@ -25,13 +25,16 @@ function thumbHtml(t: Template): string {
 
 const prettyTheme = (t: string) => t.replace(/-/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 
-// applyToDocId set = "add a template to this imported doc" (keeps content, applies
-// look + cover + TOC via the ?tpl param the editor reads on load). Unset = "start a
-// new doc from a template" (createFromTemplate replaces with the placeholder pages).
-export function TemplateGallery({ onClose, applyToDocId }: { onClose: () => void; applyToDocId?: string }) {
+// Three modes:
+//  - applyToDocId set = "add a template to this imported doc" (keeps content,
+//    applies look + cover + TOC via the ?tpl param the editor reads on load).
+//  - onPick set = the caller owns the pick (e.g. a pending file upload whose
+//    import mode depends on this choice — the doc doesn't exist yet).
+//  - neither = "start a new doc from a template" (createFromTemplate).
+export function TemplateGallery({ onClose, applyToDocId, onPick }: { onClose: () => void; applyToDocId?: string; onPick?: (t: Template) => Promise<void> | void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const importing = !!applyToDocId;
+  const importing = !!applyToDocId || !!onPick;
 
   const all = listTemplates(themeNames());
   const groups = (Object.keys(DOC_LABELS) as DocType[]).map((dt) => ({ dt, items: all.filter((t) => t.docType === dt) }));
@@ -41,6 +44,10 @@ export function TemplateGallery({ onClose, applyToDocId }: { onClose: () => void
     setBusy(t.id);
     setErr(null);
     try {
+      if (onPick) {
+        await onPick(t); // caller navigates on success
+        return;
+      }
       if (applyToDocId) {
         window.location.search = `?doc=${applyToDocId}&tpl=${t.id}`; // editor applies on load
         return;

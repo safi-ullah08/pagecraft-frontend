@@ -28,7 +28,10 @@ const UPPER = "text-transform: uppercase";
 
 // A placed block: [rowStart, colStart, rowEnd, colEnd] on the 12×12 grid.
 // `image: true` = an empty image slot (the editor shows a click-to-fill placeholder).
-type BlockSpec = { at: [number, number, number, number]; nodes?: JSONContent[]; style?: BlockStyleTokens; z?: number; image?: true };
+// `slot: "toc"` = a tocList the store fills with generated entries — the page keeps
+// its authored design across refreshes (first slot kind; the engine adds more).
+// `props` merges into a slot block's typed content (e.g. { leader: "rule" }).
+type BlockSpec = { at: [number, number, number, number]; nodes?: JSONContent[]; style?: BlockStyleTokens; z?: number; image?: true; slot?: "toc"; props?: Record<string, unknown> };
 type PageSpec =
   | { kind: "blocks"; background?: PageBackground; cover?: true; blocks: BlockSpec[] } // cover:true = hand-crafted cover, excluded from numbering/TOC
   | { kind: "cover"; cover: string }   // reuse a covers.ts front/back design
@@ -48,21 +51,23 @@ export function interpret(spec: StructureSpec): GridSection[] {
 }
 function toSection(p: PageSpec): GridSection {
   if (p.kind === "cover") return buildCover(p.cover);
-  if (p.kind === "toc") return buildTocSection([]); // "Contents" + empty; regenerate for real page numbers
-  const sec: GridSection & { cover?: true } = { type: "grid", blocks: p.blocks.map(toBlock) };
+  if (p.kind === "toc") return buildTocSection([]); // default contents page; regenerate for real page numbers
+  const sec: GridSection & { cover?: true; toc?: true } = { type: "grid", blocks: p.blocks.map(toBlock) };
   if (p.cover) sec.cover = true;
+  if (p.blocks.some((b) => b.slot === "toc")) sec.toc = true; // a bespoke contents page IS the toc section
   if (p.background) sec.background = p.background;
   return sec;
 }
 function toBlock(b: BlockSpec, i: number): GridBlock {
   const [rowStart, colStart, rowEnd, colEnd] = b.at;
+  const base = { id: rid(), area: { rowStart, colStart, rowEnd, colEnd }, zIndex: b.z ?? i, ...(b.style ? { style: b.style } : {}) };
+  if (b.slot === "toc") {
+    return { ...base, block: "tocList", content: { entries: [], leader: "dots", showNumbers: true, maxLevel: 3, ...(b.props ?? {}) } };
+  }
   return {
-    id: rid(),
-    area: { rowStart, colStart, rowEnd, colEnd },
+    ...base,
     block: b.image ? "image" : "textFrame",
     content: b.image ? { src: "", alt: "" } : doc(b.nodes ?? [emptyP]),
-    zIndex: b.z ?? i, // explicit so text sits above any page background
-    ...(b.style ? { style: b.style } : {}),
   };
 }
 
@@ -252,8 +257,15 @@ const guidebook: StructureSpec = {
       img([7, 8, 11, 12]),
       { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT },
     ] },
-    // 3 — contents (dotted-leader page in the source; regenerate for live numbers)
-    { kind: "toc" },
+    // 3 — contents: lavender band, serif title, dotted leaders (source design).
+    // A slot:"toc" page — the store fills entries; the design survives refreshes.
+    { kind: "blocks", blocks: [
+      panel([1, 1, 4, 13], SURFACE),
+      { at: [2, 2, 3, 8], nodes: [para("What's inside")], style: KICKER },
+      { at: [3, 2, 5, 10], nodes: [heading("Contents")], style: { fontSize: 32, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY } },
+      { at: [5, 2, 12, 12], slot: "toc" },
+      { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT },
+    ] },
     // 4 — chapter opener: accent banner, subhead, photo column + body
     { kind: "blocks", blocks: [
       panel([1, 1, 5, 13], ACCENT),
@@ -333,8 +345,13 @@ const wellness: StructureSpec = {
       img([5, 2, 11, 12]),
       { at: [11, 3, 12, 11], nodes: [para("Author Name")], style: { textAlign: "center", fontSize: 13, fontWeight: 700, textColor: INK, fontFamily: BODY, customCss: UPPER + ";letter-spacing:.18em" } },
     ] },
-    // 2 — contents (letterspaced chapter list in the source; regenerate for live numbers)
-    { kind: "toc" },
+    // 2 — contents: highlight block behind a big display title, letterspaced
+    // list (the fresh-lime skin kills the leaders — source design).
+    { kind: "blocks", blocks: [
+      panel([1, 1, 2, 3], HIGHLIGHT),
+      { at: [1, 2, 3, 11], nodes: [para("Contents")], style: { fontSize: 40, fontWeight: 800, textColor: ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";line-height:1" } },
+      { at: [4, 3, 12, 11], slot: "toc" },
+    ] },
     // 3 — chapter opener: highlight block behind a big display title
     { kind: "blocks", blocks: [
       panel([1, 1, 2, 4], HIGHLIGHT),

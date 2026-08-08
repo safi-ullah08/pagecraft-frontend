@@ -54,17 +54,31 @@ export async function parseBlocks(chapters: JSONContent[], theme: string, dim: P
   // wait for theme fonts, else text measures with fallback fonts (usually shorter)
   // and frames come out under-sized → they overflow once the real font paints.
   if (document.fonts?.ready) { try { await document.fonts.ready; } catch { /* ignore */ } }
+  // Width-aware: the probe is resized per call to the asked column span (slot
+  // layout measures the same nodes at several widths). widthFor(COLS) equals
+  // contentW by construction — colPx is derived from it. Cached by (cols, doc):
+  // measurement is the hot path and slot layout re-asks far more than the old
+  // linear pass did.
+  const widthFor = (cols: number) => cols * colPx + (cols - 1) * gap;
+  const cache = new Map<string, { w: number; h: number }>();
   try {
-    return modelParseBlocks(chapters, { rowPx, colPx }, (d) => {
+    return modelParseBlocks(chapters, { rowPx, colPx }, (d, cols) => {
+      const maxW = widthFor(Math.max(1, Math.min(COLS, cols)));
       const only = d.content?.length === 1 ? d.content[0] : null;
       if (only?.type === "image") {
         const nat = dims.get(only.attrs?.src);
-        const w = Math.min(nat?.w ?? contentW, contentW); // never wider than the page
+        const w = Math.min(nat?.w ?? maxW, maxW); // never wider than asked
         const h = nat ? (w * nat.h) / nat.w : rowPx * IMAGE_FALLBACK_ROWS;
         return { w, h };
       }
+      const key = `${cols}:${JSON.stringify(d)}`;
+      const hit = cache.get(key);
+      if (hit) return hit;
+      meas.style.width = `${maxW}px`;
       meas.innerHTML = serialize(d);
-      return { w: contentW, h: meas.offsetHeight };
+      const out = { w: maxW, h: meas.offsetHeight };
+      cache.set(key, out);
+      return out;
     }) as GridSection[];
   } finally {
     meas.remove();
