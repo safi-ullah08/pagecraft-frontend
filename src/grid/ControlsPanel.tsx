@@ -10,6 +10,8 @@ import { isTocSection } from "./toc.ts";
 import { frontCovers, backCovers, isCoverSection, isBackCoverSection, type CoverTemplate } from "./covers.ts";
 import { Inspector } from "./Inspector.tsx";
 import { Section, Field, Select, Slider, ColorPicker, inputStyle, PALETTE } from "./controls.tsx";
+import { TemplateGallery } from "../components/TemplateGallery.tsx";
+import { docPlanToLayout } from "./templates.ts";
 
 // The right bar — a port of temp/src ControlsPanel: three tabs (Design / Blocks /
 // Templates). Blocks holds the palette (category-grouped tiles) and swaps to the
@@ -362,6 +364,46 @@ function LayersPanel() {
   );
 }
 
+// Template SWITCHING — imported docs carry their chapters frozen in docPlan, so
+// picking another template re-lays them under the new design (via ?tpl reload).
+// Edits made since import don't survive a re-lay: confirm before navigating.
+function SwitchTemplate() {
+  const docPlan = useStore((s) => s.docPlan);
+  const sourceMeta = useStore((s) => s.sourceMeta);
+  const documentId = useStore((s) => s.documentId);
+  const [open, setOpen] = useState(false);
+  return (
+    <Section title="Template">
+      {docPlan && documentId ? (
+        <>
+          <button onClick={() => setOpen(true)}
+            style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER_STRONG}`, color: PALETTE.TEXT, padding: "8px 10px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
+            ⇄ Switch template
+          </button>
+          <div style={{ fontSize: 10, color: PALETTE.MUTED }}>
+            Re-lays your imported chapters into another design. Layout and text edits made since import are replaced.
+          </div>
+          {open && (
+            <TemplateGallery
+              previewPlan={docPlanToLayout(docPlan, sourceMeta)}
+              onClose={() => setOpen(false)}
+              onPick={(t) => {
+                if (!confirm("Switch template?\n\nYour imported chapters will be re-laid into the new design. Layout and text edits made since import will be replaced.")) {
+                  setOpen(false);
+                  return;
+                }
+                window.location.search = `?doc=${documentId}&tpl=${t.id}`;
+              }}
+            />
+          )}
+        </>
+      ) : (
+        <div style={{ fontSize: 11, color: PALETTE.MUTED }}>Template switching is available for imported documents.</div>
+      )}
+    </Section>
+  );
+}
+
 // Templates = the page actions we have today; presets/templates land later.
 function TemplatesPanel() {
   const addPage = useStore((s) => s.addPage);
@@ -397,9 +439,7 @@ function TemplatesPanel() {
             : "Added as page 1, shifting the rest down. Re-run it after editing to refresh."}
         </div>
       </Section>
-      <Section title="Templates">
-        <div style={{ fontSize: 11, color: PALETTE.MUTED }}>Page templates & grid presets coming soon.</div>
-      </Section>
+      <SwitchTemplate />
     </div>
   );
 }

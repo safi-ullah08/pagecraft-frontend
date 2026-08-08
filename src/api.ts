@@ -30,7 +30,13 @@ async function authedFetch(input: string, init: RequestInit = {}) {
 // self-describes (grid = { type:"grid", … }). Both round-trip through the same PUT.
 export type SectionContent = JSONContent | GridSection;
 export type Section = { id: string; content: SectionContent; version: number };
-export type Document = { id: string; title: string; theme: string; sections: Section[]; pageWidthMm?: number | null; pageHeightMm?: number | null; pageNumbers?: PageNumberConfig | null; designTokens?: DesignTokens | null };
+// sourceMeta = cover metadata harvested at import (subtitle/author/date/hero/…);
+// the layout engine binds template slots to it when a template is applied.
+export type SourceMeta = { subtitle?: string; author?: string; date?: string; hero?: string; sourceUrl?: string; wantsToc?: boolean };
+// The imported chapters, frozen at import — the substrate template switching
+// re-lays (sections hold DESIGNED pages after a template applies, not chapters).
+export type StoredDocPlan = { chapters: Array<{ title: string; level: number; body: JSONContent; role?: "notes" }> };
+export type Document = { id: string; title: string; theme: string; sections: Section[]; pageWidthMm?: number | null; pageHeightMm?: number | null; pageNumbers?: PageNumberConfig | null; designTokens?: DesignTokens | null; sourceMeta?: SourceMeta | null; docPlan?: StoredDocPlan | null };
 
 // Persist the page-number config on the document (also read back by the export).
 export async function updatePageNumbers(documentId: string, pageNumbers: PageNumberConfig | null) {

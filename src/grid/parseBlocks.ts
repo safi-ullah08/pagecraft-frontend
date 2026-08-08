@@ -12,7 +12,7 @@ import { ROWS, COLS, type GridSection } from "./types.ts";
 const MM = 96 / 25.4; // CSS px per mm at 96dpi
 const IMAGE_FALLBACK_ROWS = 5; // if an image can't be loaded, fall back to a sensible span
 
-function collectImageSrcs(node: JSONContent, acc: Set<string>) {
+export function collectImageSrcs(node: JSONContent, acc: Set<string>) {
   const src = node.attrs?.src;
   if ((node.type === "image" || node.type === "figure") && typeof src === "string" && src) acc.add(src);
   node.content?.forEach((c) => collectImageSrcs(c, acc));
@@ -20,7 +20,7 @@ function collectImageSrcs(node: JSONContent, acc: Set<string>) {
 
 // Load every referenced image to learn its natural width/height (src here is the
 // display URL, which the browser can fetch). Failures resolve empty → fallback size.
-function preloadDims(srcs: string[]): Promise<Map<string, { w: number; h: number }>> {
+export function preloadDims(srcs: string[]): Promise<Map<string, { w: number; h: number }>> {
   const map = new Map<string, { w: number; h: number }>();
   return Promise.all(
     srcs.map((src) => new Promise<void>((res) => {

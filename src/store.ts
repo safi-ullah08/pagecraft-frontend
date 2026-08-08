@@ -11,7 +11,9 @@ import { parseBlocks } from "./grid/parseBlocks.ts";
 import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries } from "./grid/toc.ts";
 import { buildCover, isCoverSection, isBackCoverSection } from "./grid/covers.ts";
 import { insertSectionsAfter, updatePageNumbers, updateDesign, updateTheme, renameDocument } from "./api.ts";
-import { parseTemplateId, IMPORT_COVER, type Template } from "./grid/templates.ts";
+import { parseTemplateId, structureToLayoutSpec, foldChapters, docPlanToLayout, STRUCTURES, IMPORT_COVER, type Template } from "./grid/templates.ts";
+import { runLayout } from "./grid/layoutDoc.ts";
+import type { SourceMeta, StoredDocPlan } from "./api.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
 import { splitParagraphSentences } from "./grid/split-inline.ts";
 
@@ -26,6 +28,8 @@ type Store = {
   design: DesignTokens; // design-wizard overlay, applied AFTER the theme
   documentId: string | null;
   loading: boolean; // true until load (incl. any auto flow→grid conversion) settles
+  sourceMeta: SourceMeta; // import-harvested cover metadata (empty for in-app docs)
+  docPlan: StoredDocPlan | null; // frozen imported chapters — template switching re-lays these
   sections: Section[]; // ordered; ALL rendered at once (continuous scroll)
   activeId: string | null; // section in focus/view — ChapterNav highlight, toolbar target
   selectedBlockIds: string[]; // grid blocks selected in the active section (multi-select)
@@ -38,7 +42,8 @@ type Store = {
   setPage: (p: PageDims) => void;
   setPageNumbers: (patch: Partial<PageNumberConfig>) => void;
   setDesign: (patch: Partial<DesignTokens> | null) => void; // null = reset to the pure theme
-  applyImportedTemplate: (t: Template) => Promise<void>; // imported doc: apply look + cover + TOC
+  applyImportedTemplate: (t: Template) => Promise<void>; // legacy: look + cover + TOC on an already-grid doc
+  applyTemplateLayout: (t: Template, meta: SourceMeta) => Promise<void>; // engine: lay flow chapters into the template's designed pages
   setActive: (id: string) => void;
   selectBlock: (id: string | null, additive?: boolean) => void;
   selectAll: () => void;
@@ -159,6 +164,8 @@ export const useStore = create<Store>((set, get) => {
     design: EMPTY_DESIGN,
     title: "Untitled",
     documentId: null,
+    sourceMeta: {},
+    docPlan: null,
     loading: true,
     sections: [],
     activeId: null,
@@ -449,24 +456,33 @@ export const useStore = create<Store>((set, get) => {
         // page size comes from the document (e.g. a docx's page size); else A4.
         // If it's not a preset, remember it as customPage so it stays selectable.
         const page = doc.pageWidthMm && doc.pageHeightMm ? { w: doc.pageWidthMm, h: doc.pageHeightMm } : A4;
-        set({ documentId: id, title: doc.title || "Untitled", sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME, page, customPage: presetOf(page) ? null : page, pageNumbers: doc.pageNumbers ?? DEFAULT_PAGE_NUMBERS, design: doc.designTokens ?? EMPTY_DESIGN });
-        // import path: flow is only a landing format — auto-paginate into grid on
-        // first open, then it's grid forever (convert persists, so idempotent).
+        set({ documentId: id, title: doc.title || "Untitled", sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME, page, customPage: presetOf(page) ? null : page, pageNumbers: doc.pageNumbers ?? DEFAULT_PAGE_NUMBERS, design: doc.designTokens ?? EMPTY_DESIGN, sourceMeta: doc.sourceMeta ?? {}, docPlan: doc.docPlan ?? null });
+        // ?tpl=<catalog id>: a template chosen for this freshly-imported doc.
+        const tpl = new URLSearchParams(location.search).get("tpl");
+        const t = tpl ? parseTemplateId(tpl) : null;
+        // import path: flow is only a landing format. WITH a template, the layout
+        // ENGINE lays the flow chapters into the template's designed pages; without
+        // one, auto-paginate into plain grid. Either way it's grid forever after.
         if (sections.some((s) => !isGridSection(s.content))) {
           try {
-            await get().convertToGrid();
+            if (t && sections.every((s) => !isGridSection(s.content))) {
+              await get().applyTemplateLayout(t, doc.sourceMeta ?? {});
+            } else {
+              await get().convertToGrid();
+              if (t) await get().applyImportedTemplate(t); // mixed doc — legacy look+cover+toc
+            }
           } catch (e) {
             console.error("auto flow→grid failed (staying flow):", e);
           }
+        } else if (t) {
+          // already grid: with a stored plan this is a template SWITCH — re-lay
+          // the frozen chapters under the new design; without one, legacy look+cover+toc.
+          try {
+            if (get().docPlan) await get().applyTemplateLayout(t, doc.sourceMeta ?? {});
+            else await get().applyImportedTemplate(t);
+          } catch (e) { console.error("apply template failed:", e); }
         }
-        // ?tpl=<catalog id>: apply a template to this freshly-imported doc (look +
-        // cover + TOC), then drop the param so a refresh doesn't re-apply it.
-        const tpl = new URLSearchParams(location.search).get("tpl");
         if (tpl) {
-          const t = parseTemplateId(tpl);
-          if (t) {
-            try { await get().applyImportedTemplate(t); } catch (e) { console.error("apply template failed:", e); }
-          }
           const u = new URL(location.href);
           u.searchParams.delete("tpl");
           history.replaceState(null, "", u.toString());
@@ -555,6 +571,52 @@ export const useStore = create<Store>((set, get) => {
         activeId: added[0]?.id ?? st.activeId,
       }));
     },
+    // Apply a template to a FRESHLY-imported doc (all sections still flow): the
+    // layout ENGINE lays the chapters into the template's designed pages — meta
+    // slots bound from sourceMeta, chapter openers, cycling flow spreads, back
+    // matter — replacing plain auto-pagination entirely.
+    applyTemplateLayout: async (t, meta) => {
+      const { documentId, sections, page } = get();
+      if (!documentId) return;
+      set({ theme: t.theme }); // before measuring — the probe must wear the template's fonts
+      try { await updateTheme(documentId, t.theme); } catch (e) { console.error("theme persist failed:", e); }
+
+      // Chapters: the STORED plan when we have one (frozen at import — survives
+      // any number of template switches), else derived from the live flow
+      // sections (docs imported before the plan column). foldChapters keeps only
+      // h1 sections as chapters — h2 subsections fold into their parent WITH
+      // their heading, so openers are real chapters and the contents page still
+      // lists every subsection.
+      const textOf = (n: JSONContent): string => n.text ?? (n.content ?? []).map(textOf).join("");
+      const stored = get().docPlan;
+      const plan = stored
+        ? docPlanToLayout(stored, meta)
+        : {
+            meta,
+            chapters: foldChapters(sections.map((s) => {
+              const nodes = (s.content as JSONContent).content ?? [];
+              const h = nodes[0]?.type === "heading" ? nodes[0] : undefined;
+              const title = h ? textOf(h).trim() : "Introduction";
+              const level = h ? Number(h.attrs?.level) || 1 : 1;
+              return { title, level, nodes, ...(title === "Notes" ? { role: "notes" as const } : {}) };
+            })),
+          };
+
+      const spec = structureToLayoutSpec(STRUCTURES[t.structKey]);
+      const { sections: laid, report } = await runLayout(plan, spec, t.theme, page);
+      if (report.length) console.info("layout report:", report);
+
+      const { sections: fresh } = await convertDocument(documentId, laid.map((s) => assetsToCanonical(s as SectionContent)));
+      set({ sections: fresh.map((s) => ({ ...s, content: assetsToDisplay(s.content) })), activeId: fresh[0]?.id ?? null });
+
+      const pn = STRUCTURES[t.structKey].pageNumbers;
+      if (pn) {
+        set({ pageNumbers: pn });
+        try { await updatePageNumbers(documentId, pn); } catch (e) { console.error("page numbers persist failed:", e); }
+      }
+      await get().generateToc(); // fills the template's toc slot in place
+    },
+
     // Apply a template to an ALREADY-loaded (imported) doc: keep the content, add the
     // look + front matter. Order matters — theme first so the cover/TOC render themed,
     // cover before TOC so generateToc places the TOC AFTER the cover (page 2).

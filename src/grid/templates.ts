@@ -1,8 +1,10 @@
 import type { JSONContent } from "@tiptap/react";
-import type { PageNumberConfig } from "@pagecraft/model";
+import type { PageNumberConfig, LayoutSpec, LayoutPage, LayoutBlock, LayoutPlan, SlotKind, PageRole } from "@pagecraft/model";
 import { ROWS, COLS, type BlockStyleTokens, type GridBlock, type GridSection, type PageBackground } from "./types.ts";
 import { buildCover } from "./covers.ts";
 import { buildTocSection } from "./toc.ts";
+import { assetsToDisplay, assetUrl } from "../assets.ts";
+import type { SourceMeta, StoredDocPlan } from "../api.ts";
 
 // Document STRUCTURES — "what shows up where". A structure is DATA: an ordered list
 // of page specs. `interpret()` turns it into GridSections the store inserts, exactly
@@ -28,12 +30,18 @@ const UPPER = "text-transform: uppercase";
 
 // A placed block: [rowStart, colStart, rowEnd, colEnd] on the 12×12 grid.
 // `image: true` = an empty image slot (the editor shows a click-to-fill placeholder).
-// `slot: "toc"` = a tocList the store fills with generated entries — the page keeps
-// its authored design across refreshes (first slot kind; the engine adds more).
-// `props` merges into a slot block's typed content (e.g. { leader: "rule" }).
-type BlockSpec = { at: [number, number, number, number]; nodes?: JSONContent[]; style?: BlockStyleTokens; z?: number; image?: true; slot?: "toc"; props?: Record<string, unknown> };
+// `slot` = the layout engine's binding: `nodes` stays the PLACEHOLDER (what
+// createFromTemplate and the gallery thumbnails render); the slot is what the
+// engine fills with a real document's content/metadata when a template is
+// applied to an import. `props` merges into a slot block's typed content.
+// `furniture` = designed micro-copy that SHIPS on apply (a contents title, a
+// worksheet label) — everything else literal-with-text is preview-only.
+type BlockSpec = { at: [number, number, number, number]; nodes?: JSONContent[]; style?: BlockStyleTokens; z?: number; image?: true; slot?: SlotKind; fallback?: "hide" | "keep" | "empty"; furniture?: true; props?: Record<string, unknown> };
+// `role` groups pages for the engine: front matter (default), the per-chapter
+// opener, cycling flow pages, back matter. interpret() ignores roles — the
+// placeholder template renders every page once, exactly as authored.
 type PageSpec =
-  | { kind: "blocks"; background?: PageBackground; cover?: true; blocks: BlockSpec[] } // cover:true = hand-crafted cover, excluded from numbering/TOC
+  | { kind: "blocks"; role?: PageRole; background?: PageBackground; cover?: true; blocks: BlockSpec[] } // cover:true = hand-crafted cover, excluded from numbering/TOC
   | { kind: "cover"; cover: string }   // reuse a covers.ts front/back design
   | { kind: "toc" };                    // a "Contents" placeholder; user regenerates
 export type DocType = "leadMagnet" | "ebook" | "report";
@@ -119,10 +127,10 @@ const leadMagnet: StructureSpec = {
   key: "leadMagnet", docType: "leadMagnet", name: "Lead magnet",
   pages: [
     { kind: "cover", cover: "band" },
-    { kind: "blocks", blocks: [
-      kicker("The guide", [2, 2, 3, 8]),
+    { kind: "blocks", role: "flow", blocks: [
+      { ...kicker("The guide", [2, 2, 3, 8]), furniture: true },
       { at: [3, 2, 5, 12], nodes: [heading("What you'll learn")], style: TITLE },
-      { at: [5, 2, 9, 8], nodes: [
+      { at: [5, 2, 9, 8], slot: "body", nodes: [
         para("This short guide walks you through a simple, repeatable process you can put to work today — no fluff, just the moves that matter."),
         para("By the end you'll have a one-page checklist you can reuse on every project."),
       ], style: DROPCAP },
@@ -132,10 +140,10 @@ const leadMagnet: StructureSpec = {
       stat("1", "Handy checklist", [9, 9, 12, 12]),
     ] },
     { kind: "blocks", background: { kind: "solid", color: ACCENT }, blocks: [
-      { at: [3, 2, 4, 11], nodes: [para("Ready when you are")], style: { ...KICKER, textAlign: "center", textColor: ON_ACCENT } },
-      { at: [4, 2, 7, 12], nodes: [heading("Start today")], style: { ...TITLE, textAlign: "center", textColor: ON_ACCENT } },
-      { at: [7, 3, 9, 11], nodes: [para("Grab the full toolkit and take the first step in the next ten minutes.")], style: { textAlign: "center", fontSize: 17, textColor: ON_ACCENT, fontFamily: BODY } },
-      { at: [9, 5, 10, 9], nodes: [para("yourname.com/start")], style: { textAlign: "center", fontSize: 14, fontWeight: 700, textColor: ON_ACCENT, fontFamily: BODY, customCss: "border:2px solid var(--pc-on-accent);border-radius:999px;padding:9px 4px" } },
+      { at: [3, 2, 4, 11], furniture: true, nodes: [para("Ready when you are")], style: { ...KICKER, textAlign: "center", textColor: ON_ACCENT } },
+      { at: [4, 2, 7, 12], furniture: true, nodes: [heading("Start today")], style: { ...TITLE, textAlign: "center", textColor: ON_ACCENT } },
+      { at: [7, 3, 9, 11], furniture: true, nodes: [para("Grab the full toolkit and take the first step in the next ten minutes.")], style: { textAlign: "center", fontSize: 17, textColor: ON_ACCENT, fontFamily: BODY } },
+      { at: [9, 5, 10, 9], furniture: true, nodes: [para("yourname.com/start")], style: { textAlign: "center", fontSize: 14, fontWeight: 700, textColor: ON_ACCENT, fontFamily: BODY, customCss: "border:2px solid var(--pc-on-accent);border-radius:999px;padding:9px 4px" } },
     ] },
   ],
 };
@@ -151,9 +159,9 @@ const ebook: StructureSpec = {
     { kind: "blocks", cover: true, background: { kind: "solid", color: BG }, blocks: [
       { at: [2, 2, 3, 9], nodes: [para("The complete guide")], style: { ...KICKER, fontSize: 12, letterSpacing: 0.22 } },
       { at: [3, 2, 4, 3], nodes: [emptyP], style: { customCss: "width:56px;height:3px;background:var(--pc-accent)" } },
-      { at: [5, 2, 9, 11], nodes: [heading("Designing Beautiful Ebooks")], style: { fontFamily: DISPLAY, fontWeight: 700, fontSize: 56, textColor: INK, customCss: "line-height:1.05" } },
-      { at: [9, 2, 10, 10], nodes: [para("A practical guide to type, layout and rhythm on the page.")], style: { fontSize: 17, textColor: MUTED, fontFamily: BODY, customCss: "font-style:italic" } },
-      { at: [11, 2, 12, 8], nodes: [para("By Author Name")], style: { ...KICKER, textColor: INK, letterSpacing: 0.12 } },
+      { at: [5, 2, 9, 11], slot: "title", fallback: "empty", nodes: [heading("Designing Beautiful Ebooks")], style: { fontFamily: DISPLAY, fontWeight: 700, fontSize: 56, textColor: INK, customCss: "line-height:1.05" } },
+      { at: [9, 2, 10, 10], slot: "subtitle", fallback: "empty", nodes: [para("A practical guide to type, layout and rhythm on the page.")], style: { fontSize: 17, textColor: MUTED, fontFamily: BODY, customCss: "font-style:italic" } },
+      { at: [11, 2, 12, 8], slot: "author", fallback: "empty", nodes: [para("By Author Name")], style: { ...KICKER, textColor: INK, letterSpacing: 0.12 } },
     ] },
     // 2 — epigraph: centred, airy
     { kind: "blocks", blocks: [
@@ -162,18 +170,19 @@ const ebook: StructureSpec = {
     ] },
     // 3 — contents
     { kind: "toc" },
-    // 4 — chapter opener: oversized accent numeral
-    { kind: "blocks", blocks: [
-      { at: [2, 2, 6, 7], nodes: [para("1")], style: { fontFamily: DISPLAY, fontWeight: 700, fontSize: 150, textColor: ACCENT, customCss: "line-height:.8" } },
-      { at: [6, 2, 7, 9], nodes: [para("Chapter one")], style: { ...KICKER, letterSpacing: 0.2 } },
-      { at: [7, 2, 10, 11], nodes: [heading("Where good books begin")], style: { ...TITLE, fontSize: 46, customCss: "line-height:1.1" } },
+    // 4 — chapter opener (perChapter): oversized accent numeral
+    { kind: "blocks", role: "perChapter", blocks: [
+      { at: [2, 2, 6, 7], slot: "chapterNumber", nodes: [para("1")], style: { fontFamily: DISPLAY, fontWeight: 700, fontSize: 150, textColor: ACCENT, customCss: "line-height:.8" } },
+      { at: [6, 2, 7, 9], slot: "kicker", nodes: [para("Chapter one")], style: { ...KICKER, letterSpacing: 0.2 } },
+      { at: [7, 2, 10, 11], slot: "chapterTitle", nodes: [heading("Where good books begin")], style: { ...TITLE, fontSize: 46, customCss: "line-height:1.1" } },
       rule([10, 2, 11, 5]),
       { at: [11, 2, 12, 10], nodes: [para("A one-line promise of what this chapter delivers to the reader.")], style: { fontSize: 16, textColor: MUTED, fontFamily: BODY, customCss: "font-style:italic" } },
     ] },
-    // 5 — body: drop-cap opener with a right-hand pull quote + margin note
-    { kind: "blocks", blocks: [
-      runHead("Chapter one · Where good books begin"),
-      { at: [2, 2, 12, 8], nodes: [
+    // 5 — body (flow): drop-cap column; right rail placeholders are preview-only
+    // (quote/aside hints land with the engine's opportunistic slots — revisit).
+    { kind: "blocks", role: "flow", blocks: [
+      { ...runHead("Chapter one · Where good books begin"), slot: "kicker" },
+      { at: [2, 2, 12, 8], slot: "body", nodes: [
         para("Every good book begins with restraint. Before a single ornament, the page needs a measure the eye can follow, a rhythm between blocks, and one colour doing the work of ten. This opening paragraph inherits the theme's body font and leading, so it always matches the cover — and the drop cap sets the tone."),
         para("Set your measure first. A column that is too wide tires the reader; too narrow and the rhythm stutters. Everything after is detail."),
         para("From there, hierarchy does the rest: a confident heading, generous space, and quiet secondary text that never competes with the argument."),
@@ -204,14 +213,14 @@ const report: StructureSpec = {
   key: "report", docType: "report", name: "Report",
   pages: [
     { kind: "blocks", blocks: [
-      kicker("Quarterly report", [3, 2, 4, 10]),
-      { at: [4, 2, 8, 12], nodes: [heading("Report title goes here")], style: { ...TITLE, fontSize: 48, customCss: "border-top:3px solid var(--pc-accent);padding-top:14px" } },
-      { at: [9, 2, 10, 9], nodes: [para("Prepared by · Date")], style: { fontSize: 14, textColor: MUTED, fontFamily: BODY } },
+      { ...kicker("Quarterly report", [3, 2, 4, 10]), furniture: true },
+      { at: [4, 2, 8, 12], slot: "title", fallback: "empty", nodes: [heading("Report title goes here")], style: { ...TITLE, fontSize: 48, customCss: "border-top:3px solid var(--pc-accent);padding-top:14px" } },
+      { at: [9, 2, 10, 9], slot: "author", fallback: "empty", nodes: [para("Prepared by · Date")], style: { fontSize: 14, textColor: MUTED, fontFamily: BODY } },
     ] },
     { kind: "toc" },
-    { kind: "blocks", blocks: [
-      kicker("Section 1", [4, 2, 5, 8]),
-      { at: [5, 2, 8, 12], nodes: [heading("Section title")], style: TITLE },
+    { kind: "blocks", role: "perChapter", blocks: [
+      { ...kicker("Section 1", [4, 2, 5, 8]), slot: "kicker", props: { prefix: "Section" } },
+      { at: [5, 2, 8, 12], slot: "chapterTitle", nodes: [heading("Section title")], style: TITLE },
       rule([8, 2, 9, 6]),
     ] },
     { kind: "blocks", blocks: [
@@ -238,13 +247,15 @@ const HAIR_ACCENT: BlockStyleTokens = { customCss: "border-top:1px solid var(--p
 const guidebook: StructureSpec = {
   key: "guidebook", docType: "ebook", name: "Guidebook",
   pages: [
-    // 1 — cover: full-bleed accent, inset panel, serif title, author strip
+    // 1 — cover: full-bleed accent, inset panel, serif title, author strip.
+    // Meta slots (fallback keep): an applied template binds the imported doc's
+    // title/subtitle/author here; the placeholder text survives otherwise.
     { kind: "blocks", cover: true, background: { kind: "solid", color: ACCENT }, blocks: [
       panel([2, 2, 9, 12], BG),
-      { at: [3, 3, 7, 11], nodes: [heading("How to Become an Entrepreneur")], style: { textAlign: "center", fontSize: 40, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY, customCss: "line-height:1.15" } },
-      { at: [7, 3, 8, 11], nodes: [para("A step-by-step guide to level up your skills")], style: { textAlign: "center", fontSize: 15, textColor: ACCENT, fontFamily: BODY } },
+      { at: [3, 3, 7, 11], slot: "title", fallback: "empty", nodes: [heading("How to Become an Entrepreneur")], style: { textAlign: "center", fontSize: 40, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY, customCss: "line-height:1.15" } },
+      { at: [7, 3, 8, 11], slot: "subtitle", fallback: "empty", nodes: [para("A step-by-step guide to level up your skills")], style: { textAlign: "center", fontSize: 15, textColor: ACCENT, fontFamily: BODY } },
       { at: [10, 3, 11, 11], nodes: [emptyP], style: HAIR_ON_ACCENT },
-      { at: [11, 3, 13, 11], nodes: [para("By An Author"), para("CEO · Entrepreneur")], style: { textAlign: "center", textColor: ON_ACCENT, fontFamily: BODY, fontSize: 13, customCss:
+      { at: [11, 3, 13, 11], slot: "author", fallback: "empty", nodes: [para("By An Author"), para("CEO · Entrepreneur")], style: { textAlign: "center", textColor: ON_ACCENT, fontFamily: BODY, fontSize: 13, customCss:
         "p:first-child{font-family:var(--pc-display);font-weight:700;letter-spacing:.12em;text-transform:uppercase}" +
         "p:last-child{letter-spacing:.1em;text-transform:uppercase;font-size:12px;margin-top:5px}" } },
     ] },
@@ -252,41 +263,44 @@ const guidebook: StructureSpec = {
     { kind: "blocks", blocks: [
       panel([1, 11, 2, 12], ACCENT),
       panel([2, 1, 10, 9], SURFACE),
-      { at: [4, 2, 6, 8], nodes: [para("Hello and welcome!")], style: { fontSize: 32, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY } },
+      { at: [4, 2, 6, 8], furniture: true, nodes: [para("Hello and welcome!")], style: { fontSize: 32, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY } },
       { at: [6, 2, 9, 8], nodes: [para("Title of the book"), para("Author name"), para("Edition / Year"), para("All rights reserved")], style: { fontSize: 13, textColor: INK, fontFamily: BODY, customCss: "p:first-child{font-weight:700}p+p{margin-top:5px}" } },
-      img([7, 8, 11, 12]),
+      { ...img([7, 8, 11, 12]), slot: "hero", fallback: "empty" }, // the imported doc's cover image
+
       { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT },
     ] },
     // 3 — contents: lavender band, serif title, dotted leaders (source design).
     // A slot:"toc" page — the store fills entries; the design survives refreshes.
     { kind: "blocks", blocks: [
       panel([1, 1, 4, 13], SURFACE),
-      { at: [2, 2, 3, 8], nodes: [para("What's inside")], style: KICKER },
-      { at: [3, 2, 5, 10], nodes: [heading("Contents")], style: { fontSize: 32, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY } },
+      { at: [2, 2, 3, 8], furniture: true, nodes: [para("What's inside")], style: KICKER },
+      { at: [3, 2, 5, 10], furniture: true, nodes: [heading("Contents")], style: { fontSize: 32, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY } },
       { at: [5, 2, 12, 12], slot: "toc" },
       { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT },
     ] },
-    // 4 — chapter opener: accent banner, subhead, photo column + body
-    { kind: "blocks", blocks: [
+    // 4 — chapter opener (perChapter): accent banner, photo column + intro.
+    // The engine binds kicker/title per chapter, pulls the chapter's first image
+    // into the photo slot, and pours its opening paragraphs into the intro.
+    { kind: "blocks", role: "perChapter", blocks: [
       panel([1, 1, 5, 13], ACCENT),
-      { at: [2, 2, 3, 8], nodes: [para("Chapter 01")], style: { ...KICKER, textColor: ON_ACCENT, letterSpacing: 0.2 } },
-      { at: [3, 2, 5, 12], nodes: [heading("Introduction")], style: { fontSize: 32, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.08em" } },
-      { at: [5, 2, 6, 12], nodes: [heading("Introduce the next section with a subheading", 3)] },
-      img([6, 2, 12, 5]),
-      { at: [6, 5, 13, 12], nodes: [
+      { at: [2, 2, 3, 8], slot: "kicker", nodes: [para("Chapter 01")], style: { ...KICKER, textColor: ON_ACCENT, letterSpacing: 0.2 } },
+      { at: [3, 2, 5, 12], slot: "chapterTitle", nodes: [heading("Introduction")], style: { fontSize: 32, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.08em" } },
+      { ...img([5, 2, 12, 5]), slot: "image", fallback: "empty" },
+      { at: [5, 5, 13, 12], slot: "intro", nodes: [
         para("Open the chapter with the idea the reader came for. Keep the first paragraph short — it sets the pace for everything that follows."),
         para("Then widen out: give the background, the stakes, and the one thing the reader should hold onto as they move through the pages ahead."),
         para("Close the opener by pointing at what comes next, so turning the page feels like the obvious move."),
       ], style: BODY_S },
     ] },
-    // 5 — body: two columns under an orange subhead, hairline foot rule
-    { kind: "blocks", blocks: [
-      { at: [1, 2, 3, 7], nodes: [heading("Introduce the next section with a subheading", 3)] },
-      { at: [3, 2, 12, 7], nodes: [
+    // 5 — body (flow, repeats while the chapter has content): two columns,
+    // hairline foot rule on every spread.
+    { kind: "blocks", role: "flow", blocks: [
+      { at: [1, 2, 12, 7], slot: "body", nodes: [
+        heading("Introduce the next section with a subheading", 3),
         para("Body copy flows down the left column first. Keep paragraphs short — three to five lines reads best at this measure."),
         para("Use the second paragraph to develop the point, and save examples for the facing column so the spread stays balanced."),
       ], style: BODY_S },
-      { at: [1, 7, 12, 12], nodes: [
+      { at: [1, 7, 12, 12], slot: "body", nodes: [
         para("The right column continues the thought. A reader should be able to skim the subheads alone and still follow the argument."),
         para("When a section ends mid-page, let the white space stand — the rule at the foot of the page closes the spread."),
       ], style: BODY_S },
@@ -305,7 +319,7 @@ const guidebook: StructureSpec = {
     ] },
     // 7 — thank you: italic serif accent title, body left, photo right
     { kind: "blocks", blocks: [
-      { at: [1, 2, 3, 8], nodes: [para("Thank you!")], style: { fontSize: 36, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY, customCss: "font-style:italic" } },
+      { at: [1, 2, 3, 8], furniture: true, nodes: [para("Thank you!")], style: { fontSize: 36, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY, customCss: "font-style:italic" } },
       { at: [3, 2, 11, 7], nodes: [
         para("Sign off in your own voice. Thank the reader for their time, and tell them the one thing to do next — visit a site, try the first step, reply with a question."),
         para("A short closing note beats a long one; this page is a handshake, not another chapter."),
@@ -337,50 +351,52 @@ const wellness: StructureSpec = {
   pageNumbers: { enabled: true, position: "top-right", format: "0{n}", startAt: 1, fontSize: 11,
     css: "background:var(--pc-accent);color:var(--pc-on-accent);padding:5px 10px;font-weight:800;letter-spacing:.08em" },
   pages: [
-    // 1 — cover: display title over a photo, letterspaced strapline + author
+    // 1 — cover: display title over a photo, letterspaced strapline + author.
+    // Meta slots (fallback keep) bind the imported doc's title/subtitle/author/hero.
     { kind: "blocks", cover: true, background: { kind: "solid", color: BG }, blocks: [
-      { at: [1, 3, 2, 11], nodes: [para("Let's talk about")], style: { textAlign: "center", fontSize: 21, fontWeight: 800, textColor: ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.04em" } },
-      { at: [2, 2, 4, 12], nodes: [para("Health")], style: { textAlign: "center", fontSize: 72, fontWeight: 800, textColor: ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";line-height:1" } },
-      { at: [4, 2, 5, 12], nodes: [para("Benefits of exercise and a good lifestyle")], style: { textAlign: "center", fontSize: 13, fontWeight: 700, textColor: INK, fontFamily: BODY, customCss: UPPER + ";letter-spacing:.2em;border-top:1px solid var(--pc-accent);padding-top:12px" } },
-      img([5, 2, 11, 12]),
-      { at: [11, 3, 12, 11], nodes: [para("Author Name")], style: { textAlign: "center", fontSize: 13, fontWeight: 700, textColor: INK, fontFamily: BODY, customCss: UPPER + ";letter-spacing:.18em" } },
+      { at: [1, 3, 2, 11], furniture: true, nodes: [para("Let's talk about")], style: { textAlign: "center", fontSize: 21, fontWeight: 800, textColor: ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.04em" } },
+      { at: [2, 2, 4, 12], slot: "title", fallback: "empty", nodes: [para("Health")], style: { textAlign: "center", fontSize: 72, fontWeight: 800, textColor: ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";line-height:1" } },
+      { at: [4, 2, 5, 12], slot: "subtitle", fallback: "empty", nodes: [para("Benefits of exercise and a good lifestyle")], style: { textAlign: "center", fontSize: 13, fontWeight: 700, textColor: INK, fontFamily: BODY, customCss: UPPER + ";letter-spacing:.2em;border-top:1px solid var(--pc-accent);padding-top:12px" } },
+      { ...img([5, 2, 11, 12]), slot: "hero", fallback: "empty" },
+      { at: [11, 3, 12, 11], slot: "author", fallback: "empty", nodes: [para("Author Name")], style: { textAlign: "center", fontSize: 13, fontWeight: 700, textColor: INK, fontFamily: BODY, customCss: UPPER + ";letter-spacing:.18em" } },
     ] },
     // 2 — contents: highlight block behind a big display title, letterspaced
     // list (the fresh-lime skin kills the leaders — source design).
     { kind: "blocks", blocks: [
       panel([1, 1, 2, 3], HIGHLIGHT),
-      { at: [1, 2, 3, 11], nodes: [para("Contents")], style: { fontSize: 40, fontWeight: 800, textColor: ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";line-height:1" } },
+      { at: [1, 2, 3, 11], furniture: true, nodes: [para("Contents")], style: { fontSize: 40, fontWeight: 800, textColor: ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";line-height:1" } },
       { at: [4, 3, 12, 11], slot: "toc" },
     ] },
-    // 3 — chapter opener: highlight block behind a big display title
-    { kind: "blocks", blocks: [
+    // 3 — chapter opener (perChapter): highlight block behind a big display
+    // title; the chapter's opening paragraphs pour into the intro.
+    { kind: "blocks", role: "perChapter", blocks: [
       panel([1, 1, 2, 4], HIGHLIGHT),
-      { at: [1, 2, 3, 12], nodes: [heading("Introduction")] },
-      { at: [3, 2, 13, 12], nodes: [
+      { at: [1, 2, 3, 12], slot: "chapterTitle", nodes: [heading("Introduction")] },
+      { at: [3, 2, 13, 12], slot: "intro", nodes: [
         para("Open with the promise: what changes for the reader by the end of this book. One paragraph, plain words."),
         para("Then set the terms. Define the two or three ideas the chapters keep coming back to, so nothing later needs a detour."),
         para("Keep sentences short and the tone direct — this design pairs bold headings with calm, generous body text."),
         para("End the introduction with a bridge into chapter one: the first question the reader wants answered."),
       ], style: BODY_S },
     ] },
-    // 4 — body: subhead, two columns, photo slot bottom-right
-    { kind: "blocks", blocks: [
-      { at: [1, 2, 2, 12], nodes: [heading("A short subheading focuses the reader's attention", 3)] },
-      { at: [2, 2, 13, 7], nodes: [
+    // 4 — body (flow): two columns, photo slot bottom-right. Cycles with page 5.
+    { kind: "blocks", role: "flow", blocks: [
+      { at: [1, 2, 13, 7], slot: "body", nodes: [
+        heading("A short subheading focuses the reader's attention", 3),
         para("Body copy flows down the left column. Keep paragraphs to a few lines each; the airy leading is part of the look."),
         para("Use the left column for the argument and the right for support — examples, numbers, a photo."),
-        para("When a point deserves emphasis, give it its own short paragraph rather than bold text."),
       ], style: BODY_S },
-      { at: [2, 7, 7, 12], nodes: [
+      { at: [1, 7, 7, 12], slot: "body", nodes: [
         para("The right column carries the supporting material. A reader skimming only this column should still catch the gist."),
       ], style: BODY_S },
       img([7, 7, 13, 12]),
     ] },
-    // 5 — chapter opener variant: title, subhead, body, two photo slots
-    { kind: "blocks", blocks: [
-      { at: [1, 2, 3, 12], nodes: [heading("Chapter 2")] },
-      { at: [3, 2, 4, 12], nodes: [heading("A short subheading introduces the chapter", 3)] },
-      { at: [4, 2, 9, 12], nodes: [
+    // 5 — body variant (flow): full-width text over two photo slots. The engine
+    // alternates pages 4 and 5 while a chapter has content — the source
+    // booklet's rhythm.
+    { kind: "blocks", role: "flow", blocks: [
+      { at: [1, 2, 9, 12], slot: "body", nodes: [
+        heading("A short subheading introduces the chapter", 3),
         para("Chapters in this design open full-width, then break into imagery. State the chapter's single idea in the first paragraph."),
         para("Develop it in two or three more, and let the photographs below carry the mood — captions are optional."),
       ], style: BODY_S },
@@ -392,15 +408,15 @@ const wellness: StructureSpec = {
       { at: [1, 2, 4, 12], nodes: [
         para("Use this page for a simple framework. Introduce it in a short paragraph, then let the reader fill the four quadrants — in print, with a pen."),
       ], style: BODY_S },
-      { at: [4, 2, 8, 7], nodes: [para("Values")], style: QUAD_LABEL },
-      { at: [4, 7, 8, 12], nodes: [para("Vision")], style: QUAD_LABEL },
-      { at: [8, 2, 12, 7], nodes: [para("Unique qualities")], style: QUAD_LABEL },
-      { at: [8, 7, 12, 12], nodes: [para("Consistent messages")], style: QUAD_LABEL },
+      { at: [4, 2, 8, 7], furniture: true, nodes: [para("Values")], style: QUAD_LABEL },
+      { at: [4, 7, 8, 12], furniture: true, nodes: [para("Vision")], style: QUAD_LABEL },
+      { at: [8, 2, 12, 7], furniture: true, nodes: [para("Unique qualities")], style: QUAD_LABEL },
+      { at: [8, 7, 12, 12], furniture: true, nodes: [para("Consistent messages")], style: QUAD_LABEL },
     ] },
     // 7 — glossary: highlight block behind the title, two columns of terms
     { kind: "blocks", blocks: [
       panel([1, 1, 2, 3], HIGHLIGHT),
-      { at: [1, 2, 3, 10], nodes: [para("Glossary")], style: { fontSize: 40, fontWeight: 800, textColor: ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";line-height:1" } },
+      { at: [1, 2, 3, 10], furniture: true, nodes: [para("Glossary")], style: { fontSize: 40, fontWeight: 800, textColor: ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";line-height:1" } },
       { at: [3, 2, 13, 7], nodes: [
         para("Term — a one-line definition in plain language, no circular references."),
         para("Term — keep entries alphabetical so the page works as a reference."),
@@ -460,6 +476,91 @@ export function parseTemplateId(id: string): Template | null {
   const key = id.slice(i + 1) as StructKey;
   if (!theme || !STRUCT_ORDER.includes(key)) return null;
   return { id, name: STRUCTURES[key].name, docType: STRUCTURES[key].docType, theme, structKey: key };
+}
+
+// ---- engine adapter (Step: apply a template to an IMPORTED doc) -----------------
+// StructureSpec → the model engine's LayoutSpec. THE PLACEHOLDER RULE: a
+// template's own copy exists for preview only. On apply, slot blocks bind the
+// document's data or go EMPTY, and literal text blocks are DROPPED unless
+// tagged `furniture` (design lockups like a contents title or quadrant labels).
+// Panels, rules, hairlines and empty image slots carry no text and survive.
+const hasText = (nodes?: JSONContent[]): boolean => JSON.stringify(nodes ?? []).includes('"text"');
+
+// Chapters for the engine: only h1 sections open chapters — an h2 section is a
+// SUBSECTION and folds into its parent (its heading stays in the body flow, so
+// the contents page still lists it). "Notes" stays its own endnotes chapter.
+export type EngineChapter = { title: string; level: number; nodes: JSONContent[]; role?: "notes" };
+export function foldChapters(sections: EngineChapter[]): EngineChapter[] {
+  const out: EngineChapter[] = [];
+  for (const c of sections) {
+    if (c.role !== "notes" && c.level >= 2 && out.length && out[out.length - 1]!.role !== "notes") {
+      out[out.length - 1]!.nodes.push(...c.nodes);
+    } else {
+      out.push({ ...c, nodes: [...c.nodes] });
+    }
+  }
+  return out;
+}
+
+function specBlock(b: BlockSpec, i: number): LayoutBlock {
+  const [rowStart, colStart, rowEnd, colEnd] = b.at;
+  return {
+    area: { rowStart, colStart, rowEnd, colEnd },
+    ...(b.slot ? { slot: b.slot } : {}),
+    ...(b.fallback ? { fallback: b.fallback } : {}),
+    ...(b.props ? { props: b.props } : {}),
+    ...(b.style ? { style: b.style } : {}),
+    z: b.z ?? i,
+    ...(b.image ? { block: "image", content: { src: "", alt: "" } } : { content: doc(b.nodes ?? [emptyP]) }),
+  };
+}
+
+// A prebuilt GridSection (covers.ts / buildTocSection) as a literal LayoutPage.
+// A tocList block converts back to a toc SLOT so the engine re-flags the section.
+function sectionPage(sec: GridSection & { cover?: boolean; backCover?: boolean; toc?: boolean }): LayoutPage {
+  return {
+    ...(sec.cover ? { cover: true } : {}),
+    ...(sec.backCover ? { backCover: true } : {}),
+    ...(sec.background ? { background: sec.background } : {}),
+    blocks: sec.blocks.map((b, i) =>
+      b.block === "tocList"
+        ? { area: b.area, slot: "toc" as const, z: b.zIndex ?? i }
+        : { area: b.area, block: b.block, content: b.content, ...(b.style ? { style: b.style } : {}), z: b.zIndex ?? i },
+    ),
+  };
+}
+
+export function structureToLayoutSpec(spec: StructureSpec): LayoutSpec {
+  const pages: LayoutPage[] = [];
+  for (const p of spec.pages) {
+    if (p.kind === "cover") { pages.push(sectionPage(buildCover(p.cover))); continue; }
+    if (p.kind === "toc") { pages.push(sectionPage(buildTocSection([]))); continue; }
+    // placeholder rule: literal prose is preview-only — dropped unless furniture
+    const kept = p.blocks.filter((b) => b.slot || b.image || b.furniture || !hasText(b.nodes));
+    if (!kept.length) continue; // a page of nothing but placeholder copy vanishes
+    pages.push({
+      ...(p.role ? { role: p.role } : {}),
+      ...(p.background ? { background: p.background } : {}),
+      ...(p.cover ? { cover: true } : {}),
+      blocks: kept.map(specBlock),
+    });
+  }
+  return { pages };
+}
+
+// A stored plan (+ its meta) → the engine's LayoutPlan: srcs in display form
+// (browsers can't load asset://), chapters folded to h1 boundaries. Used by the
+// apply path, the switch panel, and the gallery's real-content previews.
+export function docPlanToLayout(stored: StoredDocPlan, meta: SourceMeta): LayoutPlan {
+  return {
+    meta: { ...meta, ...(meta.hero ? { hero: assetUrl(meta.hero) } : {}) },
+    chapters: foldChapters(stored.chapters.map((c) => ({
+      title: c.title,
+      level: c.level,
+      nodes: (assetsToDisplay(c.body) as JSONContent).content ?? [],
+      ...(c.role ? { role: c.role } : {}),
+    }))),
+  };
 }
 
 // Guard used by templates.test.ts: every placed block must fit the 12×12 grid.

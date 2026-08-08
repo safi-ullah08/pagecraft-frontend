@@ -43,3 +43,9 @@ export function assetsToCanonical(doc: SectionContent): SectionContent {
     s.startsWith(RESOLVE) ? PREFIX + decodeURIComponent(s.slice(RESOLVE.length)) : s,
   );
 }
+
+// String-level display mapping for a single src (e.g. sourceMeta.hero) — same
+// rule as assetsToDisplay, without wrapping a doc around one URL.
+export function assetUrl(s: string): string {
+  return s.startsWith(PREFIX) ? RESOLVE + encodeURIComponent(s.slice(PREFIX.length)) : s;
+}
