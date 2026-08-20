@@ -23,8 +23,11 @@ export function ExportButton({ documentId, theme }: { documentId: string; theme:
   }
 
   return (
-    <button onClick={onClick} disabled={isExporting}>
-      {isExporting ? "Generating PDF..." : "Export PDF"}
-    </button>
+    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+      <button onClick={onClick} disabled={isExporting}>
+        {isExporting ? "Generating PDF..." : "Export PDF"}
+      </button>
+    {error && <span style={{ color: "red", fontSize: "0.875rem" }}>{error}</span>}
+  </div>
   );
 }
