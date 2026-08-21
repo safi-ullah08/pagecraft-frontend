@@ -323,3 +323,38 @@ export async function startExport(documentId: string, theme = DEFAULT_THEME) {
   });
   return res.json() as Promise<{ jobId: string }>;
 }
+
+// Poll the backend for the export job's state until it completes (or fails / times out).
+export async function pollForExportUrl(jobId: string): Promise<string> {
+  const maxAttempts = 30; // 2 minute timeout
+  let attempts = 0;
+
+  while (attempts < maxAttempts) {
+    const response = await getExportStatus(jobId);
+    console.log(`Polling attempt ${attempts + 1}: Job state is '${response.state}'`);
+    
+    if (response.state === "completed") {
+      if (response.output?.url) {
+        return response.output.url;
+      }
+      throw new Error("Job completed, but no URL was returned");
+    }
+    if (response.state === "failed" || response.state === "cancelled" || response.state === "expired") {
+      throw new Error(`Export job ended with state: ${response.state}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2000)); 
+    attempts++;
+  }
+
+  throw new Error("Export timed out. The worker may be overloaded.");
+}
+
+export async function getExportStatus(jobId: string) {
+  const res = await authedFetch(`/api/export/${jobId}`);
+  if (!res.ok) throw new Error(`Export status check failed: ${res.status}`);
+  
+  return res.json() as Promise<{ 
+    state: string; 
+    output: { url: string } | null; 
+  }>;
+}
