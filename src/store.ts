@@ -392,9 +392,10 @@ export const useStore = create<Store>((set, get) => {
       const newBlocks: GridBlock[] = pieces.map((piece) => {
         const h = measureHtmlHeight(serialize(piece), widthPx, theme) + padY;
         let rowsNeeded = heightToRows(h, page);
+        let minSize = { rows: rowsNeeded, cols: BLOCKS[block.block].min.cols };
         const area = clampArea(
           { rowStart: row, colStart: block.area.colStart, rowEnd: row + (rowsNeeded - 1), colEnd: block.area.colEnd },
-          { cols: 2, rows: rowsNeeded},
+          minSize,
         );
         row = area.rowEnd;
         return { id: Math.random().toString(36).slice(2, 10), area, block: "textFrame", content: piece, style: block.style };
