@@ -407,6 +407,31 @@ export const useStore = create<Store>((set, get) => {
       // the page — right for dragging a single block, but wrong for a chain of
       // pieces walking down the page, where it snaps whatever runs out of room
       // onto the page's bottom edge instead of leaving it where it naturally sits.
+      
+      // const colsOverlap = (o: GridBlock) => o.area.colStart < block.area.colEnd && block.area.colStart < o.area.colEnd;
+      // const ceiling = sec.content.blocks.reduce(
+      //   (min, o) => (o.id === blockId || o.area.rowStart < block.area.rowStart || !colsOverlap(o) ? min : Math.min(min, o.area.rowStart)),
+      //   ROWS + 1,
+      // );
+      // let row = block.area.rowStart;
+      // const newBlocks: GridBlock[] = [];
+      // for (const piece of pieces) {
+      //   const last = newBlocks[newBlocks.length - 1];
+      //   if (row >= ceiling && last) {
+      //     const lastDoc = last.content as JSONContent;
+      //     last.content = { ...lastDoc, content: [...(lastDoc.content ?? []), ...(piece.content ?? [])] };
+      //     continue;
+      //   }
+      //   const h = measureHtmlHeight(serialize(piece), widthPx, theme) + padY;
+      //   const rowsNeeded = heightToRows(h, page);
+      //   const rowStart = row;
+      //   const rowEnd = Math.min(rowStart + rowsNeeded, ceiling);
+      //   row = rowEnd;
+      //   const area = { rowStart, colStart: block.area.colStart, rowEnd, colEnd: block.area.colEnd };
+      //   newBlocks.push({ id: Math.random().toString(36).slice(2, 10), area, block: "textFrame", content: piece, style: block.style });
+      // }
+      // const others = sec.content.blocks.filter((b) => b.id !== blockId);
+      
       const others = sec.content.blocks.filter((b) => b.id !== blockId);
       const colsOverlap = (a: GridArea, b: GridArea) => a.colStart < b.colEnd && b.colStart < a.colEnd;
       const rowsOverlap = (a: GridArea, b: GridArea) => a.rowStart < b.rowEnd && b.rowStart < a.rowEnd;
