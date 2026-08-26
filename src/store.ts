@@ -349,16 +349,18 @@ export const useStore = create<Store>((set, get) => {
       set({ selectedBlockIds: [targetId], editingBlockId: null });
     },
     // Break a text frame into smaller blocks on the SAME page (no new pages, no
-    // page-pushing — nothing else on the page moves and the row grid stays fixed).
-    // One block per paragraph; a lone overflowing paragraph is chunked by
-    // page-fit so it still breaks into pieces. Each piece is sized to its OWN
-    // minimum natural height (not a whole extra row of padding) and placed in
-    // reading order starting from the original block's top, capped at whatever
-    // room is actually free below it (the next existing block in the same
-    // columns, or the page's last row). Whatever doesn't fit within that room
-    // folds into the last piece instead of overflowing the page or displacing
-    // another block — still fully there and editable, just not split further
-    // until there's room (resize/move things, then Break it again).
+    // page-pushing — existing blocks are only ever READ for collision checks,
+    // never moved, and the row grid stays fixed). One block per paragraph; a
+    // lone overflowing paragraph is chunked by page-fit so it still breaks into
+    // pieces. For each piece, in reading order: measure it, size it to the
+    // minimum whole rows its OWN text needs (no extra padding), build a
+    // candidate rectangle, and check it against every existing block. A clear
+    // candidate is placed as-is; a colliding one
+    // is walked past whatever it hit and re-checked until it lands in a free
+    // slot (or runs off the page, at which point the rest folds into the last
+    // placed piece rather than displacing something or growing the page). Every
+    // placed piece becomes its own independent, selectable block, and the whole
+    // result is committed in one edit() — nothing is applied incrementally.
     breakTextFrame: (sectionId, blockId) => {
       const { sections, theme, page, edit } = get();
       const sec = sections.find((s) => s.id === sectionId);
@@ -405,36 +407,37 @@ export const useStore = create<Store>((set, get) => {
       // the page — right for dragging a single block, but wrong for a chain of
       // pieces walking down the page, where it snaps whatever runs out of room
       // onto the page's bottom edge instead of leaving it where it naturally sits.
-      //
-      // The ceiling is the top of the nearest EXISTING block below (in the same
-      // columns) if there is one, else the page's last row — never further. Going
-      // past the page's fixed 12-row grid forces CSS to add implicit rows and
-      // squeezes every existing 1fr row to make room, visibly shifting every other
-      // block on the page; running into a sibling block would move something that
-      // was never asked to move. Either way nothing else on the page moves.
-      const colsOverlap = (o: GridBlock) => o.area.colStart < block.area.colEnd && block.area.colStart < o.area.colEnd;
-      const ceiling = sec.content.blocks.reduce(
-        (min, o) => (o.id === blockId || o.area.rowStart < block.area.rowStart || !colsOverlap(o) ? min : Math.min(min, o.area.rowStart)),
-        ROWS + 1,
-      );
-      let row = block.area.rowStart;
+      const others = sec.content.blocks.filter((b) => b.id !== blockId);
+      const colsOverlap = (a: GridArea, b: GridArea) => a.colStart < b.colEnd && b.colStart < a.colEnd;
+      const rowsOverlap = (a: GridArea, b: GridArea) => a.rowStart < b.rowEnd && b.rowStart < a.rowEnd;
+      const collision = (a: GridArea) => others.find((o) => colsOverlap(a, o.area) && rowsOverlap(a, o.area));
+
+      let cursor = block.area.rowStart;
       const newBlocks: GridBlock[] = [];
       for (const piece of pieces) {
-        const last = newBlocks[newBlocks.length - 1];
-        if (row >= ceiling && last) {
+        const h = measureHtmlHeight(serialize(piece), widthPx, theme) + padY;
+        const rowsNeeded = heightToRows(h, page); // minimum rows THIS piece's own text needs — no extra floor
+        let area: GridArea = { rowStart: cursor, colStart: block.area.colStart, rowEnd: cursor + rowsNeeded, colEnd: block.area.colEnd };
+        // Collision detection → find next free position: walk the candidate past
+        // whatever it hit and re-check, rather than moving the block it hit.
+        let hit, guard = 0;
+        while ((hit = collision(area)) && guard++ < 50) {
+          area = { ...area, rowStart: hit.area.rowEnd, rowEnd: hit.area.rowEnd + rowsNeeded };
+        }
+        if (area.rowEnd > ROWS + 1) {
+          // Ran off the page with nowhere free left — fold the rest into the last
+          // placed piece (still fully there, just not split further) instead of
+          // displacing a block or growing the page past its fixed size.
+          const last = newBlocks[newBlocks.length - 1];
+          if (!last) return; // no room even for the first piece — leave the block as-is
           const lastDoc = last.content as JSONContent;
           last.content = { ...lastDoc, content: [...(lastDoc.content ?? []), ...(piece.content ?? [])] };
           continue;
         }
-        const h = measureHtmlHeight(serialize(piece), widthPx, theme) + padY;
-        const rowsNeeded = heightToRows(h, page);
-        const rowStart = row;
-        const rowEnd = Math.min(rowStart + rowsNeeded, ceiling);
-        row = rowEnd;
-        const area = { rowStart, colStart: block.area.colStart, rowEnd, colEnd: block.area.colEnd };
+        cursor = area.rowEnd;
         newBlocks.push({ id: Math.random().toString(36).slice(2, 10), area, block: "textFrame", content: piece, style: block.style });
       }
-      const others = sec.content.blocks.filter((b) => b.id !== blockId);
+      // Single state commit — the whole result lands in one edit(), not one per piece.
       edit(sectionId, { ...sec.content, blocks: [...others, ...newBlocks] });
       set({ selectedBlockIds: newBlocks.map((b) => b.id), editingBlockId: null });
     },
