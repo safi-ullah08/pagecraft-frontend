@@ -349,9 +349,16 @@ export const useStore = create<Store>((set, get) => {
       set({ selectedBlockIds: [targetId], editingBlockId: null });
     },
     // Break a text frame into smaller blocks on the SAME page (no new pages, no
-    // page-pushing). One block per paragraph; a lone overflowing paragraph is
-    // chunked by page-fit so it still breaks into pieces. Each piece is fit-sized
-    // and stacked below the previous — the user then arranges them freely.
+    // page-pushing — nothing else on the page moves and the row grid stays fixed).
+    // One block per paragraph; a lone overflowing paragraph is chunked by
+    // page-fit so it still breaks into pieces. Each piece is sized to its OWN
+    // minimum natural height (not a whole extra row of padding) and placed in
+    // reading order starting from the original block's top, capped at whatever
+    // room is actually free below it (the next existing block in the same
+    // columns, or the page's last row). Whatever doesn't fit within that room
+    // folds into the last piece instead of overflowing the page or displacing
+    // another block — still fully there and editable, just not split further
+    // until there's room (resize/move things, then Break it again).
     breakTextFrame: (sectionId, blockId) => {
       const { sections, theme, page, edit } = get();
       const sec = sections.find((s) => s.id === sectionId);
@@ -366,9 +373,15 @@ export const useStore = create<Store>((set, get) => {
       const padY = sidesY(block.style?.padding) + sidesY(block.style?.margin);
       const maxHpx = blockHeightPx(rows, page) - padY;
 
+      // A blank line is a paragraph node with no real text — it renders as vertical
+      // space inside the flowing block, not a visible paragraph. One-block-per-node
+      // would turn each of those into its own empty, bordered, selectable box, so
+      // they're dropped before splitting (the block's own margin/the grid gap
+      // still gives adjacent pieces breathing room).
+      const hasContent = (n: JSONContent) => (n.content ?? []).some((c) => (c.type === "text" ? (c.text ?? "").trim().length > 0 : true));
       let pieces: JSONContent[];
       if (nodes.length >= 2) {
-        pieces = nodes.map((n) => ({ ...doc, content: [n] })); // one block per paragraph
+        pieces = nodes.filter(hasContent).map((n) => ({ ...doc, content: [n] })); // one block per paragraph
       } else {
         // single node: split a paragraph into sentences; else chunk by page-fit
         const only = nodes[0];
@@ -388,18 +401,39 @@ export const useStore = create<Store>((set, get) => {
       }
       if (pieces.length < 2) return; // nothing to break
 
+      // No clampArea here: it pulls a box's rowStart BACKWARD when it doesn't fit
+      // the page — right for dragging a single block, but wrong for a chain of
+      // pieces walking down the page, where it snaps whatever runs out of room
+      // onto the page's bottom edge instead of leaving it where it naturally sits.
+      //
+      // The ceiling is the top of the nearest EXISTING block below (in the same
+      // columns) if there is one, else the page's last row — never further. Going
+      // past the page's fixed 12-row grid forces CSS to add implicit rows and
+      // squeezes every existing 1fr row to make room, visibly shifting every other
+      // block on the page; running into a sibling block would move something that
+      // was never asked to move. Either way nothing else on the page moves.
+      const colsOverlap = (o: GridBlock) => o.area.colStart < block.area.colEnd && block.area.colStart < o.area.colEnd;
+      const ceiling = sec.content.blocks.reduce(
+        (min, o) => (o.id === blockId || o.area.rowStart < block.area.rowStart || !colsOverlap(o) ? min : Math.min(min, o.area.rowStart)),
+        ROWS + 1,
+      );
       let row = block.area.rowStart;
-      const newBlocks: GridBlock[] = pieces.map((piece) => {
+      const newBlocks: GridBlock[] = [];
+      for (const piece of pieces) {
+        const last = newBlocks[newBlocks.length - 1];
+        if (row >= ceiling && last) {
+          const lastDoc = last.content as JSONContent;
+          last.content = { ...lastDoc, content: [...(lastDoc.content ?? []), ...(piece.content ?? [])] };
+          continue;
+        }
         const h = measureHtmlHeight(serialize(piece), widthPx, theme) + padY;
-        let rowsNeeded = heightToRows(h, page);
-        let minSize = { rows: rowsNeeded, cols: BLOCKS[block.block].min.cols };
-        const area = clampArea(
-          { rowStart: row, colStart: block.area.colStart, rowEnd: row + (rowsNeeded - 1), colEnd: block.area.colEnd },
-          minSize,
-        );
-        row = area.rowEnd;
-        return { id: Math.random().toString(36).slice(2, 10), area, block: "textFrame", content: piece, style: block.style };
-      });
+        const rowsNeeded = heightToRows(h, page);
+        const rowStart = row;
+        const rowEnd = Math.min(rowStart + rowsNeeded, ceiling);
+        row = rowEnd;
+        const area = { rowStart, colStart: block.area.colStart, rowEnd, colEnd: block.area.colEnd };
+        newBlocks.push({ id: Math.random().toString(36).slice(2, 10), area, block: "textFrame", content: piece, style: block.style });
+      }
       const others = sec.content.blocks.filter((b) => b.id !== blockId);
       edit(sectionId, { ...sec.content, blocks: [...others, ...newBlocks] });
       set({ selectedBlockIds: newBlocks.map((b) => b.id), editingBlockId: null });
