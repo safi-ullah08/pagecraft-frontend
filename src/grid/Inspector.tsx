@@ -20,6 +20,7 @@ export function Inspector() {
   const edit = useStore((s) => s.edit);
   const selectBlock = useStore((s) => s.selectBlock);
   const deleteSelected = useStore((s) => s.deleteSelected);
+  const updateSelectedStyle = useStore((s) => s.updateSelectedStyle);
 
   const moveBlockToPage = useStore((s) => s.moveBlockToPage);
   const fitBlock = useStore((s) => s.fitBlock);
@@ -38,11 +39,26 @@ export function Inspector() {
   // its own. Multiple selected → a small group panel; one → the full editor.
   if (section && selectedBlockIds.length > 1) {
     return (
-      <div style={{ padding: 14, fontSize: 12, color: PALETTE.TEXT, display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ fontWeight: 600 }}>{selectedBlockIds.length} blocks selected</div>
-        <div style={{ color: PALETTE.MUTED, fontSize: 11 }}>Drag any one to move them together, or ⌘/Ctrl-C / -X / -D, Delete.</div>
-        <button onClick={() => deleteSelected()} style={{ background: "transparent", border: `1px solid ${PALETTE.BORDER_STRONG}`, color: PALETTE.ACCENT, padding: "8px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>Delete selected</button>
-        <button onClick={() => selectBlock(null)} style={{ background: "transparent", border: `1px solid ${PALETTE.BORDER}`, color: PALETTE.MUTED, padding: "6px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>Clear selection</button>
+      <div style={{ fontSize: 12, color: PALETTE.TEXT }}>
+        <div style={{ padding: "12px 14px", borderBottom: `1px solid ${PALETTE.BORDER}`, fontWeight: 600 }}>
+          {selectedBlockIds.length} blocks selected
+        </div>
+        <div style={{ padding: "10px 14px 0", color: PALETTE.MUTED, fontSize: 11 }}>
+          Drag any one to move them together, or ⌘/Ctrl-C / -X / -D, Delete. Style changes below apply to every selected block.
+        </div>
+        <Section title="Spacing">
+          <Field label="Padding (inset content)">
+            <BoxControl value={undefined} onChange={(v) => updateSelectedStyle({ padding: v })} />
+          </Field>
+          <Field label="Margin (space around block)">
+            <BoxControl value={undefined} onChange={(v) => updateSelectedStyle({ margin: v })} />
+          </Field>
+        </Section>
+        <StyleSection style={{}} onStyle={(t) => updateSelectedStyle(t)} />
+        <Section title="Actions">
+          <button onClick={() => deleteSelected()} style={{ background: "transparent", border: `1px solid ${PALETTE.BORDER_STRONG}`, color: PALETTE.ACCENT, padding: "8px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>Delete selected</button>
+          <button onClick={() => selectBlock(null)} style={{ background: "transparent", border: `1px solid ${PALETTE.BORDER}`, color: PALETTE.MUTED, padding: "6px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>Clear selection</button>
+        </Section>
       </div>
     );
   }
@@ -97,7 +113,7 @@ export function Inspector() {
           <BoxControl value={block.style?.margin} onChange={(v) => apply(updateBlockStyle(section, block.id, { margin: v }))} />
         </Field>
       </Section>
-      <StyleSection block={block} onStyle={(t) => apply(updateBlockStyle(section, block.id, t))} />
+      <StyleSection style={block.style ?? {}} onStyle={(t) => apply(updateBlockStyle(section, block.id, t))} />
       <ContentSection block={block} onContent={(c) => apply(updateBlockContent(section, block.id, c))} />
 
       <Section title="Actions">
@@ -126,8 +142,8 @@ const ALIGN: Array<{ value: NonNullable<BlockStyleTokens["textAlign"]>; label: s
   { value: "left", label: "L" }, { value: "center", label: "C" }, { value: "right", label: "R" }, { value: "justify", label: "J" },
 ];
 
-function StyleSection({ block, onStyle }: { block: GridBlock; onStyle: (t: Partial<BlockStyleTokens>) => void }) {
-  const t = block.style ?? {};
+function StyleSection({ style, onStyle }: { style: BlockStyleTokens; onStyle: (t: Partial<BlockStyleTokens>) => void }) {
+  const t = style;
   const hasAny = Object.keys(t).length > 0;
   const clear = (k: keyof BlockStyleTokens) => (
     t[k] !== undefined ? <button style={resetBtn} title="reset" onClick={() => onStyle({ [k]: undefined })}>×</button> : null
