@@ -27,9 +27,9 @@ export function Toolbar() {
         {customPage && <option value="custom">Custom ({customPage.w}×{customPage.h}mm)</option>}
       </select>
       {/* TODO: align | span(1-12) | break-before | palette color */}
-      <button disabled title="align (todo)">⯇ ⯈</button>
+      {/* <button disabled title="align (todo)">⯇ ⯈</button>
       <button disabled title="span (todo)">cols</button>
-      <button disabled title="break before (todo)">⤓ page</button>
+      <button disabled title="break before (todo)">⤓ page</button> */}
       <button disabled title="palette color (todo)">●</button>
     </div>
   );
