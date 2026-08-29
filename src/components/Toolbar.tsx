@@ -2,9 +2,12 @@ import { useStore } from "../store.ts";
 import { themeNames } from "../themes.ts";
 import { PAGE_SIZES, presetOf, type PageSize } from "../pages.ts";
 
-// Constrained local overrides as node attrs (align/span/break/palette) — still
-// TODO. The theme <select> is live: it drives the preview and the export render.
-// The page-size <select> drives the editor page sheets.
+// The theme <select> is live: it drives the preview and the export render. The
+// page-size <select> drives the editor page sheets. Constrained local overrides
+// (align/span/break/palette-color) live in the text BubbleMenu instead — see
+// PaletteSwatches.tsx and node-controls.ts — since applying them needs an
+// active editor + a live text selection, neither of which this global toolbar
+// has access to.
 export function Toolbar() {
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
@@ -27,9 +30,9 @@ export function Toolbar() {
         {customPage && <option value="custom">Custom ({customPage.w}×{customPage.h}mm)</option>}
       </select>
       {/* TODO: align | span(1-12) | break-before | palette color */}
-      <button disabled title="align (todo)">⯇ ⯈</button>
+      {/* <button disabled title="align (todo)">⯇ ⯈</button>
       <button disabled title="span (todo)">cols</button>
-      <button disabled title="break before (todo)">⤓ page</button>
+      <button disabled title="break before (todo)">⤓ page</button> */}
       <button disabled title="palette color (todo)">●</button>
     </div>
   );
