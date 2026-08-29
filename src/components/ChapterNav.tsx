@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { BLOCKS } from "@pagecraft/model";
 import { useStore } from "../store.ts";
 import { isGridSection } from "../grid/types.ts";
@@ -58,10 +58,31 @@ export function ChapterNav() {
     document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  // Collapse to a thin strip — sticks per-browser so it stays out of the way
+  // once you've set it (same pattern as the wizard-seen flag in App.tsx).
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("pc-nav-collapsed") === "1");
+  const toggle = () => setCollapsed((c) => { localStorage.setItem("pc-nav-collapsed", c ? "0" : "1"); return !c; });
+
+  if (collapsed) {
+    return (
+      <nav style={{ width: 32, flexShrink: 0, borderRight: "1px solid var(--ui-border)", display: "flex", flexDirection: "column", alignItems: "center", background: "var(--ui-bg)" }}>
+        <button onClick={toggle} title="Expand pages"
+          style={{ margin: "10px 0", width: 22, height: 22, border: "1px solid var(--ui-border-strong)", borderRadius: 4, background: "var(--ui-panel)", cursor: "pointer", fontSize: 11, lineHeight: 1 }}>›</button>
+        <div style={{ writingMode: "vertical-rl", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.6, color: "var(--ui-muted)", fontWeight: 600 }}>
+          Pages · {sections.length}
+        </div>
+      </nav>
+    );
+  }
+
   return (
-    <nav style={{ width: 220, borderRight: "1px solid var(--ui-border)", display: "flex", flexDirection: "column", minHeight: 0, background: "var(--ui-bg)" }}>
-      <div style={{ padding: "12px 14px 8px", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, color: "var(--ui-muted)", fontWeight: 600 }}>
-        Pages · {sections.length}
+    <nav style={{ width: 220, flexShrink: 0, borderRight: "1px solid var(--ui-border)", display: "flex", flexDirection: "column", minHeight: 0, background: "var(--ui-bg)" }}>
+      <div style={{ padding: "12px 14px 8px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, color: "var(--ui-muted)", fontWeight: 600 }}>
+          Pages · {sections.length}
+        </span>
+        <button onClick={toggle} title="Collapse pages"
+          style={{ width: 20, height: 20, border: "1px solid var(--ui-border)", borderRadius: 4, background: "var(--ui-panel)", cursor: "pointer", fontSize: 11, lineHeight: 1, color: "var(--ui-muted)" }}>‹</button>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "0 8px" }}>
         {sections.map((s, i) => (

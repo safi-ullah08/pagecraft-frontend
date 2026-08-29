@@ -20,9 +20,28 @@ type Panel = "design" | "blocks" | "layers" | "templates";
 
 export function ControlsPanel() {
   const [panel, setPanel] = useState<Panel>("blocks");
+  // Collapse to a thin strip — sticks per-browser (same pattern as ChapterNav's
+  // collapse and the design-wizard-seen flag).
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem("pc-controls-collapsed") === "1");
+  const toggle = () => setCollapsed((c) => { localStorage.setItem("pc-controls-collapsed", c ? "0" : "1"); return !c; });
+
+  if (collapsed) {
+    return (
+      <div style={{ width: 32, flexShrink: 0, background: "var(--ui-panel)", borderLeft: `1px solid ${PALETTE.BORDER}`, display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <button onClick={toggle} title="Expand panel"
+          style={{ margin: "10px 0", width: 22, height: 22, border: `1px solid ${PALETTE.BORDER_STRONG}`, borderRadius: 4, background: PALETTE.SURFACE, cursor: "pointer", fontSize: 11, lineHeight: 1 }}>‹</button>
+        <div style={{ writingMode: "vertical-rl", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.6, color: PALETTE.MUTED, fontWeight: 600 }}>
+          {panel}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div style={{ width: 264, flexShrink: 0, background: "var(--ui-panel)", borderLeft: `1px solid ${PALETTE.BORDER}`, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: `1px solid ${PALETTE.BORDER}` }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr repeat(4, 1fr)", borderBottom: `1px solid ${PALETTE.BORDER}` }}>
+        <button onClick={toggle} title="Collapse panel"
+          style={{ border: "none", borderRight: `1px solid ${PALETTE.BORDER}`, background: "transparent", color: PALETTE.MUTED, cursor: "pointer", fontSize: 12 }}>›</button>
         {(["design", "blocks", "layers", "templates"] as const).map((key) => (
           <button key={key} onClick={() => setPanel(key)}
             style={{ padding: "12px 8px", fontSize: 12, fontWeight: 500, textTransform: "capitalize", cursor: "pointer", border: "none",
