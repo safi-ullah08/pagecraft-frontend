@@ -3,7 +3,7 @@ import type { Editor } from "@tiptap/react";
 // The override attrs (align/span/paletteColor/breakBefore) and delete/move all
 // target the TOP-LEVEL block containing the selection (the doc's direct child),
 // so "span the callout 6 cols" affects the callout, not the paragraph inside it.
-function topName(editor: Editor): string | null {
+export function topName(editor: Editor): string | null {
   const { $from } = editor.state.selection;
   return $from.depth >= 1 ? $from.node(1).type.name : null;
 }

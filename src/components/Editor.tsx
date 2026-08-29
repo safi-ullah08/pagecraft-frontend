@@ -2,6 +2,7 @@ import { useEditor, EditorContent, BubbleMenu, type JSONContent } from "@tiptap/
 import { extensions } from "@pagecraft/model";
 import { SlashCommands } from "../slash.ts";
 import { setBlockAttr, deleteBlock, moveBlock } from "../node-controls.ts";
+import { PaletteSwatches } from "./PaletteSwatches.tsx";
 
 // One Tiptap instance per section, on the SHARED schema. The editing surface is
 // skinned by the App-level scoped theme CSS (.editor-surface), so all sections
@@ -32,8 +33,10 @@ export function Editor({ content, onChange, onFocus }: {
             <button style={btn} title="align right" onClick={() => setBlockAttr(editor, { align: "right" })}>⯈</button>
             <button style={btn} title="justify" onClick={() => setBlockAttr(editor, { align: "justify" })}>☰</button>
             <span style={{ width: 1, background: "#ddd" }} />
-            <button style={btn} title="accent colour" onClick={() => setBlockAttr(editor, { paletteColor: "accent" })}>●</button>
-            <button style={btn} title="text colour" onClick={() => setBlockAttr(editor, { paletteColor: "text" })}>○</button>
+            {/* <button style={btn} title="accent colour" onClick={() => setBlockAttr(editor, { paletteColor: "accent" })}>●</button>
+            <button style={btn} title="text colour" onClick={() => setBlockAttr(editor, { paletteColor: "text" })}>○</button> */}
+            <PaletteSwatches editor={editor} />
+            <span style={{ width: 1, background: "#ddd" }} />
             <button style={btn} title="span 6 cols" onClick={() => setBlockAttr(editor, { span: "6" })}>6</button>
             <button style={btn} title="span 12 cols" onClick={() => setBlockAttr(editor, { span: "12" })}>12</button>
             <button style={btn} title="break before" onClick={() => setBlockAttr(editor, { breakBefore: true })}>⤓</button>

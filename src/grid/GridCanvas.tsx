@@ -6,6 +6,7 @@ import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./t
 import { BLOCKS } from "./blocks.ts";
 import { moveBlock, moveBlocks, resizeBlock, fitBlockRows, pushDownOverlaps, updateBlockContent, removeBlock, setBlockType, reorderLayer, clampArea, type LayerMove } from "./ops.ts";
 import { PAGE_MARGIN_MM, type PageDims } from "../pages.ts";
+import { PaletteSwatches } from "../components/PaletteSwatches.tsx";
 
 // Recreated grid designer with temp/src's interaction feel on OUR stack:
 // single click = SELECT, double click = EDIT (inline Tiptap); the whole block is
@@ -547,6 +548,8 @@ function BlockText({ content, editable, caret, onContent }: { content: JSONConte
             <MarkBtn active={editor.isActive("superscript")} run={() => editor.chain().focus().toggleSuperscript().run()} title="Superscript">x²</MarkBtn>
             <MarkBtn active={editor.isActive("subscript")} run={() => editor.chain().focus().toggleSubscript().run()} title="Subscript">x₂</MarkBtn>
             <MarkBtn active={editor.isActive("link")} run={() => setLink(editor)} title="Link">🔗</MarkBtn>
+            <span style={{ width: 1, background: "rgba(255,255,255,.2)" }} />
+            <PaletteSwatches editor={editor} dark />
           </div>
         </BubbleMenu>
       )}
