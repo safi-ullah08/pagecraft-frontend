@@ -24,7 +24,7 @@ export function Inspector() {
   const moveBlockToPage = useStore((s) => s.moveBlockToPage);
   const fitBlock = useStore((s) => s.fitBlock);
   const reflowBlock = useStore((s) => s.reflowBlock);
-  const breakTextFrame = useStore((s) => s.breakTextFrame);
+  const breakBlock = useStore((s) => s.breakBlock);
   const active = sections.find((s) => s.id === activeId);
   const section = active && isGridSection(active.content) ? active.content : null;
   // per-block editing only when exactly one is selected; else show a group panel
@@ -84,10 +84,11 @@ export function Inspector() {
             ↧ Spill overflow → next page
           </button>
         )}
-        {block.block === "textFrame" && (
-          <button onClick={() => breakTextFrame(active!.id, block.id)} title="Break this text frame into separate paragraph blocks on this page"
+        {(block.block === "textFrame" || block.block === "tocList") && (
+          <button onClick={() => breakBlock(active!.id, block.id)}
+            title={block.block === "tocList" ? "Break this contents list into separate entry blocks on this page" : "Break this text frame into separate paragraph blocks on this page"}
             style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER}`, color: PALETTE.TEXT, padding: "8px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
-            ⑃ Break into paragraphs
+            ⑃ {block.block === "tocList" ? "Break into entries" : "Break into paragraphs"}
           </button>
         )}
         <Field label="Padding (inset content)">

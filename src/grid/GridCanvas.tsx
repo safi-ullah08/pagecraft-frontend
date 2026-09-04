@@ -74,7 +74,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
   editingId: string | null;
   onEdit: (id: string | null) => void;
   onReflow: (id: string) => void; // Split: spill overflow onto the next page
-  onBreak: (id: string) => void;  // Break: decompose into paragraph blocks on this page
+  onBreak: (id: string) => void;  // Break: decompose into paragraph/entry blocks on this page
   onMerge: (sourceId: string, targetId: string, atIndex: number) => void; // drop a text block onto a text frame → concatenate at index
   showGrid: boolean;
 }) {
@@ -454,9 +454,11 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ
               <button onClick={(e) => { e.stopPropagation(); onReflow(); }} title="Split: keep what fits, flow the rest onto the next page"
                 style={{ height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer", padding: "0 5px" }}>Split ⤵</button>
             )}
-            {/* Break: decompose into separate paragraph/sentence blocks on THIS page (no page-push) */}
-            {b.block === "textFrame" && (((b.content as { content?: unknown[] })?.content?.length ?? 0) >= 1) && (
-              <button onClick={(e) => { e.stopPropagation(); onBreak(); }} title="Break into separate paragraph blocks on this page"
+            {/* Break: decompose into separate blocks on THIS page (no page-push) —
+                textFrame breaks by paragraph/sentence, tocList by entry. */}
+            {((b.block === "textFrame" && ((b.content as { content?: unknown[] })?.content?.length ?? 0) >= 1) ||
+              (b.block === "tocList" && ((b.content as { entries?: unknown[] })?.entries?.length ?? 0) >= 1)) && (
+              <button onClick={(e) => { e.stopPropagation(); onBreak(); }} title="Break into separate blocks on this page"
                 style={{ height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer", padding: "0 5px" }}>Break ⑃</button>
             )}
             {/* Layering: raise/lower this block in the page's stacking order */}
