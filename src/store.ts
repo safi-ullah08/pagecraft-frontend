@@ -79,12 +79,9 @@ type Store = {
 // Contain the content of the piece and its height in pixels.
 type BreakPiece = { content: GridBlock["content"]; heightPx: number };
 
-// Shared "Break" placement: walk pieces in reading order from the block's own
-// top, each sized to its own natural height, stepping past any EXISTING block
-// a candidate collides with (collision detection → find next free position)
-// rather than displacing it. A piece that runs off the page folds into the
-// last placed piece via `fold` instead of overflowing the page or being lost.
-// Used by breakBlock for both textFrame (paragraphs) and tocList (entries).
+
+// Calculating the size for the new blocks and placing them in the grid. 
+// If there is no space left, the rest of the pieces will be folded into the last placed piece.
 function placePieces(block: GridBlock, others: GridBlock[], pieces: BreakPiece[], page: PageDims,
   fold: (into: GridBlock["content"], content: GridBlock["content"]) => GridBlock["content"]): GridBlock[] {
   const colsOverlap = (a: GridArea, b: GridArea) => a.colStart < b.colEnd && b.colStart < a.colEnd;
@@ -94,18 +91,16 @@ function placePieces(block: GridBlock, others: GridBlock[], pieces: BreakPiece[]
   let cursor = block.area.rowStart;
   const newBlocks: GridBlock[] = [];
   for (const piece of pieces) {
-    const rowsNeeded = heightToRows(piece.heightPx, page); // minimum rows THIS piece's own content needs — no extra floor
+    const rowsNeeded = heightToRows(piece.heightPx, page); // minimum rows needed for content
     let area: GridArea = { rowStart: cursor, colStart: block.area.colStart, rowEnd: cursor + rowsNeeded, colEnd: block.area.colEnd };
     let hit, guard = 0;
     while ((hit = collision(area)) && guard++ < 50) {
       area = { ...area, rowStart: hit.area.rowEnd, rowEnd: hit.area.rowEnd + rowsNeeded };
     }
     if (area.rowEnd > ROWS + 1) {
-      // Ran off the page with nowhere free left — fold the rest into the last
-      // placed piece (still fully there, just not split further) instead of
-      // displacing a block or growing the page past its fixed size.
+      // fold the rest into the last placed piece if no free space left
       const last = newBlocks[newBlocks.length - 1];
-      if (!last) return []; // no room even for the first piece — leave the block as-is
+      if (!last) return [];
       last.content = fold(last.content, piece.content);
       continue;
     }
@@ -386,12 +381,11 @@ export const useStore = create<Store>((set, get) => {
       if (next === sec.content) return; // nothing merged (non-text source, etc.)
       edit(sectionId, next);
       set({ selectedBlockIds: [targetId], editingBlockId: null });
-    },
-    // Break a block into smaller blocks on the SAME page (no new pages, no
-    // page-pushing — existing blocks are only ever READ for collision checks,
-    // never moved, and the row grid stays fixed). textFrame breaks one block per
-    // paragraph (a lone overflowing paragraph is chunked by page-fit); tocList
-    // breaks one block per contents entry. Placement (measure → size to the
+    },    
+
+    // Break a block(textFrame and tocList) into smaller blocks on the same page. 
+    // The new blocks are placed in the grid, and the original block is removed. 
+    // Placement (measure → size to the
     // piece's own minimum rows → collision-check against every existing block →
     // walk past whatever it hits → fold into the last piece if it runs off the
     // page) is shared — see placePieces above. Single state commit at the end.
@@ -412,16 +406,13 @@ export const useStore = create<Store>((set, get) => {
         const maxHpx = blockHeightPx(rows, page) - padY;
         const doc = block.content as JSONContent;
         const nodes = doc.content ?? [];
-        // A blank line is a paragraph node with no real text — it renders as
-        // vertical space inside the flowing block, not a visible paragraph.
-        // One-block-per-node would turn each of those into its own empty,
-        // bordered, selectable box, so they're dropped before splitting.
+        // ponytail: a paragraph with only whitespace is considered empty and skipped when breaking into pieces. 
+        // This avoids creating empty blocks when splitting a text frame.
         const hasContent = (n: JSONContent) => (n.content ?? []).some((c) => (c.type === "text" ? (c.text ?? "").trim().length > 0 : true));
         let pieces: JSONContent[];
         if (nodes.length >= 2) {
           pieces = nodes.filter(hasContent).map((n) => ({ ...doc, content: [n] })); // one block per paragraph
         } else {
-          // single node: split a paragraph into sentences; else chunk by page-fit
           const only = nodes[0];
           const sentences = only?.type === "paragraph" ? splitParagraphSentences(only) : only ? [only] : [];
           if (sentences.length > 1) {
@@ -446,8 +437,14 @@ export const useStore = create<Store>((set, get) => {
       } else if (block.block === "tocList") {
         const content = block.content as { entries?: TocEntry[] };
         const entries = (content.entries ?? []).filter((e) => (e.text ?? "").trim().length > 0);
-        if (entries.length < 2) return; // nothing to break
-        const pieces = entries.map((e) => ({ ...content, entries: [e] }));
+        //group sub-entries(2.1,2.2) in the same block
+        const groups: TocEntry[][] = [];
+        for (const e of entries) {
+          if ((e.level ?? 1) <= 1 || !groups.length) groups.push([e]);
+          else groups[groups.length - 1]!.push(e);
+        }
+        if (groups.length < 2) return; // nothing to break
+        const pieces = groups.map((g) => ({ ...content, entries: g }));
         const measured = pieces.map((piece) => ({
           content: piece as GridBlock["content"],
           heightPx: measureHtmlHeight(blockHtml({ ...block, content: piece }) ?? "", widthPx, theme) + padY,
@@ -457,7 +454,7 @@ export const useStore = create<Store>((set, get) => {
           return { ...a, entries: [...(a.entries ?? []), ...(b.entries ?? [])] };
         });
       } else {
-        return; // this block type has no per-piece flow to break apart
+        return;
       }
       if (!newBlocks.length) return;
       edit(sectionId, { ...sec.content, blocks: [...others, ...newBlocks] });
