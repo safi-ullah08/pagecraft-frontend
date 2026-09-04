@@ -5,8 +5,8 @@ import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
 import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
 import { BLOCKS, serialize, DEFAULT_PAGE_NUMBERS, EMPTY_DESIGN, type PageNumberConfig, type DesignTokens } from "@pagecraft/model";
-import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock, type GridSection } from "./grid/types.ts";
-import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
+import { isGridSection, ROWS, type BlockStyleTokens, type BlockType, type GridArea, type GridBlock, type GridSection } from "./grid/types.ts";
+import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, updateBlockStyle, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
 import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries } from "./grid/toc.ts";
 import { buildCover, isCoverSection, isBackCoverSection } from "./grid/covers.ts";
@@ -49,6 +49,7 @@ type Store = {
   selectAll: () => void;
   setEditing: (id: string | null) => void;
   deleteSelected: () => void;
+  updateSelectedStyle: (tokens: Partial<BlockStyleTokens>) => void;
   copySelected: () => void;
   cutSelected: () => void;
   duplicateSelected: () => void;
@@ -227,6 +228,16 @@ export const useStore = create<Store>((set, get) => {
       if (!sec || !isGridSection(sec.content) || !selectedBlockIds.length) return;
       edit(activeId!, removeBlocks(sec.content, selectedBlockIds));
       set({ selectedBlockIds: [], editingBlockId: null });
+    },
+    // Apply the same style-token patch to every selected block (colour, font,
+    // alignment, padding/margin, custom CSS) — one state commit for the whole
+    // selection, so multi-select styling is a single undo step, not one per block.
+    updateSelectedStyle: (tokens) => {
+      const { sections, activeId, selectedBlockIds, edit } = get();
+      const sec = sections.find((s) => s.id === activeId);
+      if (!sec || !isGridSection(sec.content) || selectedBlockIds.length < 2) return;
+      const next = selectedBlockIds.reduce((acc, id) => updateBlockStyle(acc, id, tokens), sec.content);
+      edit(activeId!, next);
     },
     // Copy the selected blocks to the in-app clipboard.
     copySelected: () => {
