@@ -8,7 +8,7 @@ import { BLOCKS, serialize, DEFAULT_PAGE_NUMBERS, EMPTY_DESIGN, type PageNumberC
 import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock, type GridSection } from "./grid/types.ts";
 import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
-import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries } from "./grid/toc.ts";
+import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries, type TocEntry } from "./grid/toc.ts";
 import { buildCover, isCoverSection, isBackCoverSection } from "./grid/covers.ts";
 import { insertSectionsAfter, updatePageNumbers, updateDesign, updateTheme, renameDocument } from "./api.ts";
 import { parseTemplateId, structureToLayoutSpec, foldChapters, docPlanToLayout, STRUCTURES, IMPORT_COVER, type Template } from "./grid/templates.ts";
@@ -59,7 +59,7 @@ type Store = {
   addBlockAt: (type: BlockType, toId: string, area: GridArea) => void;
   fitBlock: (sectionId: string, blockId: string) => void;
   reflowBlock: (sectionId: string, blockId: string) => Promise<void>;
-  breakTextFrame: (sectionId: string, blockId: string) => void;
+  breakBlock: (sectionId: string, blockId: string) => void;
   mergeBlocks: (sectionId: string, sourceId: string, targetId: string, atIndex?: number) => void;
   moveBlockToPage: (fromId: string, blockId: string, toId: string, area?: GridArea) => void;
   moveBlocksToPage: (fromId: string, ids: string[], toId: string, dCol: number, dRow: number) => void;
@@ -75,6 +75,61 @@ type Store = {
   removePage: (id: string) => Promise<void>;
   convertToGrid: () => Promise<void>;
 };
+
+// Contain the content of the piece and its height in pixels.
+type BreakPiece = { content: GridBlock["content"]; heightPx: number };
+
+
+// Calculating the size for the new blocks and placing them in the grid. 
+// If there is no space left, the rest of the pieces will be folded into the last placed piece.
+function placePieces(block: GridBlock, others: GridBlock[], pieces: BreakPiece[], page: PageDims,
+  fold: (into: GridBlock["content"], content: GridBlock["content"]) => GridBlock["content"]): GridBlock[] {
+  const colsOverlap = (a: GridArea, b: GridArea) => a.colStart < b.colEnd && b.colStart < a.colEnd;
+  const rowsOverlap = (a: GridArea, b: GridArea) => a.rowStart < b.rowEnd && b.rowStart < a.rowEnd;
+  const collision = (a: GridArea) => others.find((o) => colsOverlap(a, o.area) && rowsOverlap(a, o.area));
+
+  let cursor = block.area.rowStart;
+  const newBlocks: GridBlock[] = [];
+  for (const piece of pieces) {
+    const rowsNeeded = heightToRows(piece.heightPx, page); // minimum rows needed for content
+    let area: GridArea = { rowStart: cursor, colStart: block.area.colStart, rowEnd: cursor + rowsNeeded, colEnd: block.area.colEnd };
+    let hit, guard = 0;
+    while ((hit = collision(area)) && guard++ < 50) {
+      area = { ...area, rowStart: hit.area.rowEnd, rowEnd: hit.area.rowEnd + rowsNeeded };
+    }
+    if (area.rowEnd > ROWS + 1) {
+      //fold the content of the piece into the last placed piece
+      const last = newBlocks[newBlocks.length - 1];
+      if (!last) return [];
+      last.content = fold(last.content, piece.content);
+      let grownEnd = Math.min(last.area.rowEnd + rowsNeeded, ROWS + 1);
+      const blocked = collision({ ...last.area, rowEnd: grownEnd });
+      if (blocked) grownEnd = Math.min(grownEnd, blocked.area.rowStart);
+      last.area = { ...last.area, rowEnd: grownEnd };
+      cursor = grownEnd;
+      continue;
+    }
+    cursor = area.rowEnd;
+    newBlocks.push({ id: Math.random().toString(36).slice(2, 10), area, block: block.block, content: piece.content, style: block.style });
+  }
+  return newBlocks;
+}
+
+// Group the TOC entries by their nearest level-1 heading, then find the largest prefix of groups that fits within maxHpx. 
+// This ensures that sub-entries stay with their parent entries and that the TOC is split appropriately for display.
+function splitTocEntriesAt(entries: TocEntry[], measure: (prefix: TocEntry[]) => number, maxHpx: number): [TocEntry[], TocEntry[]] {
+  const groups: TocEntry[][] = [];
+  for (const e of entries) {
+    if ((e.level ?? 1) <= 1 || !groups.length) groups.push([e]);
+    else groups[groups.length - 1]!.push(e);
+  }
+  let fitCount = 0;
+  for (let i = 1; i <= groups.length; i++) {
+    const prefix = groups.slice(0, i).flat();
+    if (i === 1 || measure(prefix) <= maxHpx) fitCount = i; else break;
+  }
+  return [groups.slice(0, fitCount).flat(), groups.slice(fitCount).flat()];
+}
 
 // Load the doc named by ?doc=<id> (with ALL its sections), or create a fresh
 // single-section doc and pin it in the URL. ponytail: dev bootstrap, not a
@@ -309,33 +364,65 @@ export const useStore = create<Store>((set, get) => {
       const sec = sections.find((s) => s.id === sectionId);
       if (!sec || !isGridSection(sec.content)) return;
       const block = sec.content.blocks.find((b) => b.id === blockId);
-      if (!block || block.block !== "textFrame") return;
-      const doc = block.content as JSONContent;
-      const nodes = doc.content ?? [];
-      if (nodes.length < 1) return;
-      const cols = block.area.colEnd - block.area.colStart;
-      const widthPx = blockWidthPx(cols, page) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
-      // Room from the block's TOP to the page's bottom edge (not the box height).
-      const rowsToEdge = ROWS - block.area.rowStart + 1;
-      // ponytail: ~⅓-row cushion so content hugging the edge breaks over too; raise if edge-hug persists.
-      const cushion = blockHeightPx(1, page) / 3;
-      const maxHpx = blockHeightPx(rowsToEdge, page) - sidesY(block.style?.padding) - sidesY(block.style?.margin) - cushion;
-      // splits between paragraphs, or WITHIN a paragraph (word boundary) when a
-      // single long paragraph overflows — so any overflowing text frame can spill.
-      const [docA, docB] = splitTextFrameAt(doc, widthPx, maxHpx, theme);
-      if (!docB.content?.length) return; // fits above the edge with room to spare
-      // keep the fitting part in this block and shrink it to that content
-      get().edit(sectionId, updateBlockContent(sec.content, blockId, docA as SectionContent));
-      get().fitBlock(sectionId, blockId);
-      // paginate the overflow into new pages and insert them right after this one
-      const pages = (await parseBlocks([docB], theme, page)).map((p) => assetsToCanonical(p));
-      const { sections: inserted } = await insertSectionsAfter(documentId, sectionId, pages);
-      set((st) => {
-        const arr = [...st.sections];
-        const idx = arr.findIndex((s) => s.id === sectionId);
-        arr.splice(idx + 1, 0, ...inserted.map((s) => ({ ...s, content: assetsToDisplay(s.content) })));
-        return { sections: arr };
-      });
+      if (!block) return;
+
+      if (block.block === "textFrame") {
+        const doc = block.content as JSONContent;
+        const nodes = doc.content ?? [];
+        if (nodes.length < 1) return;
+        const cols = block.area.colEnd - block.area.colStart;
+        const widthPx = blockWidthPx(cols, page) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
+        // Room from the block's TOP to the page's bottom edge (not the box height).
+        const rowsToEdge = ROWS - block.area.rowStart + 1;
+        // ponytail: ~⅓-row cushion so content hugging the edge breaks over too; raise if edge-hug persists.
+        const cushion = blockHeightPx(1, page) / 3;
+        const maxHpx = blockHeightPx(rowsToEdge, page) - sidesY(block.style?.padding) - sidesY(block.style?.margin) - cushion;
+        // splits between paragraphs, or WITHIN a paragraph (word boundary) when a
+        // single long paragraph overflows — so any overflowing text frame can spill.
+        const [docA, docB] = splitTextFrameAt(doc, widthPx, maxHpx, theme);
+        if (!docB.content?.length) return; // fits above the edge with room to spare
+        // keep the fitting part in this block and shrink it to that content
+        get().edit(sectionId, updateBlockContent(sec.content, blockId, docA as SectionContent));
+        get().fitBlock(sectionId, blockId);
+        // paginate the overflow into new pages and insert them right after this one
+        const pages = (await parseBlocks([docB], theme, page)).map((p) => assetsToCanonical(p));
+        const { sections: inserted } = await insertSectionsAfter(documentId, sectionId, pages);
+        set((st) => {
+          const arr = [...st.sections];
+          const idx = arr.findIndex((s) => s.id === sectionId);
+          arr.splice(idx + 1, 0, ...inserted.map((s) => ({ ...s, content: assetsToDisplay(s.content) })));
+          return { sections: arr };
+        });
+      } else if (block.block === "tocList") {
+        const content = block.content as { entries?: TocEntry[] };
+        const entries = content.entries ?? [];
+        if (entries.length < 1) return;
+        const cols = block.area.colEnd - block.area.colStart;
+        const widthPx = blockWidthPx(cols, page) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
+        const padY = sidesY(block.style?.padding) + sidesY(block.style?.margin);
+        const rowsToEdge = ROWS - block.area.rowStart + 1;
+        const cushion = blockHeightPx(1, page) / 3;
+        const maxHpx = blockHeightPx(rowsToEdge, page) - padY - cushion;
+        const [keepEntries, spillEntries] = splitTocEntriesAt(entries, (prefix) =>
+          measureHtmlHeight(blockHtml({ ...block, content: { ...content, entries: prefix } }) ?? "", widthPx, theme) + padY, maxHpx);
+        if (!spillEntries.length) return; // fits above the edge with room to spare
+        if (!keepEntries.length) return; // not even the first entry fits — nothing usefully splits
+        get().edit(sectionId, updateBlockContent(sec.content, blockId, { ...content, entries: keepEntries } as SectionContent));
+        get().fitBlock(sectionId, blockId);
+        const spillSection = {
+          type: "grid", toc: true,
+          blocks: [{ id: Math.random().toString(36).slice(2, 10),
+            area: { rowStart: 1, colStart: block.area.colStart, rowEnd: ROWS + 1, colEnd: block.area.colEnd },
+            block: "tocList", content: { ...content, entries: spillEntries }, style: block.style }],
+        };
+        const { sections: inserted } = await insertSectionsAfter(documentId, sectionId, [assetsToCanonical(spillSection as SectionContent)]);
+        set((st) => {
+          const arr = [...st.sections];
+          const idx = arr.findIndex((s) => s.id === sectionId);
+          arr.splice(idx + 1, 0, ...inserted.map((s) => ({ ...s, content: assetsToDisplay(s.content) })));
+          return { sections: arr };
+        });
+      }
     },
     // Merge a dropped text block's content into a target text frame, then remove
     // the source (drop-to-concatenate). Selects the target after.
@@ -347,58 +434,82 @@ export const useStore = create<Store>((set, get) => {
       if (next === sec.content) return; // nothing merged (non-text source, etc.)
       edit(sectionId, next);
       set({ selectedBlockIds: [targetId], editingBlockId: null });
-    },
-    // Break a text frame into smaller blocks on the SAME page (no new pages, no
-    // page-pushing). One block per paragraph; a lone overflowing paragraph is
-    // chunked by page-fit so it still breaks into pieces. Each piece is fit-sized
-    // and stacked below the previous — the user then arranges them freely.
-    breakTextFrame: (sectionId, blockId) => {
+    },    
+
+    // Break a block(textFrame and tocList) into smaller blocks on the same page. 
+    // The new blocks are placed in the grid, and the original block is removed. 
+    // Placement (measure → size to the
+    // piece's own minimum rows → collision-check against every existing block →
+    // walk past whatever it hits → fold into the last piece if it runs off the
+    // page) is shared — see placePieces above. Single state commit at the end.
+    breakBlock: (sectionId, blockId) => {
       const { sections, theme, page, edit } = get();
       const sec = sections.find((s) => s.id === sectionId);
       if (!sec || !isGridSection(sec.content)) return;
       const block = sec.content.blocks.find((b) => b.id === blockId);
-      if (!block || block.block !== "textFrame") return;
-      const doc = block.content as JSONContent;
-      const nodes = doc.content ?? [];
+      if (!block) return;
+      const others = sec.content.blocks.filter((b) => b.id !== blockId);
       const cols = block.area.colEnd - block.area.colStart;
-      const rows = block.area.rowEnd - block.area.rowStart;
       const widthPx = blockWidthPx(cols, page) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
       const padY = sidesY(block.style?.padding) + sidesY(block.style?.margin);
-      const maxHpx = blockHeightPx(rows, page) - padY;
 
-      let pieces: JSONContent[];
-      if (nodes.length >= 2) {
-        pieces = nodes.map((n) => ({ ...doc, content: [n] })); // one block per paragraph
-      } else {
-        // single node: split a paragraph into sentences; else chunk by page-fit
-        const only = nodes[0];
-        const sentences = only?.type === "paragraph" ? splitParagraphSentences(only) : only ? [only] : [];
-        if (sentences.length > 1) {
-          pieces = sentences.map((s) => ({ ...doc, content: [s] }));
+      let newBlocks: GridBlock[];
+      if (block.block === "textFrame") {
+        const rows = block.area.rowEnd - block.area.rowStart;
+        const maxHpx = blockHeightPx(rows, page) - padY;
+        const doc = block.content as JSONContent;
+        const nodes = doc.content ?? [];
+        // ponytail: a paragraph with only whitespace is considered empty and skipped when breaking into pieces. 
+        // This avoids creating empty blocks when splitting a text frame.
+        const hasContent = (n: JSONContent) => (n.content ?? []).some((c) => (c.type === "text" ? (c.text ?? "").trim().length > 0 : true));
+        let pieces: JSONContent[];
+        if (nodes.length >= 2) {
+          pieces = nodes.filter(hasContent).map((n) => ({ ...doc, content: [n] })); // one block per paragraph
         } else {
-          pieces = [];
-          let rest: JSONContent = doc, guard = 0;
-          while ((rest.content?.length ?? 0) > 0 && guard++ < 100) {
-            const [a, b] = splitTextFrameAt(rest, widthPx, maxHpx, theme);
-            if (!a.content?.length) break;
-            pieces.push(a);
-            rest = b;
+          const only = nodes[0];
+          const sentences = only?.type === "paragraph" ? splitParagraphSentences(only) : only ? [only] : [];
+          if (sentences.length > 1) {
+            pieces = sentences.map((s) => ({ ...doc, content: [s] }));
+          } else {
+            pieces = [];
+            let rest: JSONContent = doc, guard = 0;
+            while ((rest.content?.length ?? 0) > 0 && guard++ < 100) {
+              const [a, b] = splitTextFrameAt(rest, widthPx, maxHpx, theme);
+              if (!a.content?.length) break;
+              pieces.push(a);
+              rest = b;
+            }
           }
         }
+        if (pieces.length < 2) return; // nothing to break
+        const measured = pieces.map((piece) => ({ content: piece as GridBlock["content"], heightPx: measureHtmlHeight(serialize(piece), widthPx, theme) + padY }));
+        newBlocks = placePieces(block, others, measured, page, (into, add) => {
+          const a = into as JSONContent, b = add as JSONContent;
+          return { ...a, content: [...(a.content ?? []), ...(b.content ?? [])] };
+        });
+      } else if (block.block === "tocList") {
+        const content = block.content as { entries?: TocEntry[] };
+        const entries = (content.entries ?? []).filter((e) => (e.text ?? "").trim().length > 0);
+        //group sub-entries(2.1,2.2) in the same block
+        const groups: TocEntry[][] = [];
+        for (const e of entries) {
+          if ((e.level ?? 1) <= 1 || !groups.length) groups.push([e]);
+          else groups[groups.length - 1]!.push(e);
+        }
+        if (groups.length < 2) return; // nothing to break
+        const pieces = groups.map((g) => ({ ...content, entries: g }));
+        const measured = pieces.map((piece) => ({
+          content: piece as GridBlock["content"],
+          heightPx: measureHtmlHeight(blockHtml({ ...block, content: piece }) ?? "", widthPx, theme) + padY,
+        }));
+        newBlocks = placePieces(block, others, measured, page, (into, add) => {
+          const a = into as { entries?: TocEntry[] }, b = add as { entries?: TocEntry[] };
+          return { ...a, entries: [...(a.entries ?? []), ...(b.entries ?? [])] };
+        });
+      } else {
+        return;
       }
-      if (pieces.length < 2) return; // nothing to break
-
-      let row = block.area.rowStart;
-      const newBlocks: GridBlock[] = pieces.map((piece) => {
-        const h = measureHtmlHeight(serialize(piece), widthPx, theme) + padY;
-        const area = clampArea(
-          { rowStart: row, colStart: block.area.colStart, rowEnd: row + heightToRows(h, page), colEnd: block.area.colEnd },
-          BLOCKS.textFrame.min,
-        );
-        row = area.rowEnd;
-        return { id: Math.random().toString(36).slice(2, 10), area, block: "textFrame", content: piece, style: block.style };
-      });
-      const others = sec.content.blocks.filter((b) => b.id !== blockId);
+      if (!newBlocks.length) return;
       edit(sectionId, { ...sec.content, blocks: [...others, ...newBlocks] });
       set({ selectedBlockIds: newBlocks.map((b) => b.id), editingBlockId: null });
     },
@@ -523,20 +634,50 @@ export const useStore = create<Store>((set, get) => {
     // Refreshing happens in place (page count unchanged); a new TOC is prepended and
     // the numbering is projected WITH it, so the pages it pushes down are correct.
     generateToc: async () => {
-      const { sections, documentId, pageNumbers, edit } = get();
+      const { sections, documentId, theme, page, pageNumbers, edit } = get();
       if (!documentId || !sections.length) return;
       const startAt = pageNumbers.enabled ? (pageNumbers.startAt ?? 1) : 1;
       const contents = sections.map((s) => s.content);
 
-      const existing = sections.findIndex((s) => isTocSection(s.content));
-      if (existing >= 0) {
-        // Fill the tocList slot IN PLACE so a template's designed contents page
-        // (panels/title/areas) survives the refresh; a legacy all-text TOC page
-        // is upgraded wholesale to the current default design.
-        const cur = sections[existing]!.content as GridSection;
-        const entries = collectToc(contents, startAt);
-        edit(sections[existing]!.id, (hasTocList(cur) ? fillTocEntries(cur, entries) : buildTocSection(entries)) as SectionContent);
-        set({ activeId: sections[existing]!.id });
+      const existingIdxs = sections.reduce<number[]>((acc, s, i) => (isTocSection(s.content) ? [...acc, i] : acc), []);
+      if (existingIdxs.length) {
+        const firstIdx = existingIdxs[0]!;
+        const cur = sections[firstIdx]!.content as GridSection;
+        if (!hasTocList(cur)) {
+          // Legacy all-text TOC page (predates the multi-page split): upgrade
+          // wholesale, same as before — nothing to redistribute across yet.
+          edit(sections[firstIdx]!.id, buildTocSection(collectToc(contents, startAt)) as SectionContent);
+          set({ activeId: sections[firstIdx]!.id });
+          return;
+        }
+
+        // Existing multi-page TOC: redistribute the new entries across the existing pages
+        // so the page count doesn't change (the TOC is always page 1).
+        let remaining = collectToc(contents, startAt);
+        for (let i = 0; i < existingIdxs.length; i++) {
+          const s = sections[existingIdxs[i]!]!;
+          const sc = s.content as GridSection;
+          const tocBlock = sc.blocks.find((b) => b.block === "tocList");
+          if (!tocBlock) continue;
+          let pageEntries: TocEntry[];
+          if (i === existingIdxs.length - 1) {
+            pageEntries = remaining;
+            remaining = [];
+          } else {
+            const cols = tocBlock.area.colEnd - tocBlock.area.colStart;
+            const widthPx = blockWidthPx(cols, page) - sidesX(tocBlock.style?.padding) - sidesX(tocBlock.style?.margin);
+            const padY = sidesY(tocBlock.style?.padding) + sidesY(tocBlock.style?.margin);
+            const rowsToEdge = ROWS - tocBlock.area.rowStart + 1;
+            const maxHpx = blockHeightPx(rowsToEdge, page) - padY;
+            const tocContent = tocBlock.content as { entries?: TocEntry[] };
+            const [kept, spilled] = splitTocEntriesAt(remaining, (prefix) =>
+              measureHtmlHeight(blockHtml({ ...tocBlock, content: { ...tocContent, entries: prefix } }) ?? "", widthPx, theme) + padY, maxHpx);
+            pageEntries = kept;
+            remaining = spilled;
+          }
+          edit(s.id, fillTocEntries(sc, pageEntries) as SectionContent);
+        }
+        set({ activeId: sections[firstIdx]!.id });
         return;
       }
       // First page, EXCEPT after a cover — a cover always stays page 1.
