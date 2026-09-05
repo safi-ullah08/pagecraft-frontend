@@ -403,34 +403,6 @@ export const useStore = create<Store>((set, get) => {
       }
       if (pieces.length < 2) return; // nothing to break
 
-      // No clampArea here: it pulls a box's rowStart BACKWARD when it doesn't fit
-      // the page — right for dragging a single block, but wrong for a chain of
-      // pieces walking down the page, where it snaps whatever runs out of room
-      // onto the page's bottom edge instead of leaving it where it naturally sits.
-      
-      // const colsOverlap = (o: GridBlock) => o.area.colStart < block.area.colEnd && block.area.colStart < o.area.colEnd;
-      // const ceiling = sec.content.blocks.reduce(
-      //   (min, o) => (o.id === blockId || o.area.rowStart < block.area.rowStart || !colsOverlap(o) ? min : Math.min(min, o.area.rowStart)),
-      //   ROWS + 1,
-      // );
-      // let row = block.area.rowStart;
-      // const newBlocks: GridBlock[] = [];
-      // for (const piece of pieces) {
-      //   const last = newBlocks[newBlocks.length - 1];
-      //   if (row >= ceiling && last) {
-      //     const lastDoc = last.content as JSONContent;
-      //     last.content = { ...lastDoc, content: [...(lastDoc.content ?? []), ...(piece.content ?? [])] };
-      //     continue;
-      //   }
-      //   const h = measureHtmlHeight(serialize(piece), widthPx, theme) + padY;
-      //   const rowsNeeded = heightToRows(h, page);
-      //   const rowStart = row;
-      //   const rowEnd = Math.min(rowStart + rowsNeeded, ceiling);
-      //   row = rowEnd;
-      //   const area = { rowStart, colStart: block.area.colStart, rowEnd, colEnd: block.area.colEnd };
-      //   newBlocks.push({ id: Math.random().toString(36).slice(2, 10), area, block: "textFrame", content: piece, style: block.style });
-      // }
-      // const others = sec.content.blocks.filter((b) => b.id !== blockId);
       
       const others = sec.content.blocks.filter((b) => b.id !== blockId);
       const colsOverlap = (a: GridArea, b: GridArea) => a.colStart < b.colEnd && b.colStart < a.colEnd;
@@ -441,20 +413,18 @@ export const useStore = create<Store>((set, get) => {
       const newBlocks: GridBlock[] = [];
       for (const piece of pieces) {
         const h = measureHtmlHeight(serialize(piece), widthPx, theme) + padY;
-        const rowsNeeded = heightToRows(h, page); // minimum rows THIS piece's own text needs — no extra floor
+        const rowsNeeded = heightToRows(h, page); // minimum rows the piece's own text needs
         let area: GridArea = { rowStart: cursor, colStart: block.area.colStart, rowEnd: cursor + rowsNeeded, colEnd: block.area.colEnd };
-        // Collision detection → find next free position: walk the candidate past
-        // whatever it hit and re-check, rather than moving the block it hit.
+        // if colliding find the next free rowStart
         let hit, guard = 0;
         while ((hit = collision(area)) && guard++ < 50) {
           area = { ...area, rowStart: hit.area.rowEnd, rowEnd: hit.area.rowEnd + rowsNeeded };
         }
         if (area.rowEnd > ROWS + 1) {
-          // Ran off the page with nowhere free left — fold the rest into the last
-          // placed piece (still fully there, just not split further) instead of
-          // displacing a block or growing the page past its fixed size.
+          // fold the rest into the last placed piece  if no space left(still fully there, just not split further) 
+          // instead of displacing a block or growing the page past its fixed size.
           const last = newBlocks[newBlocks.length - 1];
-          if (!last) return; // no room even for the first piece — leave the block as-is
+          if (!last) return;
           const lastDoc = last.content as JSONContent;
           last.content = { ...lastDoc, content: [...(lastDoc.content ?? []), ...(piece.content ?? [])] };
           continue;
@@ -462,7 +432,6 @@ export const useStore = create<Store>((set, get) => {
         cursor = area.rowEnd;
         newBlocks.push({ id: Math.random().toString(36).slice(2, 10), area, block: "textFrame", content: piece, style: block.style });
       }
-      // Single state commit — the whole result lands in one edit(), not one per piece.
       edit(sectionId, { ...sec.content, blocks: [...others, ...newBlocks] });
       set({ selectedBlockIds: newBlocks.map((b) => b.id), editingBlockId: null });
     },
