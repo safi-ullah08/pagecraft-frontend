@@ -78,7 +78,7 @@ export function Inspector() {
           style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER}`, color: PALETTE.TEXT, padding: "8px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
           ↕ Fit height to content
         </button>
-        {block.block === "textFrame" && (
+        {(block.block === "textFrame" || block.block === "tocList") && (
           <button onClick={() => void reflowBlock(active!.id, block.id)} title="grow to fit, and spill any overflow onto the next page(s)"
             style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER}`, color: PALETTE.TEXT, padding: "8px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
             ↧ Spill overflow → next page

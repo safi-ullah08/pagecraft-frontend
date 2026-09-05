@@ -450,7 +450,7 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ
             <button onClick={(e) => { e.stopPropagation(); fit(); }} title="Fit box to content"
               style={{ width: 18, height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 11, lineHeight: 1, cursor: "pointer" }}>⤢</button>
             {/* Split: spill overflow onto the next page (only when it overflows a page) */}
-            {overflow && b.block === "textFrame" && (
+            {overflow && (b.block === "textFrame" || b.block === "tocList") && (
               <button onClick={(e) => { e.stopPropagation(); onReflow(); }} title="Split: keep what fits, flow the rest onto the next page"
                 style={{ height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer", padding: "0 5px" }}>Split ⤵</button>
             )}
@@ -500,7 +500,9 @@ function BlockBody({ b, editing, caret, onContent }: { b: GridBlock; editing: bo
   if (b.block === "divider") return <hr style={{ margin: "auto 0" }} />;
   if (b.block === "spacer") return null;
   const html = renderTypedBlock(b.block, b.content);
-  return html != null ? <div style={{ height: "100%", overflow: "hidden" }} dangerouslySetInnerHTML={{ __html: html }} /> : null;
+
+  // The typed block's inner content may still overflow its own wrapper.
+  return html != null ? <div style={{ height: "100%" }} dangerouslySetInnerHTML={{ __html: html }} /> : null;
 }
 
 // Per-block Tiptap. Interactive ONLY while editing — otherwise pointer-events:none
