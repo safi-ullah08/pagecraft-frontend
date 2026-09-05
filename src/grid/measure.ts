@@ -110,7 +110,13 @@ export function measureHtmlHeight(html: string, widthPx: number, theme: string):
   style.textContent = scopeThemeCss(themeSkinCss(theme), ".pc-measure");
   const meas = document.createElement("div");
   meas.className = "pc-measure";
-  meas.style.cssText = `position:absolute;left:-99999px;top:0;width:${Math.max(1, widthPx)}px;visibility:hidden`;
+  meas.style.cssText = `
+    position:absolute;
+    left:-99999px;
+    top:0;
+    width:${Math.max(1, widthPx)}px;
+    visibility:hidden
+  `;
   document.body.append(style, meas);
   try {
     meas.innerHTML = html;

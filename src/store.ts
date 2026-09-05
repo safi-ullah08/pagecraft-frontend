@@ -349,9 +349,18 @@ export const useStore = create<Store>((set, get) => {
       set({ selectedBlockIds: [targetId], editingBlockId: null });
     },
     // Break a text frame into smaller blocks on the SAME page (no new pages, no
-    // page-pushing). One block per paragraph; a lone overflowing paragraph is
-    // chunked by page-fit so it still breaks into pieces. Each piece is fit-sized
-    // and stacked below the previous — the user then arranges them freely.
+    // page-pushing — existing blocks are only ever READ for collision checks,
+    // never moved, and the row grid stays fixed). One block per paragraph; a
+    // lone overflowing paragraph is chunked by page-fit so it still breaks into
+    // pieces. For each piece, in reading order: measure it, size it to the
+    // minimum whole rows its OWN text needs (no extra padding), build a
+    // candidate rectangle, and check it against every existing block. A clear
+    // candidate is placed as-is; a colliding one
+    // is walked past whatever it hit and re-checked until it lands in a free
+    // slot (or runs off the page, at which point the rest folds into the last
+    // placed piece rather than displacing something or growing the page). Every
+    // placed piece becomes its own independent, selectable block, and the whole
+    // result is committed in one edit() — nothing is applied incrementally.
     breakTextFrame: (sectionId, blockId) => {
       const { sections, theme, page, edit } = get();
       const sec = sections.find((s) => s.id === sectionId);
@@ -366,9 +375,15 @@ export const useStore = create<Store>((set, get) => {
       const padY = sidesY(block.style?.padding) + sidesY(block.style?.margin);
       const maxHpx = blockHeightPx(rows, page) - padY;
 
+      // A blank line is a paragraph node with no real text — it renders as vertical
+      // space inside the flowing block, not a visible paragraph. One-block-per-node
+      // would turn each of those into its own empty, bordered, selectable box, so
+      // they're dropped before splitting (the block's own margin/the grid gap
+      // still gives adjacent pieces breathing room).
+      const hasContent = (n: JSONContent) => (n.content ?? []).some((c) => (c.type === "text" ? (c.text ?? "").trim().length > 0 : true));
       let pieces: JSONContent[];
       if (nodes.length >= 2) {
-        pieces = nodes.map((n) => ({ ...doc, content: [n] })); // one block per paragraph
+        pieces = nodes.filter(hasContent).map((n) => ({ ...doc, content: [n] })); // one block per paragraph
       } else {
         // single node: split a paragraph into sentences; else chunk by page-fit
         const only = nodes[0];
@@ -388,17 +403,35 @@ export const useStore = create<Store>((set, get) => {
       }
       if (pieces.length < 2) return; // nothing to break
 
-      let row = block.area.rowStart;
-      const newBlocks: GridBlock[] = pieces.map((piece) => {
-        const h = measureHtmlHeight(serialize(piece), widthPx, theme) + padY;
-        const area = clampArea(
-          { rowStart: row, colStart: block.area.colStart, rowEnd: row + heightToRows(h, page), colEnd: block.area.colEnd },
-          BLOCKS.textFrame.min,
-        );
-        row = area.rowEnd;
-        return { id: Math.random().toString(36).slice(2, 10), area, block: "textFrame", content: piece, style: block.style };
-      });
+      
       const others = sec.content.blocks.filter((b) => b.id !== blockId);
+      const colsOverlap = (a: GridArea, b: GridArea) => a.colStart < b.colEnd && b.colStart < a.colEnd;
+      const rowsOverlap = (a: GridArea, b: GridArea) => a.rowStart < b.rowEnd && b.rowStart < a.rowEnd;
+      const collision = (a: GridArea) => others.find((o) => colsOverlap(a, o.area) && rowsOverlap(a, o.area));
+
+      let cursor = block.area.rowStart;
+      const newBlocks: GridBlock[] = [];
+      for (const piece of pieces) {
+        const h = measureHtmlHeight(serialize(piece), widthPx, theme) + padY;
+        const rowsNeeded = heightToRows(h, page); // minimum rows the piece's own text needs
+        let area: GridArea = { rowStart: cursor, colStart: block.area.colStart, rowEnd: cursor + rowsNeeded, colEnd: block.area.colEnd };
+        // if colliding find the next free rowStart
+        let hit, guard = 0;
+        while ((hit = collision(area)) && guard++ < 50) {
+          area = { ...area, rowStart: hit.area.rowEnd, rowEnd: hit.area.rowEnd + rowsNeeded };
+        }
+        if (area.rowEnd > ROWS + 1) {
+          // fold the rest into the last placed piece  if no space left(still fully there, just not split further) 
+          // instead of displacing a block or growing the page past its fixed size.
+          const last = newBlocks[newBlocks.length - 1];
+          if (!last) return;
+          const lastDoc = last.content as JSONContent;
+          last.content = { ...lastDoc, content: [...(lastDoc.content ?? []), ...(piece.content ?? [])] };
+          continue;
+        }
+        cursor = area.rowEnd;
+        newBlocks.push({ id: Math.random().toString(36).slice(2, 10), area, block: "textFrame", content: piece, style: block.style });
+      }
       edit(sectionId, { ...sec.content, blocks: [...others, ...newBlocks] });
       set({ selectedBlockIds: newBlocks.map((b) => b.id), editingBlockId: null });
     },
