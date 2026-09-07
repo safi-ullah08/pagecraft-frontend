@@ -6,6 +6,7 @@ import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./t
 import { BLOCKS } from "./blocks.ts";
 import { moveBlock, moveBlocks, resizeBlock, fitBlockRows, pushDownOverlaps, updateBlockContent, removeBlock, setBlockType, reorderLayer, clampArea, type LayerMove } from "./ops.ts";
 import { PAGE_MARGIN_MM, type PageDims } from "../pages.ts";
+import { promptDialog } from "../components/ConfirmModal.tsx";
 
 // Recreated grid designer with temp/src's interaction feel on OUR stack:
 // single click = SELECT, double click = EDIT (inline Tiptap); the whole block is
@@ -546,7 +547,7 @@ function BlockText({ content, editable, caret, onContent }: { content: JSONConte
             <MarkBtn active={editor.isActive("strike")} run={() => editor.chain().focus().toggleStrike().run()} title="Strikethrough" css={{ textDecoration: "line-through" }}>S</MarkBtn>
             <MarkBtn active={editor.isActive("superscript")} run={() => editor.chain().focus().toggleSuperscript().run()} title="Superscript">x²</MarkBtn>
             <MarkBtn active={editor.isActive("subscript")} run={() => editor.chain().focus().toggleSubscript().run()} title="Subscript">x₂</MarkBtn>
-            <MarkBtn active={editor.isActive("link")} run={() => setLink(editor)} title="Link">🔗</MarkBtn>
+            <MarkBtn active={editor.isActive("link")} run={() => void setLink(editor)} title="Link">🔗</MarkBtn>
           </div>
         </BubbleMenu>
       )}
@@ -567,8 +568,8 @@ function MarkBtn({ active, run, title, css, children }: { active: boolean; run: 
   );
 }
 
-function setLink(editor: Editor) {
+async function setLink(editor: Editor) {
   if (editor.isActive("link")) { editor.chain().focus().unsetLink().run(); return; }
-  const url = window.prompt("Link URL");
+  const url = await promptDialog({ title: "Link URL", placeholder: "https://…", confirmLabel: "Add link" });
   if (url) editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
 }
