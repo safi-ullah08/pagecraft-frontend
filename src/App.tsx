@@ -6,6 +6,7 @@ import { Toolbar } from "./components/Toolbar.tsx";
 import { ExportButton } from "./components/ExportButton.tsx";
 import { ImportBar } from "./components/ImportBar.tsx";
 import { ImportHub } from "./components/ImportHub.tsx";
+import { confirmDialog } from "./components/ConfirmModal.tsx";
 import { useStore } from "./store.ts";
 import { themeSkinCss, typedBlockCss } from "./themes.ts";
 import { designCss } from "@pagecraft/model";
@@ -145,10 +146,15 @@ export function App() {
 `;
 
   const active = sections.find((s) => s.id === activeId) ?? null;
-  const toggleLayout = () => {
+  const toggleLayout = async () => {
     if (!active) return;
     const toGrid = !isGridSection(active.content);
-    if (!confirm(`Convert this section to ${toGrid ? "grid" : "flow"}? Its current content will be replaced.`)) return;
+    const ok = await confirmDialog({
+      title: `Convert this section to ${toGrid ? "grid" : "flow"}?`,
+      body: "Its current content will be replaced.",
+      confirmLabel: "Convert",
+    });
+    if (!ok) return;
     edit(active.id, toGrid ? emptyGridSection() : { type: "doc", content: [{ type: "paragraph" }] });
   };
 
