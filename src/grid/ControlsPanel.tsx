@@ -11,6 +11,7 @@ import { frontCovers, backCovers, isCoverSection, isBackCoverSection, type Cover
 import { Inspector } from "./Inspector.tsx";
 import { Section, Field, Select, Slider, ColorPicker, inputStyle, PALETTE } from "./controls.tsx";
 import { TemplateGallery } from "../components/TemplateGallery.tsx";
+import { confirmDialog } from "../components/ConfirmModal.tsx";
 import { docPlanToLayout } from "./templates.ts";
 
 // The right bar — a port of temp/src ControlsPanel: three tabs (Design / Blocks /
@@ -387,11 +388,13 @@ function SwitchTemplate() {
             <TemplateGallery
               previewPlan={docPlanToLayout(docPlan, sourceMeta)}
               onClose={() => setOpen(false)}
-              onPick={(t) => {
-                if (!confirm("Switch template?\n\nYour imported chapters will be re-laid into the new design. Layout and text edits made since import will be replaced.")) {
-                  setOpen(false);
-                  return;
-                }
+              onPick={async (t) => {
+                const ok = await confirmDialog({
+                  title: "Switch template?",
+                  body: "Your imported chapters will be re-laid into the new design. Layout and text edits made since import will be replaced.",
+                  confirmLabel: "Switch",
+                });
+                if (!ok) { setOpen(false); return; }
                 window.location.search = `?doc=${documentId}&tpl=${t.id}`;
               }}
             />
