@@ -3,6 +3,7 @@ import { listDocuments, createDocument, deleteDocument, renameDocument, getBilli
 import { ImportBar } from "./ImportBar.tsx";
 import { ImportHub } from "./ImportHub.tsx";
 import { TemplateGallery } from "./TemplateGallery.tsx";
+import { confirmDialog } from "./ConfirmModal.tsx";
 
 // The landing view (no ?doc in the URL): list / create / import / open / delete
 // my documents. Navigation is a real reload to ?doc=<id> — the editor bootstraps
@@ -104,7 +105,13 @@ export function Dashboard() {
   }
 
   async function remove(id: string, title: string) {
-    if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
+    const ok = await confirmDialog({
+      title: `Delete "${title || "Untitled"}"?`,
+      body: "This cannot be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     setDocs((d) => d?.filter((x) => x.id !== id) ?? null); // optimistic
     try {
       await deleteDocument(id);

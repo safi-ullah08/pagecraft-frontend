@@ -1,16 +1,12 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
-// A promise-based confirmation modal that replaces the native window.confirm().
-// Usage from anywhere:  if (!(await confirmDialog({ title: "Delete this page?", danger: true }))) return;
-// A single <ConfirmModalHost /> mounted at the app root (main.tsx) renders it, so
-// call sites need no context/props — they just import confirmDialog and await it.
 
 export type ConfirmOptions = {
-  title: string;              // the main question, shown bold
-  body?: string;              // optional supporting line under the title
-  confirmLabel?: string;      // default "OK"
-  cancelLabel?: string;       // default "Cancel"
-  danger?: boolean;           // red confirm button for destructive actions
+  title: string;
+  body?: string;      
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
 };
 
 type Request = ConfirmOptions & { id: number; resolve: (ok: boolean) => void };
@@ -20,9 +16,7 @@ let counter = 0;
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
-// Opens the dialog and resolves true (confirm) / false (cancel, Esc, backdrop).
-// A string is shorthand for { title }. If a dialog is already open it is
-// cancelled and replaced, so a stray second call can't leave one stuck.
+
 export function confirmDialog(options: ConfirmOptions | string): Promise<boolean> {
   const opts = typeof options === "string" ? { title: options } : options;
   return new Promise<boolean>((resolve) => {
@@ -42,7 +36,7 @@ function settle(ok: boolean) {
 const subscribe = (cb: () => void) => { listeners.add(cb); return () => { listeners.delete(cb); }; };
 const getSnapshot = () => current;
 
-export function ConfirmModalHost() {
+export function ConfirmModal() {
   const req = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   const confirmRef = useRef<HTMLButtonElement>(null);
 
