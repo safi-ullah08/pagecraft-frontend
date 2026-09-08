@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { BLOCKS } from "@pagecraft/model";
 import { useStore } from "../store.ts";
 import { isGridSection } from "../grid/types.ts";
+import { confirmDialog } from "./ConfirmModal.tsx";
 
 import type { SectionContent } from "../api.ts";
 
@@ -75,7 +76,13 @@ export function ChapterNav() {
                 {i + 1}. {titleOf(s.content, i)}
               </span>
               {sections.length > 1 && (
-                <button onClick={(e) => { e.stopPropagation(); if (confirm("Delete this page?")) void removePage(s.id); }}
+                <button onClick={(e) => {
+                    e.stopPropagation();
+                    void (async () => {
+                      const ok = await confirmDialog({ title: "Delete this page?", body: "This page and its content will be removed.", confirmLabel: "Delete", danger: true });
+                      if (ok) await removePage(s.id);
+                    })();
+                  }}
                   title="delete page"
                   style={{ border: "none", background: "transparent", color: "var(--ui-muted)", cursor: "pointer", fontSize: 13, lineHeight: 1, flexShrink: 0 }}>×</button>
               )}
