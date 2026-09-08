@@ -293,7 +293,7 @@ export const useStore = create<Store>((set, get) => {
       const marX = sidesX(block.style?.margin), marY = sidesY(block.style?.margin);
       const h = measureHtmlHeight(html, blockWidthPx(cols, page) - marX - padX, theme) + padY + marY;
       const rows = heightToRows(h, page);
-      const min = BLOCKS[block.block].min.rows;
+      const min = block.block === "textFrame" ? 1 : BLOCKS[block.block].min.rows;
       const rowStart = block.area.rowStart;
       const rowEnd = rowStart + Math.max(min, Math.min(rows, ROWS - rowStart + 1));
       edit(sectionId, resizeBlock(sec.content, blockId, { ...block.area, rowEnd }));
@@ -393,7 +393,7 @@ export const useStore = create<Store>((set, get) => {
         const h = measureHtmlHeight(serialize(piece), widthPx, theme) + padY;
         const area = clampArea(
           { rowStart: row, colStart: block.area.colStart, rowEnd: row + heightToRows(h, page), colEnd: block.area.colEnd },
-          BLOCKS.textFrame.min,
+          { cols: BLOCKS.textFrame.min.cols, rows: 1 },
         );
         row = area.rowEnd;
         return { id: Math.random().toString(36).slice(2, 10), area, block: "textFrame", content: piece, style: block.style };
