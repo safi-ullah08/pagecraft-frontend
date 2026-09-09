@@ -350,8 +350,9 @@ export const useStore = create<Store>((set, get) => {
     },
     // Break a text frame into smaller blocks on the SAME page (no new pages, no
     // page-pushing). One block per paragraph; a lone overflowing paragraph is
-    // chunked by page-fit so it still breaks into pieces. Each piece is fit-sized
-    // and stacked below the previous — the user then arranges them freely.
+    // chunked by page-fit so it still breaks into pieces. Pieces are fit-sized and laid
+    // into the page's FREE rows (flowing around the blocks already there); once the page
+    // runs out, the rest stays whole in one trailing block instead of overlapping.
     breakTextFrame: (sectionId, blockId) => {
       const { sections, theme, page, edit } = get();
       const sec = sections.find((s) => s.id === sectionId);
@@ -386,19 +387,67 @@ export const useStore = create<Store>((set, get) => {
           }
         }
       }
-      if (pieces.length < 2) return; // nothing to break
-
-      let row = block.area.rowStart;
-      const newBlocks: GridBlock[] = pieces.map((piece) => {
-        const h = measureHtmlHeight(serialize(piece), widthPx, theme) + padY;
-        const area = clampArea(
-          { rowStart: row, colStart: block.area.colStart, rowEnd: row + heightToRows(h, page), colEnd: block.area.colEnd },
-          { cols: BLOCKS.textFrame.min.cols, rows: 1 },
-        );
-        row = area.rowEnd;
-        return { id: Math.random().toString(36).slice(2, 10), area, block: "textFrame", content: piece, style: block.style };
-      });
+      if (pieces.length < 2) return;
+      
+      // Everything stays on THIS page. Rows already held by OTHER blocks that share
+      // our columns are off limits, so the pieces flow into the page's real free space
+      // instead of marching down from our own top and landing on top of them.
       const others = sec.content.blocks.filter((b) => b.id !== blockId);
+      const taken = new Set<number>();
+      for (const o of others) {
+        if (o.area.colEnd <= block.area.colStart || o.area.colStart >= block.area.colEnd) continue; // different columns never clash
+        for (let r = o.area.rowStart; r < o.area.rowEnd; r++) taken.add(r);
+      }
+      // Contiguous runs of free rows, from this block's own top down to the page bottom.
+      const runs: { start: number; len: number }[] = [];
+      for (let r = block.area.rowStart; r <= ROWS; r++) {
+        if (taken.has(r)) continue;
+        const prev = runs[runs.length - 1];
+        if (prev && prev.start + prev.len === r) prev.len++;
+        else runs.push({ start: r, len: 1 });
+      }
+
+      const rowsFor = pieces.map((piece) => 
+        Math.max(1, heightToRows(measureHtmlHeight(serialize(piece), widthPx, theme) + padY, page))
+      );
+      const mk = (piece: JSONContent, rowStart: number, rowEnd: number): GridBlock => ({
+        id: Math.random().toString(36).slice(2, 10), block: "textFrame", style: block.style,
+        area: { rowStart, colStart: block.area.colStart, rowEnd, colEnd: block.area.colEnd },
+        content: piece,
+      });
+
+      // Break only what genuinely fits. Walk forward through the free runs placing whole
+      // pieces at their natural size — never squeezed, so nothing is clipped just to make
+      // the count fit. The first piece that no longer fits ends the break.
+      const newBlocks: GridBlock[] = [];
+      let ri = 0, used = 0, i = 0;
+      for (; i < pieces.length; i++) {
+        const want = rowsFor[i]!;
+        let tri = ri, tused = used;
+        while (tri < runs.length && runs[tri]!.len - tused < want) { tri++; tused = 0; } // won't fit this gap — try the next
+        if (tri >= runs.length) break; // no gap left can hold this piece whole
+        ri = tri; used = tused;
+        const rowStart = runs[ri]!.start + used;
+        used += want;
+        newBlocks.push(mk(pieces[i]!, rowStart, rowStart + want));
+      }
+      if (!newBlocks.length) return; // not even the first piece fits — leave the frame as it is
+
+      // Whatever is left over rides along in ONE trailing block rather than being shrunk
+      // across the page or pushed onto another one. It carries the usual overflow bar, so
+      // Split can spill it to a new page when the user wants that.
+      if (i < pieces.length) {
+        const rest = pieces.slice(i).flatMap((p) => p.content ?? []);
+        while (ri < runs.length && runs[ri]!.len - used <= 0) { ri++; used = 0; } // find any rows still free
+        const run = runs[ri];
+        if (run) {
+          newBlocks.push(mk({ ...doc, content: rest }, run.start + used, run.start + run.len));
+        } else {
+          const last = newBlocks[newBlocks.length - 1]!; // page is full — fold it into the last block
+          const cur = last.content as JSONContent;
+          last.content = { ...cur, content: [...(cur.content ?? []), ...rest] } as typeof last.content;
+        }
+      }
       edit(sectionId, { ...sec.content, blocks: [...others, ...newBlocks] });
       set({ selectedBlockIds: newBlocks.map((b) => b.id), editingBlockId: null });
     },
