@@ -390,9 +390,13 @@ export const useStore = create<Store>((set, get) => {
           if (out.length > 1 && !out[0]!.some(shown)) out[1]!.unshift(...out.shift()!);
           return out;
         };
+
         const top = Math.min(...entries.filter(shown).map((e) => e.level));
-        const byTop = chunkAt((e) => e.level === top); // one block per top-level section
-        const chunks = byTop.length >= 2 ? byTop : chunkAt(() => true); // else one per entry
+        let chunks: TocEntry[][] = [];
+        for (let d = top; d <= maxLevel; d++) {
+          chunks = chunkAt((e) => (Number(e.level) || 1) <= d);
+          if (chunks.length >= 2) break;
+        }
         pieces = chunks.map((c) => ({ ...cfg, entries: c }) as GridBlock["content"]);
       } else if (nodes.length >= 2) {
         pieces = nodes.map((n) => ({ ...doc, content: [n] })); // one block per paragraph

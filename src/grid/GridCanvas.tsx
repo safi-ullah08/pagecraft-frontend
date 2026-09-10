@@ -506,7 +506,8 @@ function BlockBody({ b, editing, caret, onContent }: { b: GridBlock; editing: bo
   if (b.block === "divider") return <hr style={{ margin: "auto 0" }} />;
   if (b.block === "spacer") return null;
   const html = renderTypedBlock(b.block, b.content);
-  return html != null ? <div style={{ height: "100%", overflow: "hidden" }} dangerouslySetInnerHTML={{ __html: html }} /> : null;
+  // remove overflow:hidden here — the wrapper above already clips. 
+  return html != null ? <div style={{ height: "100%" }} dangerouslySetInnerHTML={{ __html: html }} /> : null;
 }
 
 // Per-block Tiptap. Interactive ONLY while editing — otherwise pointer-events:none
