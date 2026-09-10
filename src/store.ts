@@ -8,7 +8,7 @@ import { BLOCKS, serialize, DEFAULT_PAGE_NUMBERS, EMPTY_DESIGN, type PageNumberC
 import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock, type GridSection } from "./grid/types.ts";
 import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
-import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries } from "./grid/toc.ts";
+import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries, type TocEntry } from "./grid/toc.ts";
 import { buildCover, isCoverSection, isBackCoverSection } from "./grid/covers.ts";
 import { insertSectionsAfter, updatePageNumbers, updateDesign, updateTheme, renameDocument } from "./api.ts";
 import { parseTemplateId, structureToLayoutSpec, foldChapters, docPlanToLayout, STRUCTURES, IMPORT_COVER, type Template } from "./grid/templates.ts";
@@ -358,7 +358,8 @@ export const useStore = create<Store>((set, get) => {
       const sec = sections.find((s) => s.id === sectionId);
       if (!sec || !isGridSection(sec.content)) return;
       const block = sec.content.blocks.find((b) => b.id === blockId);
-      if (!block || block.block !== "textFrame") return;
+      if (!block || (block.block !== "textFrame" && block.block !== "tocList")) return;
+      const isToc = block.block === "tocList";
       const doc = block.content as JSONContent;
       const nodes = doc.content ?? [];
       const cols = block.area.colEnd - block.area.colStart;
@@ -367,8 +368,22 @@ export const useStore = create<Store>((set, get) => {
       const padY = sidesY(block.style?.padding) + sidesY(block.style?.margin);
       const maxHpx = blockHeightPx(rows, page) - padY;
 
-      let pieces: JSONContent[];
-      if (nodes.length >= 2) {
+      let pieces: GridBlock["content"][];
+      if (isToc) {
+        // A contents list breaks by ENTRY, not by prose. Prefer one block per top-level
+        // section so a chapter keeps its sub-entries; when the list has a single top
+        // level (the usual one-title TOC), fall back to one block per entry.
+        const cfg = block.content as { entries?: TocEntry[] };
+        const entries = cfg.entries ?? [];
+        const top = Math.min(...entries.map((e) => e.level));
+        const groups: TocEntry[][] = [];
+        for (const e of entries) {
+          if (e.level === top || !groups.length) groups.push([e]);
+          else groups[groups.length - 1]!.push(e);
+        }
+        const chunks = groups.length >= 2 ? groups : entries.map((e) => [e]);
+        pieces = chunks.map((c) => ({ ...cfg, entries: c }) as GridBlock["content"]);
+      } else if (nodes.length >= 2) {
         pieces = nodes.map((n) => ({ ...doc, content: [n] })); // one block per paragraph
       } else {
         // single node: split a paragraph into sentences; else chunk by page-fit
@@ -407,11 +422,18 @@ export const useStore = create<Store>((set, get) => {
         else runs.push({ start: r, len: 1 });
       }
 
+      // Both kinds measure the same way — render the piece exactly as the block renders.
+      const htmlOf = (piece: GridBlock["content"]) => blockHtml({ ...block, content: piece }) ?? "";
+      // ...and rejoin the same way: entries for a contents list, nodes for prose.
+      const fold = (parts: GridBlock["content"][]): GridBlock["content"] => isToc
+        ? { ...(block.content as Record<string, unknown>), entries: parts.flatMap((p) => (p as { entries?: TocEntry[] }).entries ?? []) }
+        : { ...doc, content: parts.flatMap((p) => (p as JSONContent).content ?? []) };
+
       const rowsFor = pieces.map((piece) => 
-        Math.max(1, heightToRows(measureHtmlHeight(serialize(piece), widthPx, theme) + padY, page))
+        Math.max(1, heightToRows(measureHtmlHeight(htmlOf(piece), widthPx, theme) + padY, page))
       );
-      const mk = (piece: JSONContent, rowStart: number, rowEnd: number): GridBlock => ({
-        id: Math.random().toString(36).slice(2, 10), block: "textFrame", style: block.style,
+      const mk = (piece: GridBlock["content"], rowStart: number, rowEnd: number): GridBlock => ({
+        id: Math.random().toString(36).slice(2, 10), block: block.block, style: block.style,
         area: { rowStart, colStart: block.area.colStart, rowEnd, colEnd: block.area.colEnd },
         content: piece,
       });
@@ -437,15 +459,14 @@ export const useStore = create<Store>((set, get) => {
       // across the page or pushed onto another one. It carries the usual overflow bar, so
       // Split can spill it to a new page when the user wants that.
       if (i < pieces.length) {
-        const rest = pieces.slice(i).flatMap((p) => p.content ?? []);
+        const rest = pieces.slice(i);
         while (ri < runs.length && runs[ri]!.len - used <= 0) { ri++; used = 0; } // find any rows still free
         const run = runs[ri];
         if (run) {
-          newBlocks.push(mk({ ...doc, content: rest }, run.start + used, run.start + run.len));
+          newBlocks.push(mk(fold(rest), run.start + used, run.start + run.len));
         } else {
           const last = newBlocks[newBlocks.length - 1]!; // page is full — fold it into the last block
-          const cur = last.content as JSONContent;
-          last.content = { ...cur, content: [...(cur.content ?? []), ...rest] } as typeof last.content;
+          last.content = fold([last.content, ...rest]);
         }
       }
       edit(sectionId, { ...sec.content, blocks: [...others, ...newBlocks] });
