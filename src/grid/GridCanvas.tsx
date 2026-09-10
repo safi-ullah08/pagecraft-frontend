@@ -384,6 +384,11 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ
       onDragStart={(e) => e.preventDefault()} // kill native drag (images etc.) so our pointer drag wins
       style={{
         gridArea: `${rowStart} / ${colStart} / ${rowEnd} / ${colEnd}`, position: "relative",
+        // `1fr` tracks are minmax(auto, 1fr), so an item taller/wider than its share
+        // STRETCHES the track and blows the fixed-height page out. Pinning the
+        // automatic minimum to 0 keeps the track at its share and lets the inner
+        // box clip instead. (Editing still expands on purpose, so leave it alone.)
+        minHeight: editing ? undefined : 0, minWidth: editing ? undefined : 0,
         cursor: editing ? "text" : "grab",
         margin: blockMargin(b.style), // space between blocks/cols (per-side)
         // selected ring is a content-hugging overlay (below); the wrapper only shows
