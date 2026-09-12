@@ -6,7 +6,6 @@ import { themeNames } from "../themes.ts";
 import { PAGE_SIZES, presetOf, type PageSize } from "../pages.ts";
 import { COLS, ROWS, isGridSection } from "./types.ts";
 import { stackOrder, reorderLayer, type LayerMove } from "./ops.ts";
-import { isTocSection } from "./toc.ts";
 import { frontCovers, backCovers, isCoverSection, isBackCoverSection, type CoverTemplate } from "./covers.ts";
 import { Inspector } from "./Inspector.tsx";
 import { Section, Field, Select, Slider, ColorPicker, inputStyle, PALETTE } from "./controls.tsx";
@@ -407,10 +406,8 @@ function SwitchTemplate() {
 // Templates = the page actions we have today; presets/templates land later.
 function TemplatesPanel() {
   const addPage = useStore((s) => s.addPage);
-  const generateToc = useStore((s) => s.generateToc);
   const addCover = useStore((s) => s.addCover);
   const sections = useStore((s) => s.sections);
-  const hasToc = sections.some((s) => isTocSection(s.content));
   const hasCover = sections.some((s) => isCoverSection(s.content));
   const hasBackCover = sections.some((s) => isBackCoverSection(s.content));
   return (
@@ -427,18 +424,7 @@ function TemplatesPanel() {
       <CoverPicker title="Back cover" templates={backCovers()} taken={hasBackCover}
         takenNote="The last page is your back cover. Delete it to pick another design."
         note="Added as the last page. Neither cover is numbered." onPick={addCover} />
-      <Section title="Contents">
-        <button onClick={() => void generateToc()}
-          title={hasToc ? "Rebuild the contents page from the current headings" : "Scan every page's headings and add a contents page as page 1"}
-          style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER_STRONG}`, color: PALETTE.TEXT, padding: "8px 10px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
-          {hasToc ? "⟳ Refresh table of contents" : "+ Generate table of contents"}
-        </button>
-        <div style={{ fontSize: 10, color: PALETTE.MUTED }}>
-          {hasToc
-            ? "Rebuilt in place from every heading — page numbers stay correct."
-            : "Added as page 1, shifting the rest down. Re-run it after editing to refresh."}
-        </div>
-      </Section>
+      {/* Generate / refresh contents lives in the top bar now (App header). */}
       <SwitchTemplate />
     </div>
   );
