@@ -36,3 +36,77 @@ h1, h2, h3 { font-family: var(--font-display); }
 .column[data-span="7"]{flex-grow:7}.column[data-span="8"]{flex-grow:8}
 .column[data-span="9"]{flex-grow:9}.column[data-span="10"]{flex-grow:10}
 .column[data-span="11"]{flex-grow:11}.column[data-span="12"]{flex-grow:12}
+
+
+.app-shell { display: flex; flex-direction: column; height: 100vh; }
+
+/* ---- Header: home + title on the left, document actions on the right ---- */
+.app-header {
+  display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  padding: 8px; border-bottom: 1px solid var(--ui-border);
+}
+.app-header-left { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.app-header-right {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  flex-wrap: wrap; justify-content: flex-end;
+}
+
+/* Header buttons never break their label across lines when the bar wraps. */
+.app-btn {
+  padding: 6px 10px; font-size: 12px; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--ui-border); background: var(--ui-panel);
+  white-space: nowrap; flex-shrink: 0;
+}
+.app-home { display: inline-flex; align-items: center; gap: 4px; text-decoration: none; color: var(--ui-ink); }
+
+/* Document title: reads as plain text until focused, then looks like an input. */
+.app-header .app-title {
+  font-family: var(--ui-serif); font-size: 15px; font-weight: 700; color: var(--ui-ink);
+  background: transparent; border: 1px solid transparent; border-radius: 6px;
+  padding: 4px 8px; width: 220px; min-width: 0; text-overflow: ellipsis;
+}
+.app-header .app-title:focus { border-color: var(--ui-border-strong); background: var(--ui-paper); }
+
+/* ---- View bar: panel toggles at the ends, view tools in between ---- */
+.app-viewbar {
+  display: flex; align-items: center; gap: 4px; padding: 4px 8px;
+  border-bottom: 1px solid var(--ui-border); background: var(--ui-bg);
+}
+.app-spacer { flex: 1; }
+
+.app-tool {
+  font-size: 12px; padding: 3px 8px; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--ui-border-strong); background: var(--ui-panel);
+}
+/* on/off toggles (Pages, Grid, Panel) state comes from aria-pressed */
+.app-tool[aria-pressed="false"] { color: var(--ui-muted); }
+.app-tool[aria-pressed="true"] { border-color: var(--ui-accent); background: var(--ui-accent-soft); color: var(--ui-accent); }
+
+.app-history { font-size: 13px; color: var(--ui-ink); }
+.app-history:disabled { cursor: default; color: var(--ui-border-strong); }
+.app-redo { margin-right: 4px; }
+.app-controls-toggle { margin-left: 4px; }
+
+.app-zoom {
+  font-size: 12px; padding: 3px 4px; border-radius: 4px;
+  border: 1px solid var(--ui-border-strong); background: var(--ui-panel);
+}
+
+/* ---- Panels row: pages | canvas | controls, sharing one top edge ---- */
+.app-panels { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.app-status { padding: 16px; }
+.app-status.is-muted { color: var(--ui-muted); }
+
+.app-canvas {
+  flex: 1; min-width: 0; min-height: 0; overflow-y: auto;
+  padding: 32px; background: var(--ui-bg-deep);
+}
+
+/* Flow sections render as page sheets. The page size is document data, so it
+   arrives as --sheet-w / --sheet-h / --sheet-margin set on .app-canvas. */
+.page-sheet {
+  width: var(--sheet-w); box-sizing: border-box; margin: 0 auto 24px;
+  box-shadow: 0 2px 14px rgba(74, 52, 24, .25); overflow: hidden; background: #fff;
+}
+.page-sheet > .editor-surface { min-height: var(--sheet-h); box-sizing: border-box; padding: var(--sheet-margin); }
+

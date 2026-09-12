@@ -37,12 +37,8 @@ function TitleField() {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
         if (e.key === "Escape") { setDraft(null); (e.target as HTMLInputElement).blur(); }
       }}
-      title="Document title — click to rename"
-      style={{ fontFamily: "var(--ui-serif)", fontSize: 15, fontWeight: 700, color: "var(--ui-ink)",
-        background: "transparent", border: "1px solid transparent", borderRadius: 6, padding: "4px 8px",
-        width: 220, minWidth: 0, textOverflow: "ellipsis" }}
-      onFocus={(e) => { e.target.style.borderColor = "var(--ui-border-strong)"; e.target.style.background = "var(--ui-paper)"; e.target.select(); }}
-      onBlurCapture={(e) => { e.target.style.borderColor = "transparent"; e.target.style.background = "transparent"; }} />
+      title="Document title — click to rename" className="app-title"
+      onFocus={(e) => e.target.select()} />
   );
 }
 
@@ -58,10 +54,6 @@ function usePanelOpen(key: string): [boolean, () => void] {
   });
   return [open, toggle];
 }
-
-const barBtn: React.CSSProperties = { padding: "6px 10px", fontSize: 12, borderRadius: 4, cursor: "pointer", border: "1px solid var(--ui-border)", background: "var(--ui-panel)", whiteSpace: "nowrap", flexShrink: 0 };
-const toggleBtn = (on: boolean): React.CSSProperties => ({ fontSize: 12, padding: "3px 8px", borderRadius: 4, cursor: "pointer",
-  border: `1px solid ${on ? "var(--ui-accent)" : "var(--ui-border-strong)"}`, background: on ? "var(--ui-accent-soft)" : "var(--ui-panel)", color: on ? "var(--ui-accent)" : "var(--ui-muted)" });
 
 // Shell = full-width header (home + title | document actions), a view bar, then the
 // panels row: pages (ChapterNav) | editor canvas | block controls. Both side panels
@@ -161,11 +153,9 @@ export function App() {
     }
   }, [theme, design]);
 
-  const dim = page;
-  const sheetCss = `
-.page-sheet { width: ${dim.w}mm; box-sizing: border-box; margin: 0 auto 24px; box-shadow: 0 2px 14px rgba(74,52,24,.25); overflow: hidden; background: #fff; }
-.page-sheet > .editor-surface { min-height: ${dim.h}mm; box-sizing: border-box; padding: ${PAGE_MARGIN_MM}mm; }
-`;
+  // The page size is document data, not styling: hand it to App.css's .page-sheet
+  // rules as custom properties instead of generating CSS text.
+  const sheetVars = { "--sheet-w": `${page.w}mm`, "--sheet-h": `${page.h}mm`, "--sheet-margin": `${PAGE_MARGIN_MM}mm` } as React.CSSProperties;
 
   const active = sections.find((s) => s.id === activeId) ?? null;
   const toggleLayout = () => {
@@ -176,7 +166,7 @@ export function App() {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
+    <div className="app-shell">
       {wizardOpen && <DesignWizard onClose={() => setWizardOpen(false)} />}
       {hubOpen && documentId && (
         <ImportHub
@@ -186,19 +176,18 @@ export function App() {
         />
       )}
       {/* Header spans the full width: home + title on the left, document actions right. */}
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, padding: 8, borderBottom: "1px solid var(--ui-border)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 4, minWidth: 0 }}>
+      <header className="app-header">
+        <div className="app-header-left">
           {/* router-free app: the dashboard is this path without ?doc (full reload, like the rest) */}
-          <a href={location.pathname} title="Home — all documents"
-            style={{ ...barBtn, textDecoration: "none", color: "var(--ui-ink)", display: "inline-flex", alignItems: "center", gap: 4 }}>⌂ Home</a>
+          <a href={location.pathname} title="Home — all documents" className="app-btn app-home">⌂ Home</a>
           <TitleField />
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", minWidth: 0 }}>
+        <div className="app-header-right">
           <Toolbar />
           <ImportBar />
-          <button onClick={() => setHubOpen(true)} title="Add chapters from WordPress, Notion or Google Docs" style={barBtn}>⇩ Add chapters</button>
-          <button onClick={() => setWizardOpen(true)} title="Open the design wizard" style={barBtn}>✦ Design</button>
-          <button onClick={() => void generateToc()} style={barBtn}
+          <button onClick={() => setHubOpen(true)} title="Add chapters from WordPress, Notion or Google Docs" className="app-btn">⇩ Add chapters</button>
+          <button onClick={() => setWizardOpen(true)} title="Open the design wizard" className="app-btn">✦ Design</button>
+          <button onClick={() => void generateToc()} className="app-btn"
             title={hasToc ? "Rebuild the contents page from every heading — page numbers stay correct"
               : "Scan every page's headings and add a contents page as page 1"}>
             {hasToc ? "⟳ Refresh contents" : "+ Contents"}
@@ -210,46 +199,40 @@ export function App() {
       </header>
 
       {/* View bar, also full width, so both side panels start right beneath it. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderBottom: "1px solid var(--ui-border)", background: "var(--ui-bg)" }}>
+      <div className="app-viewbar">
         <button onClick={togglePages} aria-pressed={pagesOpen} title={pagesOpen ? "Hide the pages panel" : "Show the pages panel"}
-          style={toggleBtn(pagesOpen)}>{pagesOpen ? "⇤" : "⇥"} Pages</button>
-        <div style={{ flex: 1 }} />
+          className="app-tool">{pagesOpen ? "⇤" : "⇥"} Pages</button>
+        <div className="app-spacer" />
         <>
-            <button onClick={() => undo()} disabled={!canUndo} title="Undo (⌘/Ctrl+Z)"
-              style={{ fontSize: 13, padding: "3px 8px", borderRadius: 4, border: "1px solid var(--ui-border-strong)", background: "var(--ui-panel)",
-                cursor: canUndo ? "pointer" : "default", color: canUndo ? "var(--ui-ink)" : "var(--ui-border-strong)" }}>↶</button>
-            <button onClick={() => redo()} disabled={!canRedo} title="Redo (⌘/Ctrl+Shift+Z)"
-              style={{ fontSize: 13, padding: "3px 8px", borderRadius: 4, border: "1px solid var(--ui-border-strong)", background: "var(--ui-panel)",
-                cursor: canRedo ? "pointer" : "default", color: canRedo ? "var(--ui-ink)" : "var(--ui-border-strong)", marginRight: 4 }}>↷</button>
-            <button onClick={toggleGrid} title="toggle grid overlay" style={toggleBtn(showGrid)}>▦ Grid</button>
-            <select value={zoom} onChange={(e) => setZoom(Number(e.target.value))} title="zoom"
-              style={{ fontSize: 12, padding: "3px 4px", borderRadius: 4, border: "1px solid var(--ui-border-strong)", background: "var(--ui-panel)" }}>
+            <button onClick={() => undo()} disabled={!canUndo} title="Undo (⌘/Ctrl+Z)" className="app-tool app-history">↶</button>
+            <button onClick={() => redo()} disabled={!canRedo} title="Redo (⌘/Ctrl+Shift+Z)" className="app-tool app-history app-redo">↷</button>
+            <button onClick={toggleGrid} aria-pressed={showGrid} title="toggle grid overlay" className="app-tool">▦ Grid</button>
+            <select value={zoom} onChange={(e) => setZoom(Number(e.target.value))} title="zoom" className="app-zoom">
               {[0.5, 0.75, 1, 1.25, 1.5].map((z) => <option key={z} value={z}>{Math.round(z * 100)}%</option>)}
             </select>
           </>
         {active && (
-          <button onClick={toggleLayout} title="convert the active section's layout"
-            style={{ fontSize: 12, padding: "3px 8px", border: "1px solid var(--ui-border-strong)", borderRadius: 4, background: "var(--ui-panel)", cursor: "pointer" }}>
+          <button onClick={toggleLayout} title="convert the active section's layout" className="app-tool">
             {isGridSection(active.content) ? "▦ Grid → ¶ Flow" : "¶ Flow → ▦ Grid"}
           </button>
         )}
         <button onClick={toggleControls} aria-pressed={controlsOpen} title={controlsOpen ? "Hide the controls panel" : "Show the controls panel"}
-          style={{ ...toggleBtn(controlsOpen), marginLeft: 4 }}>Panel {controlsOpen ? "⇥" : "⇤"}</button>
+          className="app-tool app-controls-toggle">Panel {controlsOpen ? "⇥" : "⇤"}</button>
       </div>
 
       {/* Panels row: pages | canvas | controls — both side panels share this top edge. */}
-      <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
+      <div className="app-panels">
         {pagesOpen && <ChapterNav />}
         {loading ? (
-          <div style={{ padding: 16, color: "var(--ui-muted)" }}>Preparing editor…</div>
+          <div className="app-status is-muted">Preparing editor…</div>
         ) : sections.length === 0 ? (
-          <div style={{ padding: 16 }}>Loading…</div>
+          <div className="app-status">Loading…</div>
         ) : (
           // Editor: sections stacked (flow -> page sheet, grid -> canvas) with the
           // block Inspector docked right when the active section is a grid.
           <>
-            <div data-scroll style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: 32, background: "var(--ui-bg-deep)" }}>
-              <style>{surfaceCss + sheetCss}</style>
+            <div data-scroll className="app-canvas" style={sheetVars}>
+              <style>{surfaceCss}</style>
               <div style={{ zoom }}>
               {sections.map((s, i) =>
                 isGridSection(s.content) ? (
