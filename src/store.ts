@@ -373,21 +373,32 @@ export const useStore = create<Store>((set, get) => {
         // A contents list breaks by ENTRY, not by prose. Prefer one block per top-level
         // section so a chapter keeps its sub-entries; when the list has a single top
         // level (the usual one-title TOC), fall back to one block per entry.
-        const cfg = block.content as { entries?: TocEntry[]; maxLevel?: unknown };
-        const entries = cfg.entries ?? [];
+
+        // const cfg = block.content as { entries?: TocEntry[]; maxLevel?: unknown };
+        const contents = block.content as { entries?: TocEntry[]; maxLevel?: number };
+        const entries = contents.entries ?? [];
         // The renderer hides entries deeper than maxLevel, so only a VISIBLE entry may
         // start a new block — otherwise a deep entry gets a box of its own and renders
         // as the "No headings yet" placeholder. Hidden entries ride with the piece above.
-        const maxLevel = Math.max(1, Math.min(6, Number(cfg.maxLevel) || 3));
+        const maxLevel = Math.max(1, Math.min(6, Number(contents.maxLevel) || 3));
         const shown = (e: TocEntry) => (Number(e.level) || 1) <= maxLevel;
         const chunkAt = (boundary: (e: TocEntry) => boolean) => {
           const out: TocEntry[][] = [];
+          console.log("entries:", entries)
           for (const e of entries) {
-            if (!out.length || (shown(e) && boundary(e))) out.push([e]);
-            else out[out.length - 1]!.push(e);
+            if (!out.length || boundary(e)) {
+              console.log("length: ", out.length, "pushing: ", e, "shown: ", shown(e), "boundary: ", boundary(e))
+              out.push([e]);
+            }
+            else {
+              console.log("length: ", out.length, out[out.length-1], "pushing: ", e, "shown: ", shown(e), "boundary: ", boundary(e))
+              out[out.length - 1]!.push(e)
+            }
           }
           // Only the first chunk can be all-hidden (it is forced open); fold it forward.
-          if (out.length > 1 && !out[0]!.some(shown)) out[1]!.unshift(...out.shift()!);
+          if (out.length > 1 && !out[0]!.some(shown)){
+            out[1]!.unshift(...out.shift()!);
+          } 
           return out;
         };
 
@@ -397,7 +408,7 @@ export const useStore = create<Store>((set, get) => {
           chunks = chunkAt((e) => (Number(e.level) || 1) <= d);
           if (chunks.length >= 2) break;
         }
-        pieces = chunks.map((c) => ({ ...cfg, entries: c }) as GridBlock["content"]);
+        pieces = chunks.map((c) => ({ ...contents, entries: c }) as GridBlock["content"]);
       } else if (nodes.length >= 2) {
         pieces = nodes.map((n) => ({ ...doc, content: [n] })); // one block per paragraph
       } else {
