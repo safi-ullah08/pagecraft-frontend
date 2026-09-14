@@ -122,6 +122,31 @@ function OauthConnect({ source, name }: { source: ConnectionSource; name: string
 
 // Google tab: no server-side listing — the Google Picker grants drive.file
 // access to exactly what the user picks, and hands back the ids.
+// Single-item, new-doc imports choose semantics: the picked document IS the
+// whole book (its headings become chapters) or ONE chapter of it. Multi-select
+// and appends are always chapter-wise, so the row only shows when it matters.
+function ImportAsRow({ count, appendTo, value, onChange }: {
+  count: number;
+  appendTo?: unknown;
+  value: "book" | "chapter";
+  onChange: (v: "book" | "chapter") => void;
+}) {
+  if (count !== 1 || appendTo) return null;
+  const opt = (v: "book" | "chapter", title: string, hint: string) => (
+    <label style={{ display: "flex", alignItems: "baseline", gap: 6, cursor: "pointer", fontSize: 12, color: "var(--ui-ink)" }}>
+      <input type="radio" checked={value === v} onChange={() => onChange(v)} />
+      <span><b>{title}</b> <span style={{ color: "var(--ui-muted)" }}>{hint}</span></span>
+    </label>
+  );
+  return (
+    <div style={{ display: "flex", gap: 18, alignItems: "center", margin: "10px 2px 0", flexWrap: "wrap" }}>
+      <span style={{ fontSize: 12, color: "var(--ui-muted)" }}>Import as:</span>
+      {opt("book", "Whole book", "— its headings become the chapters")}
+      {opt("chapter", "One chapter", "— headings stay inside it")}
+    </div>
+  );
+}
+
 function GooglePickerPane({ label, appendTo, onImported, onDisconnect }: {
   label: string | null;
   appendTo?: { documentId: string; afterSectionId?: string | null };
@@ -131,6 +156,7 @@ function GooglePickerPane({ label, appendTo, onImported, onDisconnect }: {
   const [picked, setPicked] = useState<Array<{ id: string; name: string }>>([]);
   const [busy, setBusy] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [importAs, setImportAs] = useState<"book" | "chapter">("book");
   const [err, setErr] = useState<string | null>(null);
 
   async function openPicker() {
@@ -178,7 +204,8 @@ function GooglePickerPane({ label, appendTo, onImported, onDisconnect }: {
     setErr(null);
     try {
       const { documentId, appended } = await importItems("googledocs", picked.map((d) => ({ id: d.id })),
-        appendTo ? { documentId: appendTo.documentId, afterSectionId: appendTo.afterSectionId } : undefined);
+        appendTo ? { documentId: appendTo.documentId, afterSectionId: appendTo.afterSectionId } : undefined,
+        picked.length === 1 && !appendTo ? importAs : undefined);
       onImported(documentId, appended);
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
@@ -212,12 +239,15 @@ function GooglePickerPane({ label, appendTo, onImported, onDisconnect }: {
           ))
         )}
       </div>
+      <ImportAsRow count={picked.length} appendTo={appendTo} value={importAs} onChange={setImportAs} />
       <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 14 }}>
         {importing && <span style={{ fontSize: 12, color: "var(--ui-muted)" }}>Fetching content and images — large docs can take a minute…</span>}
         <button onClick={run} disabled={importing || picked.length === 0}
           style={{ padding: "10px 18px", fontSize: 14, fontWeight: 700, borderRadius: 8, border: "none", cursor: picked.length ? "pointer" : "default",
             color: "var(--ui-primary-ink)", background: picked.length ? "var(--ui-primary)" : "var(--ui-border)" }}>
-          {importing ? "Importing…" : `Add ${picked.length || ""} chapter${picked.length === 1 ? "" : "s"}`}
+          {importing ? "Importing…"
+            : picked.length === 1 && !appendTo ? (importAs === "book" ? "Import as book" : "Add 1 chapter")
+            : `Add ${picked.length || ""} chapter${picked.length === 1 ? "" : "s"}`}
         </button>
       </div>
     </div>
@@ -297,13 +327,17 @@ function Picker({ source, label, appendTo, onImported, onDisconnect }: {
     setSelected((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   }
 
+  const [importAs, setImportAs] = useState<"book" | "chapter">("book");
+
   async function run() {
     if (importing || selected.size === 0) return;
     setImporting(true);
     setErr(null);
     try {
       const picked = items.filter((i) => selected.has(i.id)).map((i) => ({ id: i.id })); // preserves list order
-      const { documentId, appended } = await importItems(source, picked, appendTo ? { documentId: appendTo.documentId, afterSectionId: appendTo.afterSectionId } : undefined);
+      const { documentId, appended } = await importItems(source, picked,
+        appendTo ? { documentId: appendTo.documentId, afterSectionId: appendTo.afterSectionId } : undefined,
+        picked.length === 1 && !appendTo ? importAs : undefined);
       onImported(documentId, appended);
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
@@ -358,12 +392,15 @@ function Picker({ source, label, appendTo, onImported, onDisconnect }: {
         )}
       </div>
 
+      <ImportAsRow count={selected.size} appendTo={appendTo} value={importAs} onChange={setImportAs} />
       <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, marginTop: 14 }}>
         {importing && <span style={{ fontSize: 12, color: "var(--ui-muted)" }}>Fetching content and images — large pages can take a minute…</span>}
         <button onClick={run} disabled={importing || selected.size === 0}
           style={{ padding: "10px 18px", fontSize: 14, fontWeight: 700, borderRadius: 8, border: "none", cursor: selected.size ? "pointer" : "default",
             color: "var(--ui-primary-ink)", background: selected.size ? "var(--ui-primary)" : "var(--ui-border)" }}>
-          {importing ? "Importing…" : `Add ${selected.size || ""} chapter${selected.size === 1 ? "" : "s"}`}
+          {importing ? "Importing…"
+            : selected.size === 1 && !appendTo ? (importAs === "book" ? "Import as book" : "Add 1 chapter")
+            : `Add ${selected.size || ""} chapter${selected.size === 1 ? "" : "s"}`}
         </button>
       </div>
     </div>
