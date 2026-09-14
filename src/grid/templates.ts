@@ -1,16 +1,27 @@
 import type { JSONContent } from "@tiptap/react";
-import type { PageNumberConfig, LayoutSpec, LayoutPage, LayoutBlock, LayoutPlan, SlotKind, PageRole } from "@pagecraft/model";
-import { ROWS, COLS, type BlockStyleTokens, type GridBlock, type GridSection, type PageBackground } from "./types.ts";
+import type { LayoutSpec, LayoutPage, LayoutBlock, LayoutPlan } from "@pagecraft/model";
+import { ROWS, COLS, type BlockStyleTokens, type GridBlock, type GridSection } from "./types.ts";
 import { buildCover } from "./covers.ts";
 import { buildTocSection } from "./toc.ts";
 import { assetsToDisplay, assetUrl } from "../assets.ts";
 import type { SourceMeta, StoredDocPlan } from "../api.ts";
+import {
+  doc, heading, para, emptyP, BG, INK, ACCENT, ON_ACCENT, DISPLAY, BODY, UPPER,
+  MUTED, SURFACE, BORDER, pq, callout, aside, KICKER, TITLE, H2, BODY_S, DROPCAP,
+  kicker, img, panel, ol, rule, stat, HAIR_ON_ACCENT, HAIR_ACCENT,
+  type BlockSpec, type PageSpec, type DocType, type StructKey, type StructureSpec,
+} from "./spec.ts";
+import { CANVA_STRUCTURES } from "./canvaStructures.ts";
+
+export type { BlockSpec, PageSpec, DocType, StructKey, StructureSpec } from "./spec.ts";
 
 // Document STRUCTURES — "what shows up where". A structure is DATA: an ordered list
 // of page specs. `interpret()` turns it into GridSections the store inserts, exactly
 // like covers/TOC. Blocks reference the theme's --pc-* tokens (via the constants
-// below), so ONE structure renders under any theme — that's how 3 structures × 5
-// themes = 15 templates without per-template CSS (see TEMPLATES-PLAN.md, v2 Step 1).
+// in spec.ts), so ONE structure renders under any theme — that's how structures ×
+// themes = the catalog without per-template CSS (see TEMPLATES-PLAN.md, v2 Step 1).
+// The types + authoring helpers live in spec.ts; the Canva matched designs live in
+// canvaStructures.ts (each locked to its own skin, outside the cross-product).
 //
 // Kept as data (not builder functions) so the future template builder can edit a
 // structure without running code. Copy of covers.ts's block idiom on purpose —
@@ -18,40 +29,6 @@ import type { SourceMeta, StoredDocPlan } from "../api.ts";
 // ponytail: placeholder copy. Merge fields / real starter text are the deferred half.
 
 const rid = () => Math.random().toString(36).slice(2, 10);
-const doc = (nodes: JSONContent[]): JSONContent => ({ type: "doc", content: nodes });
-const heading = (text: string, level = 1): JSONContent =>
-  ({ type: "heading", attrs: { level }, content: [{ type: "text", text }] });
-const para = (text: string): JSONContent =>
-  ({ type: "paragraph", content: [{ type: "text", text }] });
-
-const BG = "var(--pc-bg)", INK = "var(--pc-ink)", ACCENT = "var(--pc-accent)";
-const ON_ACCENT = "var(--pc-on-accent)", DISPLAY = "var(--pc-display)", BODY = "var(--pc-body)";
-const UPPER = "text-transform: uppercase";
-
-// A placed block: [rowStart, colStart, rowEnd, colEnd] on the 12×12 grid.
-// `image: true` = an empty image slot (the editor shows a click-to-fill placeholder).
-// `slot` = the layout engine's binding: `nodes` stays the PLACEHOLDER (what
-// createFromTemplate and the gallery thumbnails render); the slot is what the
-// engine fills with a real document's content/metadata when a template is
-// applied to an import. `props` merges into a slot block's typed content.
-// `furniture` = designed micro-copy that SHIPS on apply (a contents title, a
-// worksheet label) — everything else literal-with-text is preview-only.
-type BlockSpec = { at: [number, number, number, number]; nodes?: JSONContent[]; style?: BlockStyleTokens; z?: number; image?: true; slot?: SlotKind; fallback?: "hide" | "keep" | "empty"; furniture?: true; props?: Record<string, unknown> };
-// `role` groups pages for the engine: front matter (default), the per-chapter
-// opener, cycling flow pages, back matter. interpret() ignores roles — the
-// placeholder template renders every page once, exactly as authored.
-type PageSpec =
-  | { kind: "blocks"; role?: PageRole; background?: PageBackground; cover?: true; blocks: BlockSpec[] } // cover:true = hand-crafted cover, excluded from numbering/TOC
-  | { kind: "cover"; cover: string }   // reuse a covers.ts front/back design
-  | { kind: "toc" };                    // a "Contents" placeholder; user regenerates
-export type DocType = "leadMagnet" | "ebook" | "report";
-// Structures beyond the original three (one per docType) get their own key but
-// still belong to a docType for gallery grouping + import covers.
-export type StructKey = DocType | "guidebook" | "wellness";
-export type StructureSpec = {
-  key: StructKey; docType: DocType; name: string; pages: PageSpec[];
-  pageNumbers?: PageNumberConfig; // set on the new doc when the structure wants a specific look (e.g. wellness's corner tab)
-};
 
 // ---- interpreter --------------------------------------------------------
 export function interpret(spec: StructureSpec): GridSection[] {
@@ -78,49 +55,6 @@ function toBlock(b: BlockSpec, i: number): GridBlock {
     content: b.image ? { src: "", alt: "" } : doc(b.nodes ?? [emptyP]),
   };
 }
-
-// Derived tones (temp/src had explicit surface/muted/border tokens; we only ship
-// bg/ink/accent, so mix them at render — Chromium 111+ and every modern browser
-// support color-mix, which covers the editor and Gotenberg's Chromium).
-// ponytail: color-mix instead of adding 3 tokens to all 5 skins + the coverage test.
-const MUTED = "color-mix(in srgb, var(--pc-ink) 42%, var(--pc-bg))";
-const SURFACE = "color-mix(in srgb, var(--pc-accent) 8%, var(--pc-bg))";
-const BORDER = "color-mix(in srgb, var(--pc-ink) 16%, var(--pc-bg))";
-const emptyP: JSONContent = { type: "paragraph" };
-
-// Skin-styled semantic nodes — the skin restyles .pull-quote/.callout/.sidebar-note
-// per theme, on BOTH the canvas and the PDF, so these re-skin for free (unlike the
-// .pc-* typed blocks, which the canvas doesn't load).
-const pq = (text: string): JSONContent => ({ type: "pullQuote", content: [{ type: "text", text }] });
-const callout = (...lines: string[]): JSONContent => ({ type: "callout", content: lines.map(para) });
-const aside = (text: string): JSONContent => ({ type: "sidebarNote", content: [para(text)] });
-
-// Shared style recipes (temp/src values: kicker 0.08–0.18em uppercase accent; drop
-// cap ~3 line-heights; stat = oversized accent numeral + uppercase muted label).
-const KICKER: BlockStyleTokens = { fontSize: 12, letterSpacing: 0.16, fontWeight: 600, textColor: ACCENT, fontFamily: BODY, customCss: UPPER };
-const TITLE: BlockStyleTokens = { fontSize: 40, fontWeight: 700, textColor: INK, fontFamily: DISPLAY };
-const H2: BlockStyleTokens = { fontSize: 24, fontWeight: 700, textColor: INK, fontFamily: DISPLAY };
-const BODY_S: BlockStyleTokens = { fontSize: 15, textColor: INK, fontFamily: BODY, customCss: "line-height:1.7" };
-const DROPCAP: BlockStyleTokens = { fontSize: 15, textColor: INK, fontFamily: BODY, customCss:
-  "p{line-height:1.72;margin-top:.6em}p:first-child{margin-top:0}" +
-  "p:first-child::first-letter{float:left;font-family:var(--pc-display);font-size:3.3em;line-height:.8;font-weight:700;color:var(--pc-accent);padding:.02em .12em 0 0}" };
-
-const kicker = (text: string, at: [number, number, number, number]): BlockSpec => ({ at, nodes: [para(text)], style: KICKER });
-// An empty image slot the user fills with their own photo.
-const img = (at: [number, number, number, number], z?: number): BlockSpec => ({ at, image: true, ...(z !== undefined ? { z } : {}) });
-// A coloured background panel (z:0 so content stacks above it).
-const panel = (at: [number, number, number, number], color: string): BlockSpec => ({ at, nodes: [emptyP], style: { backgroundColor: color }, z: 0 });
-// A numbered list (the guidebook's 1/2/3 page).
-const ol = (...items: string[]): JSONContent => ({ type: "orderedList", content: items.map((t) => ({ type: "listItem", content: [para(t)] })) });
-// A short centred accent rule (temp's 32×1px bar under chapter titles).
-const rule = (at: [number, number, number, number]): BlockSpec => ({ at, nodes: [emptyP], style: { customCss: "width:44px;height:2px;background:var(--pc-accent)" } });
-// Oversized accent numeral + uppercase muted label, stacked and centred.
-const stat = (value: string, label: string, at: [number, number, number, number]): BlockSpec => ({
-  at, nodes: [para(value), para(label)],
-  style: { textAlign: "center", customCss:
-    "p:first-child{font-family:var(--pc-display);font-weight:800;font-size:44px;line-height:1;color:var(--pc-accent)}" +
-    `p:last-child{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:${MUTED};margin-top:6px}` },
-});
 
 // ---- the 3 structures ---------------------------------------------------
 const leadMagnet: StructureSpec = {
@@ -239,13 +173,10 @@ const report: StructureSpec = {
 // ---- Guidebook — page-for-page from the "Entrepreneur" ebook design (Canva
 // DAHQxublRs4 pp. 2–13): accent cover with inset light panel, welcome/colophon,
 // contents, banner chapter opener, two-column body, numbered-list panel,
-// thank-you and back cover. Pairs 1:1 with the indigo-press skin; renders under
-// any theme via the --pc-* tokens. Placeholder copy — the user types over it.
-const HAIR_ON_ACCENT: BlockStyleTokens = { customCss: "border-top:1px solid var(--pc-on-accent)" };
-const HAIR_ACCENT: BlockStyleTokens = { customCss: "border-top:1px solid var(--pc-accent)" };
-
+// thank-you and back cover. Locked to its source skin (indigo-press) as one of
+// the isolated Canva templates. Placeholder copy — the user types over it.
 const guidebook: StructureSpec = {
-  key: "guidebook", docType: "ebook", name: "Guidebook",
+  key: "guidebook", docType: "ebook", name: "Entrepreneur guidebook", lockedTheme: "indigo-press",
   pages: [
     // 1 — cover: full-bleed accent, inset panel, serif title, author strip.
     // Meta slots (fallback keep): an applied template binds the imported doc's
@@ -341,12 +272,12 @@ const guidebook: StructureSpec = {
 // DAHQxublRs4 pp. 14–23): photo cover under a huge display title, contents,
 // highlight-block chapter openers with a corner-tab page number, two-column
 // body with photo slots, quadrant framework, glossary, photo back cover.
-// Pairs 1:1 with the fresh-lime skin; renders under any theme via tokens.
+// Locked to its source skin (fresh-lime) as one of the isolated Canva templates.
 const HIGHLIGHT = "color-mix(in srgb, var(--pc-accent) 30%, var(--pc-bg))";
 const QUAD_LABEL: BlockStyleTokens = { fontSize: 11, fontWeight: 700, textAlign: "center", textColor: INK, fontFamily: BODY, customCss: `${UPPER};letter-spacing:.14em;border:1px solid ${BORDER};padding-top:10px` };
 
 const wellness: StructureSpec = {
-  key: "wellness", docType: "ebook", name: "Wellness",
+  key: "wellness", docType: "ebook", name: "Wellness ebook", lockedTheme: "fresh-lime",
   // The source pages carry their number in an accent corner tab, top-right.
   pageNumbers: { enabled: true, position: "top-right", format: "0{n}", startAt: 1, fontSize: 11,
     css: "background:var(--pc-accent);color:var(--pc-on-accent);padding:5px 10px;font-weight:800;letter-spacing:.08em" },
@@ -434,24 +365,34 @@ const wellness: StructureSpec = {
   ],
 };
 
-export const STRUCTURES: Record<StructKey, StructureSpec> = { leadMagnet, ebook, guidebook, wellness, report };
+export const STRUCTURES: Record<StructKey, StructureSpec> = { leadMagnet, ebook, report, guidebook, wellness, ...CANVA_STRUCTURES };
 
 // ---- catalog (Step 2) ---------------------------------------------------
-// A user-facing template = one structure bound to one theme. The 15 are the
-// cross-product themes × STRUCTURES — no per-template file. `themes` is passed in
-// (the browser's themeNames() uses import.meta.glob, which can't run under tests),
-// so this stays pure and node-testable.
-const STRUCT_ORDER: StructKey[] = ["leadMagnet", "ebook", "guidebook", "wellness", "report"];
+// A user-facing template = one structure bound to one theme. Two catalog kinds:
+//  - OPEN structures cross-product with every non-Canva theme (no per-template file);
+//  - LOCKED structures (the Canva matched designs) ship as exactly ONE card each,
+//    bound to their lockedTheme, and their canva-* skins never enter the
+//    cross-product. `themes` is passed in (the browser's themeNames() uses
+//    import.meta.glob, which can't run under tests), so this stays pure.
+const STRUCT_ORDER: StructKey[] = ["leadMagnet", "ebook", "report",
+  "guidebook", "wellness", "mediaKit", "emailAutomation", "remoteReport", "mindful", "freelancer"];
 export const DOC_LABELS: Record<DocType, string> = { leadMagnet: "Lead magnets", ebook: "Ebooks", report: "Reports" };
+export const CANVA_LABEL = "Canva templates";
+export const isLockedTemplate = (t: Template): boolean => !!STRUCTURES[t.structKey].lockedTheme;
 
 export type Template = { id: string; name: string; docType: DocType; theme: string; structKey: StructKey };
 
 export function listTemplates(themes: string[]): Template[] {
   const out: Template[] = [];
-  for (const theme of themes) {
+  for (const theme of themes.filter((t) => !t.startsWith("canva-"))) {
     for (const key of STRUCT_ORDER) {
+      if (STRUCTURES[key].lockedTheme) continue;
       out.push({ id: `${theme}:${key}`, name: STRUCTURES[key].name, docType: STRUCTURES[key].docType, theme, structKey: key });
     }
+  }
+  for (const key of STRUCT_ORDER) {
+    const theme = STRUCTURES[key].lockedTheme;
+    if (theme) out.push({ id: `${theme}:${key}`, name: STRUCTURES[key].name, docType: STRUCTURES[key].docType, theme, structKey: key });
   }
   return out;
 }
