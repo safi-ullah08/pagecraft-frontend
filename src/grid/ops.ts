@@ -9,6 +9,15 @@ import { stackOrder } from "@pagecraft/model";
 
 const id = () => Math.random().toString(36).slice(2, 10);
 
+// Hug type for  content (textFrame, tocList) to be set to min 1 row
+const HUG_CONTENT = new Set<BlockType>(["textFrame", "tocList"]);
+
+// The smallest area a block may be clamped to. Use this, never BLOCKS[type].min directly.
+export function minArea(block: BlockType): { cols: number; rows: number } {
+  const min = BLOCKS[block].min;
+  return HUG_CONTENT.has(block) ? { cols: min.cols, rows: 1 } : min;
+}
+
 // Keep an area inside the grid (1..COLS+1 / 1..ROWS+1) while preserving its size.
 export function clampArea(a: GridArea, min = { cols: 1, rows: 1 }): GridArea {
   let w = Math.max(min.cols, a.colEnd - a.colStart);
@@ -22,7 +31,7 @@ export function clampArea(a: GridArea, min = { cols: 1, rows: 1 }): GridArea {
 
 export function addBlock(section: GridSection, block: BlockType, at?: GridArea): { section: GridSection; id: string } {
   const bid = id();
-  const area = clampArea(at ?? BLOCKS[block].defaultArea, BLOCKS[block].min);
+  const area = clampArea(at ?? BLOCKS[block].defaultArea, minArea(block));
   const b: GridBlock = { id: bid, area, block, content: structuredClone(BLOCKS[block].defaultContent) as GridBlock["content"] };
   return { section: { ...section, blocks: [...section.blocks, b] }, id: bid };
 }
@@ -32,13 +41,13 @@ function patch(section: GridSection, blockId: string, fn: (b: GridBlock) => Grid
 }
 
 export function moveBlock(section: GridSection, blockId: string, area: GridArea): GridSection {
-  return patch(section, blockId, (b) => ({ ...b, area: clampArea(area, BLOCKS[b.block].min) }));
+  return patch(section, blockId, (b) => ({ ...b, area: clampArea(area, minArea(b.block)) }));
 }
 
 // Reclassify a block (e.g. heading → textFrame so Split/Break/fit apply). Content is
 // kept as-is; the area is re-clamped to the new type's minimum.
 export function setBlockType(section: GridSection, blockId: string, block: BlockType): GridSection {
-  return patch(section, blockId, (b) => ({ ...b, block, area: clampArea(b.area, BLOCKS[block].min) }));
+  return patch(section, blockId, (b) => ({ ...b, block, area: clampArea(b.area, minArea(block)) }));
 }
 
 export function resizeBlock(section: GridSection, blockId: string, area: GridArea): GridSection {
@@ -51,7 +60,7 @@ export function fitBlockRows(section: GridSection, blockId: string, rows: number
   return patch(section, blockId, (b) => clampBlockRows(b, rows));
 }
 function clampBlockRows(b: GridBlock, rows: number): GridBlock {
-  return { ...b, area: clampArea({ ...b.area, rowEnd: b.area.rowStart + rows }, BLOCKS[b.block].min) };
+  return { ...b, area: clampArea({ ...b.area, rowEnd: b.area.rowStart + rows }, minArea(b.block)) };
 }
 
 export function updateBlockContent(section: GridSection, blockId: string, content: unknown): GridSection {
@@ -154,7 +163,7 @@ export function moveBlocks(section: GridSection, ids: string[], dCol: number, dR
     ...section,
     blocks: section.blocks.map((b) =>
       set.has(b.id)
-        ? { ...b, area: clampArea({ rowStart: b.area.rowStart + dRow, colStart: b.area.colStart + dCol, rowEnd: b.area.rowEnd + dRow, colEnd: b.area.colEnd + dCol }, BLOCKS[b.block].min) }
+        ? { ...b, area: clampArea({ rowStart: b.area.rowStart + dRow, colStart: b.area.colStart + dCol, rowEnd: b.area.rowEnd + dRow, colEnd: b.area.colEnd + dCol }, minArea(b.block)) }
         : b,
     ),
   };
@@ -185,6 +194,6 @@ export function cloneBlocks(blocks: GridBlock[]): GridBlock[] {
   return blocks.map((b) => ({
     ...structuredClone(b),
     id: id(),
-    area: clampArea({ rowStart: b.area.rowStart + 1, colStart: b.area.colStart + 1, rowEnd: b.area.rowEnd + 1, colEnd: b.area.colEnd + 1 }, BLOCKS[b.block].min),
+    area: clampArea({ rowStart: b.area.rowStart + 1, colStart: b.area.colStart + 1, rowEnd: b.area.rowEnd + 1, colEnd: b.area.colEnd + 1 }, minArea(b.block)),
   }));
 }
