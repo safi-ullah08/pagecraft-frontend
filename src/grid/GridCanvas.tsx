@@ -4,7 +4,7 @@ import { useEditor, EditorContent, BubbleMenu, type Editor, type JSONContent } f
 import { extensions, blockStyleProps, blockMargin, renderTypedBlock, scopeCustomCss, stackOrder, backgroundCss, type PageNumberConfig } from "@pagecraft/model";
 import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
-import { moveBlock, moveBlocks, resizeBlock, fitBlockRows, pushDownOverlaps, updateBlockContent, removeBlock, setBlockType, reorderLayer, clampArea, type LayerMove } from "./ops.ts";
+import { minArea, moveBlock, moveBlocks, resizeBlock, fitBlockRows, pushDownOverlaps, updateBlockContent, removeBlock, setBlockType, reorderLayer, clampArea, type LayerMove } from "./ops.ts";
 import { PAGE_MARGIN_MM, type PageDims } from "../pages.ts";
 
 // Recreated grid designer with temp/src's interaction feel on OUR stack:
@@ -97,7 +97,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     const w = rect.width, h = rect.height;
     const html = (blockEl.firstElementChild as HTMLElement | null)?.outerHTML ?? ""; // snapshot the content box
     const scrollEl = blockEl.closest("[data-scroll]") as HTMLElement | null;
-    const orig = b.area, min = BLOCKS[b.block].min;
+    const orig = b.area, min = minArea(b.block);
     const canMerge = BLOCKS[b.block].text && !group; // a text block dropped onto a text frame concatenates
     const startX = e.clientX, startY = e.clientY;
     let moved = false, lastX = startX, lastY = startY, raf = 0, scrollDir = 0;
@@ -198,7 +198,8 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     const gap = parseFloat(getComputedStyle(grid).rowGap) || 0;
     const gridH = grid.getBoundingClientRect().height;
     const rowUnit = (gridH - (ROWS - 1) * gap) / ROWS;
-    const rows = Math.max(1, Math.ceil((naturalPx + gap) / (rowUnit + gap)));
+    // reduce a naturalPx of 1px to 0 rows (so a single-line block can shrink to 1 row, not 2)
+    const rows = Math.max(1, Math.ceil((naturalPx - 1 + gap) / (rowUnit + gap)));
     // grow/shrink to fit, then push any blocks the new size overlaps downward
     onChange(pushDownOverlaps(fitBlockRows(section, id, rows), id));
   };
@@ -211,7 +212,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     if (!grid) return;
     const gr = grid.getBoundingClientRect();
     const cellW = gr.width / COLS, cellH = gr.height / ROWS;
-    const startX = e.clientX, startY = e.clientY, orig = b.area, min = BLOCKS[b.block].min;
+    const startX = e.clientX, startY = e.clientY, orig = b.area, min = minArea(b.block);
     let last = orig;
     const onMove = (ev: PointerEvent) => {
       const dc = Math.round((ev.clientX - startX) / cellW), dr = Math.round((ev.clientY - startY) / cellH);
@@ -364,7 +365,17 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ
   const fill = !reg.text || !!b.style?.backgroundColor;
   // Snap the box to wrap content exactly: on demand (Fit button) and automatically
   // when a text block leaves edit mode (content just settled).
-  const fit = () => { if (contentRef.current) onFit(contentRef.current.scrollHeight); };
+  const fit = () => {
+    const el = contentRef.current;
+    if (!el) return;
+    // set the height to fit the content to it's natural height, then call onFit with the new height
+    const pinned = el.style.height;
+    el.style.height = "auto";
+    const natural = el.scrollHeight;
+    el.style.height = pinned;
+    onFit(natural);
+  };
+
   const wasEditing = useRef(editing);
   useEffect(() => {
     if (wasEditing.current && !editing) fit();
