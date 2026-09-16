@@ -6,7 +6,7 @@ import type { JSONContent } from "@tiptap/react";
 import { addSection, convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
 import { BLOCKS, serialize, DEFAULT_PAGE_NUMBERS, EMPTY_DESIGN, type PageNumberConfig, type DesignTokens } from "@pagecraft/model";
 import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock, type GridSection } from "./grid/types.ts";
-import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
+import { minArea, addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
 import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries, type TocEntry } from "./grid/toc.ts";
 import { buildCover, isCoverSection, isBackCoverSection } from "./grid/covers.ts";
@@ -293,7 +293,7 @@ export const useStore = create<Store>((set, get) => {
       const marX = sidesX(block.style?.margin), marY = sidesY(block.style?.margin);
       const h = measureHtmlHeight(html, blockWidthPx(cols, page) - marX - padX, theme) + padY + marY;
       const rows = heightToRows(h, page);
-      const min = block.block === "textFrame" ? 1 : BLOCKS[block.block].min.rows;
+      const min = minArea(block.block).rows;
       const rowStart = block.area.rowStart;
       const rowEnd = rowStart + Math.max(min, Math.min(rows, ROWS - rowStart + 1));
       edit(sectionId, resizeBlock(sec.content, blockId, { ...block.area, rowEnd }));
@@ -534,7 +534,7 @@ export const useStore = create<Store>((set, get) => {
       const moving = new Set(ids);
       const shifted = from.content.blocks
         .filter((b) => moving.has(b.id))
-        .map((b) => ({ ...b, area: clampArea({ rowStart: b.area.rowStart + dRow, colStart: b.area.colStart + dCol, rowEnd: b.area.rowEnd + dRow, colEnd: b.area.colEnd + dCol }, BLOCKS[b.block].min) }));
+        .map((b) => ({ ...b, area: clampArea({ rowStart: b.area.rowStart + dRow, colStart: b.area.colStart + dCol, rowEnd: b.area.rowEnd + dRow, colEnd: b.area.colEnd + dCol }, minArea(b.block)) }));
       if (!shifted.length) return;
       edit(fromId, { ...from.content, blocks: from.content.blocks.filter((b) => !moving.has(b.id)) });
       edit(toId, { ...to.content, blocks: [...to.content.blocks, ...shifted] });
