@@ -4,7 +4,7 @@ import { themeSkinCss } from "../themes.ts";
 import { scopeThemeCss } from "../scope-css.ts";
 import { PAGE_MARGIN_MM, type PageDims } from "../pages.ts";
 import { COLS, ROWS } from "./types.ts";
-import { collectImageSrcs, preloadDims } from "./parseBlocks.ts";
+import { collectImageSrcs, loadSkinFonts, preloadDims } from "./parseBlocks.ts";
 
 // Browser side of the layout ENGINE — the same probe/measurer setup as the
 // flow→grid import (parseBlocks.ts), driving model layout() instead of
@@ -29,6 +29,7 @@ export async function runLayout(plan: LayoutPlan, spec: LayoutSpec, theme: strin
   meas.className = "pc-measure";
   meas.style.cssText = `position:absolute;left:-99999px;top:0;width:${contentW}px;visibility:hidden`;
   document.body.append(style, meas);
+  await loadSkinFonts(style.textContent); // measure in the theme's real fonts, not the fallback
   if (document.fonts?.ready) { try { await document.fonts.ready; } catch { /* ignore */ } }
   const widthFor = (cols: number) => cols * colPx + (cols - 1) * gap;
   const cache = new Map<string, { w: number; h: number }>();

@@ -518,7 +518,9 @@ function BlockBody({ b, editing, caret, onContent }: { b: GridBlock; editing: bo
   if (b.block === "spacer") return null;
   const html = renderTypedBlock(b.block, b.content);
   // remove overflow:hidden here — the wrapper above already clips. 
-  return html != null ? <div style={{ height: "100%" }} dangerouslySetInnerHTML={{ __html: html }} /> : null;
+  // flow-root keeps the first child's top margin inside this height:100% box (see
+  // BlockText) — otherwise it shifts the box down and fakes an overflow.
+  return html != null ? <div style={{ height: "100%", display: "flow-root" }} dangerouslySetInnerHTML={{ __html: html }} /> : null;
 }
 
 // Per-block Tiptap. Interactive ONLY while editing — otherwise pointer-events:none
@@ -554,7 +556,11 @@ function BlockText({ content, editable, caret, onContent }: { content: JSONConte
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content, editable, editor]);
   return (
-    <div style={{ height: "100%", pointerEvents: editable ? "auto" : "none" }}>
+    // flow-root: without its own formatting context, the first node's top margin (a
+    // heading, a list) collapses up through this height:100% wrapper and shifts the whole
+    // full-height stack down by that margin — so every block starting with a heading or
+    // list reported overflow (the dashed bar over its text) even when half empty.
+    <div style={{ height: "100%", display: "flow-root", pointerEvents: editable ? "auto" : "none" }}>
       {editor && (
         // Select text → floating format toolbar (only shows on a non-empty
         // selection in an editable block, so exactly one appears at a time).

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { layout, type LayoutPlan } from "@pagecraft/model";
+import type { JSONContent } from "@tiptap/react";
 import { STRUCTURES, interpret, assertAreasValid, listTemplates, templateSections, parseTemplateId, structureToLayoutSpec, foldChapters, docPlanToLayout } from "./templates.ts";
 import { isCoverSection } from "./covers.ts";
 import { isTocSection, collectToc } from "./toc.ts";
@@ -228,4 +229,93 @@ test("blocks reference theme tokens, never hardcoded colour (so they re-skin)", 
     const json = JSON.stringify(interpret(spec));
     assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(json), `no hex colours in ${spec.key}`);
   }
+});
+
+// ---- freelancer: chapter dividers stand alone -----------------------------------
+
+test("freelancer: the chapter divider holds only its marker and title; content starts on the next page", () => {
+  let n = 0;
+  const { sections, report } = layout(fakePlan, structureToLayoutSpec(STRUCTURES.freelancer), geom, stub, () => `b${n++}`);
+  const text = (i: number) => JSON.stringify(sections[i]);
+  const opener = sections.findIndex((s) => JSON.stringify(s).includes("Chapter 1"));
+  assert.ok(opener >= 0, "chapter 1 divider exists");
+  assert.match(text(opener), /Getting Started/, "divider carries the chapter title");
+  // the title keeps the template's h3 design (small ivory caps), not the skin's large dark h1
+  const title = sections[opener]!.blocks.map((b) => (b.content as { content?: { type: string; attrs?: { level?: number }; content?: { text?: string }[] }[] }).content?.[0])
+    .find((node) => node?.type === "heading" && node.content?.[0]?.text === "Getting Started");
+  assert.equal(title?.attrs?.level, 3, "chapter title renders as the designed h3");
+  assert.doesNotMatch(text(opener), /para \d/, "no chapter prose on the divider");
+  assert.match(text(opener + 1), /para 0/, "the chapter's first paragraph opens the next page");
+  // the Canva preview copy never ships: the caps opener line and the flow-page label
+  const js = JSON.stringify(sections);
+  assert.doesNotMatch(js, /Nobody hires the freelancer/);
+  assert.doesNotMatch(js, /First step/);
+  assert.ok(!report.some((r) => r.includes("intro")), `no intro slot left to bind: ${report}`);
+});
+
+test("docPlanToLayout drops the source's EMPTY contents chapter and nothing else", () => {
+  const ch = (title: string, content: JSONContent[]) => ({ title, level: 1, body: { type: "doc", content } });
+  const plan = docPlanToLayout({ chapters: [
+    ch("Introduction", [p("IRON HERO RUN")]),
+    ch("Table of Contents", [h("Table of Contents"), { type: "paragraph" }]), // Word field that didn't convert
+    ch("1. Concept Overview", [h("1. Concept Overview"), p("Iron Hero Run is…")]),
+    ch("Part II", [h("Part II")]),                                            // an empty divider that ISN'T contents
+  ] }, {});
+  assert.deepEqual(plan.chapters.map((c) => c.title), ["Introduction", "1. Concept Overview", "Part II"]);
+
+  const typed = docPlanToLayout({ chapters: [ch("Contents", [h("Contents"), p("Concept Overview ........ 3")])] }, {});
+  assert.equal(typed.chapters.length, 1, "a contents chapter with real entries is kept");
+});
+
+// ---- the lead-in (content before the first heading) is not a chapter ------------
+
+const ironHero = (): Parameters<typeof docPlanToLayout>[0] => {
+  const ch = (title: string, content: JSONContent[], level = 1) => ({ title, level, body: { type: "doc", content } });
+  const sections = ["1. Concept Overview", "2. Playable Characters", "3. Enemies & Obstacles", "4. Collectibles & Currency",
+    "5. World & Level Structure", "6. Progression & Unlocks", "7. Summary Snapshot"];
+  return { chapters: [
+    // import names the pre-heading title block "Introduction"
+    ch("Introduction", [p("IRON HERO RUN"), p("A Retro-Futuristic Robot Hero Endless Runner"), p("Game Design Document — v1.0")]),
+    ch("Table of Contents", [h("Table of Contents")]),
+    ...sections.flatMap((t, i) => [
+      ch(t, [h(t), p(`body of section ${i + 1}`)]),
+      ch(`${i + 1}.1 Detail`, [h(`${i + 1}.1 Detail`, 2), p(`detail ${i + 1}`)], 2),
+    ]),
+  ] };
+};
+
+test("docPlanToLayout: the pre-heading lead-in is marked front; headed chapters are not", () => {
+  const plan = docPlanToLayout(ironHero(), {});
+  assert.equal(plan.chapters[0]!.role, "front");
+  assert.deepEqual(plan.chapters.slice(1).map((c) => c.role), Array(7).fill(undefined));
+  assert.equal(plan.chapters.length, 8, "lead-in + 7 sections (contents dropped, x.1 folded in)");
+
+  // a document that opens with a heading has no lead-in
+  const headed = docPlanToLayout({ chapters: [{ title: "One", level: 1, body: { type: "doc", content: [h("One"), p("x")] } }] }, {});
+  assert.equal(headed.chapters[0]!.role, undefined);
+});
+
+test("foldChapters: a subsection right after the lead-in opens its own chapter, never folds into it", () => {
+  const folded = foldChapters([
+    { title: "Introduction", level: 1, role: "front", nodes: [p("title block")] },
+    { title: "Overview", level: 2, nodes: [h("Overview", 2), p("o")] },
+  ]);
+  assert.deepEqual(folded.map((c) => c.title), ["Introduction", "Overview"]);
+});
+
+test("freelancer: Chapter 1 is the first numbered section, and 7 sections make 7 chapters", () => {
+  let n = 0;
+  const { sections } = layout(docPlanToLayout(ironHero(), {}), structureToLayoutSpec(STRUCTURES.freelancer), geom, stub, () => `b${n++}`);
+  const at = (re: RegExp) => sections.findIndex((s) => re.test(JSON.stringify(s)));
+  const js = JSON.stringify(sections);
+
+  for (let i = 1; i <= 7; i++) {
+    const opener = at(new RegExp(`"Chapter ${i}"`));
+    assert.ok(opener >= 0, `Chapter ${i} exists`);
+    assert.match(JSON.stringify(sections[opener]), new RegExp(`"${i}\\. `), `Chapter ${i} carries section ${i}'s title`);
+    assert.match(JSON.stringify(sections[opener + 1]), new RegExp(`body of section ${i}`), `section ${i}'s body follows its own divider`);
+  }
+  assert.doesNotMatch(js, /"Chapter 8"/, "no phantom eighth chapter");
+  assert.doesNotMatch(js, /"Introduction"/, "the synthesized title never becomes a divider");
+  assert.ok(at(/IRON HERO RUN/) >= 0 && at(/IRON HERO RUN/) < at(/"Chapter 1"/), "the title block still ships, before Chapter 1");
 });

@@ -454,19 +454,26 @@ const freelancer: StructureSpec = {
       { at: [3, 2, 12, 12], slot: "toc" },
     ] },
     // p70 — chapter divider (perChapter): full flame page, asterisk, oversized
-    // ivory marker, hairline, tracked chapter title, shouting-caps opener.
+    // ivory marker, hairline, tracked chapter title. The divider holds ONLY the
+    // chapter marker and title — the chapter's content starts on the next page. The
+    // shouting-caps line is the Canva preview's sample copy, not an `intro` slot: as a
+    // slot it pulled the chapter's first paragraphs onto the divider, restyled them in
+    // white caps, and left the divider sharing a page with the chapter's opening text.
     { kind: "blocks", role: "perChapter", background: { kind: "solid", color: ACCENT }, blocks: [
       { at: [1, 2, 2, 4], furniture: true, nodes: [para("✳")], style: { fontSize: 34, textColor: ON_ACCENT, fontFamily: DISPLAY } },
       { at: [2, 2, 6, 10], slot: "kicker", nodes: [para("Chapter 01")], style: { fontSize: 52, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: "letter-spacing:-.02em;line-height:1" } },
       { at: [6, 2, 7, 10], nodes: [emptyP], style: HAIR_ON_ACCENT },
       { at: [7, 2, 8, 12], slot: "chapterTitle", nodes: [heading("Getting Your First Client", 3)], style: { fontSize: 14, fontWeight: 800, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.06em;h3{color:var(--pc-on-accent)}" } },
-      { at: [10, 2, 12, 12], slot: "intro", nodes: [
+      { at: [10, 2, 12, 12], nodes: [
         para("Nobody hires the freelancer with the best portfolio. They hire the one they trust the most."),
       ], style: { fontSize: 15, fontWeight: 800, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";line-height:1.4" } },
     ] },
     // p71 — flow: flame display marker, twin justified columns, foot paragraph.
+    // The "First step" marker is preview copy, NOT furniture: flow pages repeat for
+    // every page of every chapter, so as furniture it printed "FIRST STEP" on all of
+    // them, stacked on top of the document's own section headings.
     { kind: "blocks", role: "flow", blocks: [
-      { at: [1, 2, 3, 7], furniture: true, nodes: [heading("First step", 2)], style: { fontSize: 40, fontWeight: 800, textColor: ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:-.02em;line-height:.95" } },
+      { at: [1, 2, 3, 7], nodes: [heading("First step", 2)], style: { fontSize: 40, fontWeight: 800, textColor: ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:-.02em;line-height:.95" } },
       { at: [3, 2, 11, 7], slot: "body", nodes: [
         para("Body copy sets small and justified, two columns to the page. Keep the argument moving; this set rewards short paragraphs."),
       ], style: { fontSize: 11, textColor: INK, fontFamily: BODY, customCss: "text-align:justify" } },

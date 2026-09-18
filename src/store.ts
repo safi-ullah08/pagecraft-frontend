@@ -11,7 +11,7 @@ import { parseBlocks } from "./grid/parseBlocks.ts";
 import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries, type TocEntry } from "./grid/toc.ts";
 import { buildCover, isCoverSection, isBackCoverSection } from "./grid/covers.ts";
 import { insertSectionsAfter, updatePageNumbers, updateDesign, updateTheme, renameDocument } from "./api.ts";
-import { parseTemplateId, structureToLayoutSpec, foldChapters, docPlanToLayout, STRUCTURES, IMPORT_COVER, type Template } from "./grid/templates.ts";
+import { parseTemplateId, structureToLayoutSpec, prepareChapters, docPlanToLayout, STRUCTURES, IMPORT_COVER, type Template } from "./grid/templates.ts";
 import { runLayout } from "./grid/layoutDoc.ts";
 import type { SourceMeta, StoredDocPlan } from "./api.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
@@ -679,7 +679,7 @@ export const useStore = create<Store>((set, get) => {
 
       // Chapters: the STORED plan when we have one (frozen at import — survives
       // any number of template switches), else derived from the live flow
-      // sections (docs imported before the plan column). foldChapters keeps only
+      // sections (docs imported before the plan column). prepareChapters keeps only
       // h1 sections as chapters — h2 subsections fold into their parent WITH
       // their heading, so openers are real chapters and the contents page still
       // lists every subsection.
@@ -689,7 +689,7 @@ export const useStore = create<Store>((set, get) => {
         ? docPlanToLayout(stored, meta)
         : {
             meta,
-            chapters: foldChapters(sections.map((s) => {
+            chapters: prepareChapters(sections.map((s) => {
               const nodes = (s.content as JSONContent).content ?? [];
               const h = nodes[0]?.type === "heading" ? nodes[0] : undefined;
               const title = h ? textOf(h).trim() : "Introduction";

@@ -429,12 +429,13 @@ const hasText = (nodes?: JSONContent[]): boolean => JSON.stringify(nodes ?? []).
 
 // Chapters for the engine: only h1 sections open chapters — an h2 section is a
 // SUBSECTION and folds into its parent (its heading stays in the body flow, so
-// the contents page still lists it). "Notes" stays its own endnotes chapter.
-export type EngineChapter = { title: string; level: number; nodes: JSONContent[]; role?: "notes" };
+// the contents page still lists it). "Notes" and the lead-in ("front") stay apart:
+// neither absorbs a subsection nor folds into anything.
+export type EngineChapter = { title: string; level: number; nodes: JSONContent[]; role?: "notes" | "front" };
 export function foldChapters(sections: EngineChapter[]): EngineChapter[] {
   const out: EngineChapter[] = [];
   for (const c of sections) {
-    if (c.role !== "notes" && c.level >= 2 && out.length && out[out.length - 1]!.role !== "notes") {
+    if (!c.role && c.level >= 2 && out.length && !out[out.length - 1]!.role) {
       out[out.length - 1]!.nodes.push(...c.nodes);
     } else {
       out.push({ ...c, nodes: [...c.nodes] });
@@ -489,13 +490,43 @@ export function structureToLayoutSpec(spec: StructureSpec): LayoutSpec {
   return { pages };
 }
 
+// A source document's own "Table of Contents" heading arrives as a chapter with no
+// entries (a Word contents field doesn't convert). Laid out, it becomes a chapter
+// divider with nothing after it, sitting straight against the next chapter's divider
+// — and the template generates a real contents page anyway. Only an EMPTY contents
+// chapter goes: one that carries text beyond its heading is left alone.
+const CONTENTS_TITLE = /^\s*(table\s+of\s+)?contents\s*$/i;
+function isEmptyContentsChapter(c: EngineChapter): boolean {
+  if (c.role || !CONTENTS_TITLE.test(c.title)) return false;
+  const body = c.nodes[0]?.type === "heading" ? c.nodes.slice(1) : c.nodes;
+  return !hasText(body);
+}
+
+// Import puts everything before the document's first heading (a title block like
+// "IRON HERO RUN / Game Design Document — v1.0") into a section it names "Introduction".
+// That is not a chapter: laid out as one it took "Chapter 1" and pushed every real
+// chapter down a number. Only the FIRST chapter can lack a leading heading, so that is
+// the test — it also fixes documents imported before this rule existed.
+function markLeadIn(chapters: EngineChapter[]): EngineChapter[] {
+  const [first, ...rest] = chapters;
+  if (!first || first.role || first.nodes[0]?.type === "heading") return chapters;
+  return [{ ...first, role: "front" }, ...rest];
+}
+
+// Every chapter list bound for the engine goes through here: lead-in marked (before
+// folding, so a subsection can't fold into it), h2s folded into their chapter, and the
+// source's empty contents chapter dropped.
+export function prepareChapters(chapters: EngineChapter[]): EngineChapter[] {
+  return foldChapters(markLeadIn(chapters)).filter((c) => !isEmptyContentsChapter(c));
+}
+
 // A stored plan (+ its meta) → the engine's LayoutPlan: srcs in display form
-// (browsers can't load asset://), chapters folded to h1 boundaries. Used by the
-// apply path, the switch panel, and the gallery's real-content previews.
+// (browsers can't load asset://) and chapters prepared. Used by the apply path, the
+// switch panel, and the gallery's real-content previews.
 export function docPlanToLayout(stored: StoredDocPlan, meta: SourceMeta): LayoutPlan {
   return {
     meta: { ...meta, ...(meta.hero ? { hero: assetUrl(meta.hero) } : {}) },
-    chapters: foldChapters(stored.chapters.map((c) => ({
+    chapters: prepareChapters(stored.chapters.map((c) => ({
       title: c.title,
       level: c.level,
       nodes: (assetsToDisplay(c.body) as JSONContent).content ?? [],
