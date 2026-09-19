@@ -131,11 +131,14 @@ export async function listSourceContent(source: ConnectionSource, query: string,
 
 // Import selected items as chapters — into a new document, or appended to an
 // existing one when dest is given.
-export async function importItems(source: ConnectionSource, items: Array<{ id: string }>, dest?: { documentId: string; afterSectionId?: string | null }) {
+// `as` (single item, new doc only): "book" = the picked document IS the whole
+// book — its own headings become the chapters; "chapter" = it becomes one
+// chapter (title as heading, inner headings demoted). Appends are always chapters.
+export async function importItems(source: ConnectionSource, items: Array<{ id: string }>, dest?: { documentId: string; afterSectionId?: string | null }, as?: "book" | "chapter") {
   const res = await authedFetch(`/api/integrations/${source}/import`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ items, ...(dest ? { documentId: dest.documentId, afterSectionId: dest.afterSectionId ?? null } : {}) }),
+    body: JSON.stringify({ items, ...(as ? { as } : {}), ...(dest ? { documentId: dest.documentId, afterSectionId: dest.afterSectionId ?? null } : {}) }),
   });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(json.message || json.error || `import failed: ${res.status}`);

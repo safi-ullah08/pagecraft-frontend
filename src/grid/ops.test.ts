@@ -61,3 +61,32 @@ test("mergeInto is a no-op for a non-text source (e.g. image)", () => {
   const out = mergeInto(sec(tblk("T", "one"), img), "I", "T");
   assert.equal(out.blocks.length, 2); // nothing merged, nothing removed
 });
+
+// --- minArea: blocks that Break splits must be allowed down to one row -----------
+import { minArea, moveBlock, resizeBlock, fitBlockRows, cloneBlocks } from "./ops.ts";
+
+const one = (block: GridBlock["block"]): GridSection =>
+  ({ type: "grid", blocks: [{ id: "a", area: { rowStart: 3, colStart: 1, rowEnd: 4, colEnd: 13 }, block, content: {} }] });
+const rowsOf = (s: GridSection) => s.blocks[0]!.area.rowEnd - s.blocks[0]!.area.rowStart;
+
+test("text frames and contents lists may be one row; the column floor is kept", () => {
+  assert.equal(minArea("textFrame").rows, 1);
+  assert.equal(minArea("tocList").rows, 1);
+  assert.equal(minArea("textFrame").cols, 2);
+  assert.equal(minArea("tocList").cols, 4);
+});
+
+test("a one-row text frame stays one row through move, resize, fit and paste", () => {
+  for (const type of ["textFrame", "tocList"] as const) {
+    const s = one(type);
+    assert.equal(rowsOf(moveBlock(s, "a", { rowStart: 5, colStart: 1, rowEnd: 6, colEnd: 13 })), 1, `${type} move`);
+    assert.equal(rowsOf(resizeBlock(s, "a", { rowStart: 3, colStart: 1, rowEnd: 4, colEnd: 13 })), 1, `${type} resize`);
+    assert.equal(rowsOf(fitBlockRows(s, "a", 1)), 1, `${type} fit`);
+    assert.equal(cloneBlocks(s.blocks)[0]!.area.rowEnd - cloneBlocks(s.blocks)[0]!.area.rowStart, 1, `${type} paste`);
+  }
+});
+
+test("other blocks keep their registry minimum", () => {
+  const s = one("list");
+  assert.ok(rowsOf(fitBlockRows(s, "a", 1)) >= 2, "a list is still clamped to its own floor");
+});

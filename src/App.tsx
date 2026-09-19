@@ -14,6 +14,7 @@ import { PAGE_MARGIN_MM } from "./pages.ts";
 import { isGridSection, emptyGridSection } from "./grid/types.ts";
 import { GridCanvas } from "./grid/GridCanvas.tsx";
 import { isAnyCover } from "./grid/covers.ts";
+import { isTocSection } from "./grid/toc.ts";
 import { DesignWizard } from "./grid/DesignWizard.tsx";
 import { ControlsPanel } from "./grid/ControlsPanel.tsx";
 import type { JSONContent } from "@tiptap/react";
@@ -36,17 +37,27 @@ function TitleField() {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
         if (e.key === "Escape") { setDraft(null); (e.target as HTMLInputElement).blur(); }
       }}
-      title="Document title — click to rename"
-      style={{ fontFamily: "var(--ui-serif)", fontSize: 15, fontWeight: 700, color: "var(--ui-ink)",
-        background: "transparent", border: "1px solid transparent", borderRadius: 6, padding: "4px 8px",
-        width: 220, minWidth: 0, textOverflow: "ellipsis" }}
-      onFocus={(e) => { e.target.style.borderColor = "var(--ui-border-strong)"; e.target.style.background = "var(--ui-paper)"; e.target.select(); }}
-      onBlurCapture={(e) => { e.target.style.borderColor = "transparent"; e.target.style.background = "transparent"; }} />
+      title="Document title — click to rename" className="app-title"
+      onFocus={(e) => e.target.select()} />
   );
 }
 
-// Shell = sections layout (ChapterNav | editor area). The editor area shows the
-// document (flow -> page sheet, grid -> canvas) with the block Inspector docked right.
+// Side-panel visibility is a per-viewer convenience, so it lives in localStorage
+// (guarded: storage can be blocked, and the editor must still open).
+function usePanelOpen(key: string): [boolean, () => void] {
+  const [open, setOpen] = useState(() => {
+    try { return localStorage.getItem(key) !== "0"; } catch { return true; }
+  });
+  const toggle = () => setOpen((o) => {
+    try { localStorage.setItem(key, o ? "0" : "1"); } catch { /* not persisted — fine */ }
+    return !o;
+  });
+  return [open, toggle];
+}
+
+// Shell = full-width header (home + title | document actions), a view bar, then the
+// panels row: pages (ChapterNav) | editor canvas | block controls. Both side panels
+// start under the bars at the same height, and each can be collapsed.
 export function App() {
   const load = useStore((s) => s.load);
   const documentId = useStore((s) => s.documentId);
@@ -82,6 +93,10 @@ export function App() {
   const redo = useStore((s) => s.redo);
   const canUndo = useStore((s) => s.canUndo);
   const canRedo = useStore((s) => s.canRedo);
+  const generateToc = useStore((s) => s.generateToc);
+  const hasToc = sections.some((s) => isTocSection(s.content));
+  const [pagesOpen, togglePages] = usePanelOpen("pc-panel-pages");
+  const [controlsOpen, toggleControls] = usePanelOpen("pc-panel-controls");
 
   // The wizard auto-opens once per document — the answer to "imported, now I'm
   // staring at a blank grid". Dismissing it sticks (per document, per browser).
@@ -138,11 +153,9 @@ export function App() {
     }
   }, [theme, design]);
 
-  const dim = page;
-  const sheetCss = `
-.page-sheet { width: ${dim.w}mm; box-sizing: border-box; margin: 0 auto 24px; box-shadow: 0 2px 14px rgba(74,52,24,.25); overflow: hidden; background: #fff; }
-.page-sheet > .editor-surface { min-height: ${dim.h}mm; box-sizing: border-box; padding: ${PAGE_MARGIN_MM}mm; }
-`;
+  // The page size is document data, not styling: hand it to App.css's .page-sheet
+  // rules as custom properties instead of generating CSS text.
+  const sheetVars = { "--sheet-w": `${page.w}mm`, "--sheet-h": `${page.h}mm`, "--sheet-margin": `${PAGE_MARGIN_MM}mm` } as React.CSSProperties;
 
   const active = sections.find((s) => s.id === activeId) ?? null;
   const toggleLayout = () => {
@@ -153,7 +166,7 @@ export function App() {
   };
 
   return (
-    <div style={{ display: "flex", height: "100vh" }}>
+    <div className="app-shell">
       {wizardOpen && <DesignWizard onClose={() => setWizardOpen(false)} />}
       {hubOpen && documentId && (
         <ImportHub
@@ -162,104 +175,103 @@ export function App() {
           onImported={() => window.location.reload()} /* store.load converts the appended flow chapters in place */
         />
       )}
-      <ChapterNav />
-      <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
-        <div style={{ display: "flex", gap: 8, padding: 8, borderBottom: "1px solid var(--ui-border)", alignItems: "center" }}>
+      {/* Header spans the full width: home + title on the left, document actions right. */}
+      <header className="app-header">
+        <div className="app-header-left">
+          {/* router-free app: the dashboard is this path without ?doc (full reload, like the rest) */}
+          <a href={location.pathname} title="Home — all documents" className="app-btn app-home">⌂ Home</a>
           <TitleField />
+        </div>
+        <div className="app-header-right">
           <Toolbar />
           <ImportBar />
-          <button onClick={() => setHubOpen(true)} title="Add chapters from WordPress, Notion or Google Docs"
-            style={{ padding: "6px 10px", fontSize: 12, borderRadius: 4, cursor: "pointer", border: "1px solid var(--ui-border)", background: "var(--ui-panel)" }}>⇩ Add chapters</button>
-          <button onClick={() => setWizardOpen(true)} title="Open the design wizard"
-            style={{ padding: "6px 10px", fontSize: 12, borderRadius: 4, cursor: "pointer", border: "1px solid var(--ui-border)", background: "var(--ui-panel)" }}>✦ Design</button>
+          <button onClick={() => setHubOpen(true)} title="Add chapters from WordPress, Notion or Google Docs" className="app-btn">⇩ Add chapters</button>
+          <button onClick={() => setWizardOpen(true)} title="Open the design wizard" className="app-btn">✦ Design</button>
+          <button onClick={() => void generateToc()} className="app-btn"
+            title={hasToc ? "Rebuild the contents page from every heading — page numbers stay correct"
+              : "Scan every page's headings and add a contents page as page 1"}>
+            {hasToc ? "⟳ Refresh contents" : "+ Contents"}
+          </button>
           {documentId && <ExportButton documentId={documentId} theme={theme} />}
           {/* UserButton only mounts under ClerkProvider (i.e. when a key is set) */}
-          {import.meta.env.VITE_CLERK_PUBLISHABLE_KEY && (
-            <div style={{ marginLeft: "auto" }}>
-              <UserButton afterSignOutUrl="/" />
-            </div>
-          )}
+          {import.meta.env.VITE_CLERK_PUBLISHABLE_KEY && <UserButton afterSignOutUrl="/" />}
         </div>
+      </header>
 
-        {/* editor toolbar + active-section layout toggle */}
-        <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 8px", borderBottom: "1px solid var(--ui-border)", background: "var(--ui-bg)" }}>
-          <div style={{ flex: 1 }} />
+      {/* View bar, also full width, so both side panels start right beneath it. */}
+      <div className="app-viewbar">
+        <button onClick={togglePages} aria-pressed={pagesOpen} title={pagesOpen ? "Hide the pages panel" : "Show the pages panel"}
+          className="app-tool">{pagesOpen ? "⇤" : "⇥"} Pages</button>
+        <div className="app-spacer" />
+        <>
+            <button onClick={() => undo()} disabled={!canUndo} title="Undo (⌘/Ctrl+Z)" className="app-tool app-history">↶</button>
+            <button onClick={() => redo()} disabled={!canRedo} title="Redo (⌘/Ctrl+Shift+Z)" className="app-tool app-history app-redo">↷</button>
+            <button onClick={toggleGrid} aria-pressed={showGrid} title="toggle grid overlay" className="app-tool">▦ Grid</button>
+            <select value={zoom} onChange={(e) => setZoom(Number(e.target.value))} title="zoom" className="app-zoom">
+              {[0.5, 0.75, 1, 1.25, 1.5].map((z) => <option key={z} value={z}>{Math.round(z * 100)}%</option>)}
+            </select>
+          </>
+        {active && (
+          <button onClick={toggleLayout} title="convert the active section's layout" className="app-tool">
+            {isGridSection(active.content) ? "▦ Grid → ¶ Flow" : "¶ Flow → ▦ Grid"}
+          </button>
+        )}
+        <button onClick={toggleControls} aria-pressed={controlsOpen} title={controlsOpen ? "Hide the controls panel" : "Show the controls panel"}
+          className="app-tool app-controls-toggle">Panel {controlsOpen ? "⇥" : "⇤"}</button>
+      </div>
+
+      {/* Panels row: pages | canvas | controls — both side panels share this top edge. */}
+      <div className="app-panels">
+        {pagesOpen && <ChapterNav />}
+        {loading ? (
+          <div className="app-status is-muted">Preparing editor…</div>
+        ) : sections.length === 0 ? (
+          <div className="app-status">Loading…</div>
+        ) : (
+          // Editor: sections stacked (flow -> page sheet, grid -> canvas) with the
+          // block Inspector docked right when the active section is a grid.
           <>
-              <button onClick={() => undo()} disabled={!canUndo} title="Undo (⌘/Ctrl+Z)"
-                style={{ fontSize: 13, padding: "3px 8px", borderRadius: 4, border: "1px solid var(--ui-border-strong)", background: "var(--ui-panel)",
-                  cursor: canUndo ? "pointer" : "default", color: canUndo ? "var(--ui-ink)" : "var(--ui-border-strong)" }}>↶</button>
-              <button onClick={() => redo()} disabled={!canRedo} title="Redo (⌘/Ctrl+Shift+Z)"
-                style={{ fontSize: 13, padding: "3px 8px", borderRadius: 4, border: "1px solid var(--ui-border-strong)", background: "var(--ui-panel)",
-                  cursor: canRedo ? "pointer" : "default", color: canRedo ? "var(--ui-ink)" : "var(--ui-border-strong)", marginRight: 4 }}>↷</button>
-              <button onClick={toggleGrid} title="toggle grid overlay"
-                style={{ fontSize: 12, padding: "3px 8px", borderRadius: 4, cursor: "pointer",
-                  border: `1px solid ${showGrid ? "var(--ui-accent)" : "var(--ui-border-strong)"}`, background: showGrid ? "var(--ui-accent-soft)" : "var(--ui-panel)", color: showGrid ? "var(--ui-accent)" : "var(--ui-muted)" }}>
-                ▦ Grid
-              </button>
-              <select value={zoom} onChange={(e) => setZoom(Number(e.target.value))} title="zoom"
-                style={{ fontSize: 12, padding: "3px 4px", borderRadius: 4, border: "1px solid var(--ui-border-strong)", background: "var(--ui-panel)" }}>
-                {[0.5, 0.75, 1, 1.25, 1.5].map((z) => <option key={z} value={z}>{Math.round(z * 100)}%</option>)}
-              </select>
-            </>
-          {active && (
-            <button onClick={toggleLayout} title="convert the active section's layout"
-              style={{ fontSize: 12, padding: "3px 8px", border: "1px solid var(--ui-border-strong)", borderRadius: 4, background: "var(--ui-panel)", cursor: "pointer" }}>
-              {isGridSection(active.content) ? "▦ Grid → ¶ Flow" : "¶ Flow → ▦ Grid"}
-            </button>
-          )}
-        </div>
-
-        <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
-          {loading ? (
-            <div style={{ padding: 16, color: "var(--ui-muted)" }}>Preparing editor…</div>
-          ) : sections.length === 0 ? (
-            <div style={{ padding: 16 }}>Loading…</div>
-          ) : (
-            // Editor: sections stacked (flow -> page sheet, grid -> canvas) with the
-            // block Inspector docked right when the active section is a grid.
-            <>
-              <div data-scroll style={{ flex: 1, minWidth: 0, minHeight: 0, overflowY: "auto", padding: 32, background: "var(--ui-bg-deep)" }}>
-                <style>{surfaceCss + sheetCss}</style>
-                <div style={{ zoom }}>
-                {sections.map((s, i) =>
-                  isGridSection(s.content) ? (
-                    <div key={s.id} id={`sec-${s.id}`} onPointerDown={() => setActive(s.id)}>
-                      <GridCanvas
-                        section={s.content}
-                        sectionId={s.id}
-                        onChange={(next) => edit(s.id, next)}
-                        onMoveAcross={(blockId, toId, area) => moveBlockToPage(s.id, blockId, toId, area)}
-                        onMoveGroupAcross={(ids, toId, dCol, dRow) => moveBlocksToPage(s.id, ids, toId, dCol, dRow)}
-                        page={page}
-                        pageNumbers={isAnyCover(s.content) ? null : pageNumbers} /* a cover is never numbered — same rule as the worker */
-                        pageIndex={i}
-                        pageCount={sections.length}
-                        selected={activeId === s.id ? selectedBlockIds : []}
-                        onSelect={(id, additive) => { setActive(s.id); selectBlock(id, additive); }}
-                        editingId={activeId === s.id ? editingBlockId : null}
-                        onEdit={(id) => { setActive(s.id); setEditing(id); }}
-                        onReflow={(id) => void reflowBlock(s.id, id)}
-                        onBreak={(id) => breakTextFrame(s.id, id)}
-                        onMerge={(sourceId, targetId, atIndex) => mergeBlocks(s.id, sourceId, targetId, atIndex)}
-                        showGrid={showGrid}
-                      />
-                    </div>
-                  ) : (
-                    <section key={s.id} id={`sec-${s.id}`} className="page-sheet">
-                      <Editor
-                        content={s.content as JSONContent}
-                        onChange={(c) => edit(s.id, c)}
-                        onFocus={() => setActive(s.id)}
-                      />
-                    </section>
-                  ),
-                )}
-                </div>
+            <div data-scroll className="app-canvas" style={sheetVars}>
+              <style>{surfaceCss}</style>
+              <div style={{ zoom }}>
+              {sections.map((s, i) =>
+                isGridSection(s.content) ? (
+                  <div key={s.id} id={`sec-${s.id}`} onPointerDown={() => setActive(s.id)}>
+                    <GridCanvas
+                      section={s.content}
+                      sectionId={s.id}
+                      onChange={(next) => edit(s.id, next)}
+                      onMoveAcross={(blockId, toId, area) => moveBlockToPage(s.id, blockId, toId, area)}
+                      onMoveGroupAcross={(ids, toId, dCol, dRow) => moveBlocksToPage(s.id, ids, toId, dCol, dRow)}
+                      page={page}
+                      pageNumbers={isAnyCover(s.content) ? null : pageNumbers} /* a cover is never numbered — same rule as the worker */
+                      pageIndex={i}
+                      pageCount={sections.length}
+                      selected={activeId === s.id ? selectedBlockIds : []}
+                      onSelect={(id, additive) => { setActive(s.id); selectBlock(id, additive); }}
+                      editingId={activeId === s.id ? editingBlockId : null}
+                      onEdit={(id) => { setActive(s.id); setEditing(id); }}
+                      onReflow={(id) => void reflowBlock(s.id, id)}
+                      onBreak={(id) => breakTextFrame(s.id, id)}
+                      onMerge={(sourceId, targetId, atIndex) => mergeBlocks(s.id, sourceId, targetId, atIndex)}
+                      showGrid={showGrid}
+                    />
+                  </div>
+                ) : (
+                  <section key={s.id} id={`sec-${s.id}`} className="page-sheet">
+                    <Editor
+                      content={s.content as JSONContent}
+                      onChange={(c) => edit(s.id, c)}
+                      onFocus={() => setActive(s.id)}
+                    />
+                  </section>
+                ),
+              )}
               </div>
-              {active && isGridSection(active.content) && <ControlsPanel />}
-            </>
-          )}
-        </div>
+            </div>
+            {controlsOpen && active && isGridSection(active.content) && <ControlsPanel />}
+          </>
+        )}
       </div>
     </div>
   );

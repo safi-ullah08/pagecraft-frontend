@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { gridSerialize, layout, type LayoutPlan, type GridSection as ModelGridSection } from "@pagecraft/model";
 import { documentCss, themeNames } from "../themes.ts";
-import { listTemplates, templateSections, structureToLayoutSpec, docPlanToLayout, STRUCTURES, DOC_LABELS, type Template, type DocType } from "../grid/templates.ts";
+import { listTemplates, templateSections, structureToLayoutSpec, docPlanToLayout, STRUCTURES, DOC_LABELS, CANVA_LABEL, isLockedTemplate, type Template, type DocType } from "../grid/templates.ts";
 import { createFromTemplate, getDocument } from "../api.ts";
 
 // The user-facing "Templates" surface — NO theme picker. Each card is one structure
@@ -62,8 +62,13 @@ export function TemplateGallery({ onClose, applyToDocId, onPick, previewPlan }: 
       .catch(() => { /* placeholder previews */ });
   }, [applyToDocId, previewPlan]);
 
+  // The open structures group by docType; the locked Canva matched designs get
+  // their own section (one card each, bound to their own skin — no cross-product).
   const all = listTemplates(themeNames());
-  const groups = (Object.keys(DOC_LABELS) as DocType[]).map((dt) => ({ dt, items: all.filter((t) => t.docType === dt) }));
+  const groups = [
+    ...(Object.keys(DOC_LABELS) as DocType[]).map((dt) => ({ label: DOC_LABELS[dt], items: all.filter((t) => t.docType === dt && !isLockedTemplate(t)) })),
+    { label: CANVA_LABEL, items: all.filter(isLockedTemplate) },
+  ].filter((g) => g.items.length);
 
   async function pick(t: Template) {
     if (busy) return;
@@ -105,9 +110,9 @@ export function TemplateGallery({ onClose, applyToDocId, onPick, previewPlan }: 
         </p>
         {err && <p style={{ color: "#b00020", fontSize: 13 }}>{err}</p>}
 
-        {groups.map(({ dt, items }) => (
-          <section key={dt} style={{ marginTop: 20 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--ui-muted)", margin: "0 0 12px" }}>{DOC_LABELS[dt]}</h3>
+        {groups.map(({ label, items }) => (
+          <section key={label} style={{ marginTop: 20 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--ui-muted)", margin: "0 0 12px" }}>{label}</h3>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(auto-fill, ${CARD_W}px)`, gap: 18 }}>
               {items.map((t) => (
                 <button key={t.id} onClick={() => pick(t)} disabled={!!busy} title={`${t.name} · ${prettyTheme(t.theme)}`}
@@ -119,7 +124,7 @@ export function TemplateGallery({ onClose, applyToDocId, onPick, previewPlan }: 
                       <div style={{ position: "absolute", inset: 0, background: "rgba(251,247,235,.78)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 600, color: "var(--ui-ink)" }}>Creating…</div>
                     )}
                   </div>
-                  <div style={{ padding: "8px 10px", fontSize: 12, color: "var(--ui-muted)", borderTop: "1px solid var(--ui-border)" }}>{prettyTheme(t.theme)}</div>
+                  <div style={{ padding: "8px 10px", fontSize: 12, color: "var(--ui-muted)", borderTop: "1px solid var(--ui-border)" }}>{isLockedTemplate(t) ? t.name : prettyTheme(t.theme)}</div>
                 </button>
               ))}
             </div>

@@ -4,7 +4,7 @@ import { useEditor, EditorContent, BubbleMenu, type Editor, type JSONContent } f
 import { extensions, blockStyleProps, blockMargin, renderTypedBlock, scopeCustomCss, stackOrder, backgroundCss, type PageNumberConfig } from "@pagecraft/model";
 import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
-import { moveBlock, moveBlocks, resizeBlock, fitBlockRows, pushDownOverlaps, updateBlockContent, removeBlock, setBlockType, reorderLayer, clampArea, type LayerMove } from "./ops.ts";
+import { minArea, moveBlock, moveBlocks, resizeBlock, fitBlockRows, pushDownOverlaps, updateBlockContent, removeBlock, setBlockType, reorderLayer, clampArea, type LayerMove } from "./ops.ts";
 import { PAGE_MARGIN_MM, type PageDims } from "../pages.ts";
 
 // Recreated grid designer with temp/src's interaction feel on OUR stack:
@@ -97,7 +97,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     const w = rect.width, h = rect.height;
     const html = (blockEl.firstElementChild as HTMLElement | null)?.outerHTML ?? ""; // snapshot the content box
     const scrollEl = blockEl.closest("[data-scroll]") as HTMLElement | null;
-    const orig = b.area, min = BLOCKS[b.block].min;
+    const orig = b.area, min = minArea(b.block);
     const canMerge = BLOCKS[b.block].text && !group; // a text block dropped onto a text frame concatenates
     const startX = e.clientX, startY = e.clientY;
     let moved = false, lastX = startX, lastY = startY, raf = 0, scrollDir = 0;
@@ -198,7 +198,8 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     const gap = parseFloat(getComputedStyle(grid).rowGap) || 0;
     const gridH = grid.getBoundingClientRect().height;
     const rowUnit = (gridH - (ROWS - 1) * gap) / ROWS;
-    const rows = Math.max(1, Math.ceil((naturalPx + gap) / (rowUnit + gap)));
+    // reduce a naturalPx of 1px to 0 rows (so a single-line block can shrink to 1 row, not 2)
+    const rows = Math.max(1, Math.ceil((naturalPx - 1 + gap) / (rowUnit + gap)));
     // grow/shrink to fit, then push any blocks the new size overlaps downward
     onChange(pushDownOverlaps(fitBlockRows(section, id, rows), id));
   };
@@ -211,7 +212,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     if (!grid) return;
     const gr = grid.getBoundingClientRect();
     const cellW = gr.width / COLS, cellH = gr.height / ROWS;
-    const startX = e.clientX, startY = e.clientY, orig = b.area, min = BLOCKS[b.block].min;
+    const startX = e.clientX, startY = e.clientY, orig = b.area, min = minArea(b.block);
     let last = orig;
     const onMove = (ev: PointerEvent) => {
       const dc = Math.round((ev.clientX - startX) / cellW), dr = Math.round((ev.clientY - startY) / cellH);
@@ -364,7 +365,17 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ
   const fill = !reg.text || !!b.style?.backgroundColor;
   // Snap the box to wrap content exactly: on demand (Fit button) and automatically
   // when a text block leaves edit mode (content just settled).
-  const fit = () => { if (contentRef.current) onFit(contentRef.current.scrollHeight); };
+  const fit = () => {
+    const el = contentRef.current;
+    if (!el) return;
+    // set the height to fit the content to it's natural height, then call onFit with the new height
+    const pinned = el.style.height;
+    el.style.height = "auto";
+    const natural = el.scrollHeight;
+    el.style.height = pinned;
+    onFit(natural);
+  };
+
   const wasEditing = useRef(editing);
   useEffect(() => {
     if (wasEditing.current && !editing) fit();
@@ -384,6 +395,11 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ
       onDragStart={(e) => e.preventDefault()} // kill native drag (images etc.) so our pointer drag wins
       style={{
         gridArea: `${rowStart} / ${colStart} / ${rowEnd} / ${colEnd}`, position: "relative",
+        // `1fr` tracks are minmax(auto, 1fr), so an item taller/wider than its share
+        // STRETCHES the track and blows the fixed-height page out. Pinning the
+        // automatic minimum to 0 keeps the track at its share and lets the inner
+        // box clip instead. (Editing still expands on purpose, so leave it alone.)
+        minHeight: editing ? undefined : 0, minWidth: editing ? undefined : 0,
         cursor: editing ? "text" : "grab",
         margin: blockMargin(b.style), // space between blocks/cols (per-side)
         // selected ring is a content-hugging overlay (below); the wrapper only shows
@@ -454,9 +470,12 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ
               <button onClick={(e) => { e.stopPropagation(); onReflow(); }} title="Split: keep what fits, flow the rest onto the next page"
                 style={{ height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer", padding: "0 5px" }}>Split ⤵</button>
             )}
-            {/* Break: decompose into separate paragraph/sentence blocks on THIS page (no page-push) */}
-            {b.block === "textFrame" && (((b.content as { content?: unknown[] })?.content?.length ?? 0) >= 1) && (
-              <button onClick={(e) => { e.stopPropagation(); onBreak(); }} title="Break into separate paragraph blocks on this page"
+            {/* Break: decompose into separate paragraph/sentence (or contents-entry)
+                blocks on THIS page (no page-push) */}
+            {((b.block === "textFrame" && (((b.content as { content?: unknown[] })?.content?.length ?? 0) >= 1))
+              || (b.block === "tocList" && (((b.content as { entries?: unknown[] })?.entries?.length ?? 0) >= 2))) && (
+              <button onClick={(e) => { e.stopPropagation(); onBreak(); }}
+                title={b.block === "tocList" ? "Break into separate contents blocks on this page" : "Break into separate paragraph blocks on this page"}
                 style={{ height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer", padding: "0 5px" }}>Break ⑃</button>
             )}
             {/* Layering: raise/lower this block in the page's stacking order */}
@@ -498,7 +517,8 @@ function BlockBody({ b, editing, caret, onContent }: { b: GridBlock; editing: bo
   if (b.block === "divider") return <hr style={{ margin: "auto 0" }} />;
   if (b.block === "spacer") return null;
   const html = renderTypedBlock(b.block, b.content);
-  return html != null ? <div style={{ height: "100%", overflow: "hidden" }} dangerouslySetInnerHTML={{ __html: html }} /> : null;
+  // remove overflow:hidden here — the wrapper above already clips. 
+  return html != null ? <div style={{ height: "100%" }} dangerouslySetInnerHTML={{ __html: html }} /> : null;
 }
 
 // Per-block Tiptap. Interactive ONLY while editing — otherwise pointer-events:none
