@@ -76,6 +76,115 @@ type Store = {
   convertToGrid: () => Promise<void>;
 };
 
+// ---- Break helpers (used by breakTextFrame) ------------------------------------
+
+// Deepest heading level a contents list shows. Same default (3) and 1–6 clamp as the
+// renderer, which hides every deeper entry.
+function tocMaxLevel(content: { maxLevel?: unknown }): number {
+  return Math.max(1, Math.min(6, Number(content.maxLevel) || 3));
+}
+
+const tocLevel = (e: TocEntry): number => Number(e.level) || 1;
+
+// split toc into blocks along with their sub-entries
+function splitTocEntries(entries: TocEntry[], maxLevel: number): TocEntry[][] {
+  const visibleLevels = [...new Set(entries.map(tocLevel).filter((l) => l <= maxLevel))].sort((a, b) => a - b);
+  for (const depth of visibleLevels) {
+    const groups = groupTocAtDepth(entries, depth, maxLevel);
+    if (groups.length > 1) return groups;
+  }
+  return [entries]; // nothing to split
+}
+
+// New group whenever a heading at or above `depth` appears. 
+// If the first group is all hidden entries, move it to the next group so the first box isn't empty.
+function groupTocAtDepth(entries: TocEntry[], depth: number, maxLevel: number): TocEntry[][] {
+  const groups: TocEntry[][] = [];
+  for (const e of entries) {
+    if (groups.length === 0 || tocLevel(e) <= depth) groups.push([e]);
+    else groups[groups.length - 1]!.push(e);
+  }
+  return groups;
+  // The very first entry always opens a group, so a list that STARTS with hidden
+  // entries would get an empty first box — hand them to the next group instead.
+  // const first = groups[0];
+  // if (groups.length > 1 && first && !first.some((e) => tocLevel(e) <= maxLevel)) {
+  //   groups.shift();
+  //   groups[0]!.unshift(...first);
+  // }
+}
+
+// Several paragraphs split one per paragraph; a single paragraph splits into sentences;
+// anything else is cut wherever `cutToFit` says it overflows the box.
+function splitProse(doc: JSONContent, cutToFit: (doc: JSONContent) => [JSONContent, JSONContent]): JSONContent[] {
+  const nodes = doc.content ?? [];
+  const withNodes = (content: JSONContent[]): JSONContent => ({ ...doc, content });
+  if (nodes.length >= 2) return nodes.map((n) => withNodes([n]));
+
+  const only = nodes[0];
+  const sentences = only?.type === "paragraph" ? splitParagraphSentences(only) : [];
+  if (sentences.length > 1) return sentences.map((s) => withNodes([s]));
+
+  const pieces: JSONContent[] = [];
+  let rest = doc;
+  for (let guard = 0; (rest.content?.length ?? 0) > 0 && guard < 100; guard++) {
+    const [fits, overflow] = cutToFit(rest);
+    if (!fits.content?.length) break;
+    pieces.push(fits);
+    rest = overflow;
+  }
+  return pieces;
+}
+
+// Merge pieces back into one block's content: a contents list concatenates its entries,
+// prose its paragraphs. Everything else (list settings, doc attrs) comes from `base`.
+function joinPieces(base: GridBlock["content"], parts: GridBlock["content"][], isToc: boolean): GridBlock["content"] {
+  const key = isToc ? "entries" : "content";
+  const items = parts.flatMap((p) => ((p as Record<string, unknown>)[key] as unknown[] | undefined) ?? []);
+  return { ...base, [key]: items } as GridBlock["content"];
+}
+
+// A run of free rows on the page: rows start … end-1.
+type Gap = { start: number; end: number };
+
+// The free rows below `area`'s top, as gaps. Only blocks sharing a column with `area`
+// get in the way — a block in other columns can sit on the same rows.
+function freeGaps(blocks: GridBlock[], area: GridArea): Gap[] {
+  const taken = new Set<number>();
+  for (const b of blocks) {
+    const sharesColumns = b.area.colStart < area.colEnd && area.colStart < b.area.colEnd;
+    if (!sharesColumns) continue;
+    for (let r = b.area.rowStart; r < b.area.rowEnd; r++) taken.add(r);
+  }
+  const gaps: Gap[] = [];
+  for (let r = area.rowStart; r <= ROWS; r++) {
+    if (taken.has(r)) continue;
+    const last = gaps[gaps.length - 1];
+    if (last && last.end === r) last.end++;
+    else gaps.push({ start: r, end: r + 1 });
+  }
+  return gaps;
+}
+
+
+// place the pieces into the gaps with full height. Move to the next gap if the piecedoesn't fit.
+// When a piece can't fit in any gap. Return the top rows of placed pieces and the
+// remaining gap after the last piece.
+function placeInGaps(gaps: Gap[], heights: number[]): { tops: number[]; rest: Gap | null } {
+  const tops: number[] = [];
+  let row = gaps[0]?.start ?? ROWS + 1; // next row nothing has been placed on
+  const topIn = (g: Gap) => Math.max(g.start, row); // where a piece would start in this gap
+
+  for (const height of heights) {
+    const gap = gaps.find((g) => g.end - topIn(g) >= height);
+    if (!gap) break;
+    tops.push(topIn(gap));
+    row = topIn(gap) + height;
+  }
+  const rest = gaps.find((g) => g.end > topIn(g));
+  return { tops, rest: rest ? { start: topIn(rest), end: rest.end } : null };
+}
+
 // Load the doc named by ?doc=<id> (with ALL its sections), or create a fresh
 // single-section doc and pin it in the URL. ponytail: dev bootstrap, not a
 // document picker (later phase).
@@ -348,144 +457,61 @@ export const useStore = create<Store>((set, get) => {
       edit(sectionId, next);
       set({ selectedBlockIds: [targetId], editingBlockId: null });
     },
-    // Break a text frame into smaller blocks on the SAME page (no new pages, no
-    // page-pushing). One block per paragraph; a lone overflowing paragraph is
-    // chunked by page-fit so it still breaks into pieces. Pieces are fit-sized and laid
-    // into the page's FREE rows (flowing around the blocks already there); once the page
-    // runs out, the rest stays whole in one trailing block instead of overlapping.
+    // Break a text frame or contents list into smaller blocks on the SAME page. Pieces go
+    // into the page's free rows at their natural height (other blocks stay put); whatever
+    // doesn't fit stays together in one trailing block, never squeezed or overlapping.
     breakTextFrame: (sectionId, blockId) => {
       const { sections, theme, page, edit } = get();
       const sec = sections.find((s) => s.id === sectionId);
       if (!sec || !isGridSection(sec.content)) return;
       const block = sec.content.blocks.find((b) => b.id === blockId);
       if (!block || (block.block !== "textFrame" && block.block !== "tocList")) return;
+
       const isToc = block.block === "tocList";
-      const doc = block.content as JSONContent;
-      const nodes = doc.content ?? [];
       const cols = block.area.colEnd - block.area.colStart;
       const rows = block.area.rowEnd - block.area.rowStart;
       const widthPx = blockWidthPx(cols, page) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
       const padY = sidesY(block.style?.padding) + sidesY(block.style?.margin);
-      const maxHpx = blockHeightPx(rows, page) - padY;
 
+      // 1. Split the content into pieces.
       let pieces: GridBlock["content"][];
       if (isToc) {
-
-        const contents = block.content as { entries?: TocEntry[]; maxLevel?: number };
-        const entries = contents.entries ?? [];
-
-        const maxLevel = Math.max(1, Math.min(6, Number(contents.maxLevel) || 3));
-        const shown = (e: TocEntry) => (Number(e.level) || 1) <= maxLevel;
-        const chunkAt = (boundary: (e: TocEntry) => boolean) => {
-          const out: TocEntry[][] = [];
-          for (const e of entries) {
-            if (!out.length || boundary(e)) {
-              out.push([e]);
-            }
-            else {
-              out[out.length - 1]!.push(e)
-            }
-          }
-          // Only the first chunk can be all-hidden (it is forced open); fold it forward.
-          if (out.length > 1 && !out[0]!.some(shown)){
-            out[1]!.unshift(...out.shift()!);
-          } 
-          return out;
-        };
-
-        const top = Math.min(...entries.filter(shown).map((e) => e.level));
-        let chunks: TocEntry[][] = [];
-        for (let d = top; d <= maxLevel; d++) {
-          chunks = chunkAt((e) => (Number(e.level) || 1) <= d);
-          if (chunks.length >= 2) break;
-        }
-        pieces = chunks.map((c) => ({ ...contents, entries: c }) as GridBlock["content"]);
-      } else if (nodes.length >= 2) {
-        pieces = nodes.map((n) => ({ ...doc, content: [n] })); // one block per paragraph
+        const contents = block.content as { entries?: TocEntry[]; maxLevel?: unknown };
+        pieces = splitTocEntries(contents.entries ?? [], tocMaxLevel(contents))
+          .map((entries) => ({ ...contents, entries }) as GridBlock["content"]);
       } else {
-        // single node: split a paragraph into sentences; else chunk by page-fit
-        const only = nodes[0];
-        const sentences = only?.type === "paragraph" ? splitParagraphSentences(only) : only ? [only] : [];
-        if (sentences.length > 1) {
-          pieces = sentences.map((s) => ({ ...doc, content: [s] }));
-        } else {
-          pieces = [];
-          let rest: JSONContent = doc, guard = 0;
-          while ((rest.content?.length ?? 0) > 0 && guard++ < 100) {
-            const [a, b] = splitTextFrameAt(rest, widthPx, maxHpx, theme);
-            if (!a.content?.length) break;
-            pieces.push(a);
-            rest = b;
-          }
-        }
+        const boxHeightPx = blockHeightPx(rows, page) - padY;
+        pieces = splitProse(block.content as JSONContent, (doc) => splitTextFrameAt(doc, widthPx, boxHeightPx, theme));
       }
       if (pieces.length < 2) return;
-      
-      // Everything stays on THIS page. Rows already held by OTHER blocks that share
-      // our columns are off limits, so the pieces flow into the page's real free space
-      // instead of marching down from our own top and landing on top of them.
+
+      // 2. Measure how many rows each piece needs, rendered exactly as the block renders.
+      const heights = pieces.map((piece) =>
+        Math.max(1, heightToRows(measureHtmlHeight(blockHtml({ ...block, content: piece }) ?? "", widthPx, theme) + padY, page)));
+
+      // 3. Place the pieces in the page's free rows.
       const others = sec.content.blocks.filter((b) => b.id !== blockId);
-      const taken = new Set<number>();
-      for (const o of others) {
-        if (o.area.colEnd <= block.area.colStart || o.area.colStart >= block.area.colEnd) continue; // different columns never clash
-        for (let r = o.area.rowStart; r < o.area.rowEnd; r++) taken.add(r);
-      }
-      // Contiguous runs of free rows, from this block's own top down to the page bottom.
-      const runs: { start: number; len: number }[] = [];
-      for (let r = block.area.rowStart; r <= ROWS; r++) {
-        if (taken.has(r)) continue;
-        const prev = runs[runs.length - 1];
-        if (prev && prev.start + prev.len === r) prev.len++;
-        else runs.push({ start: r, len: 1 });
-      }
+      const { tops, rest } = placeInGaps(freeGaps(others, block.area), heights);
+      if (!tops.length) return; // not even the first piece fits — leave the block as it is
 
-      // Both kinds measure the same way — render the piece exactly as the block renders.
-      const htmlOf = (piece: GridBlock["content"]) => blockHtml({ ...block, content: piece }) ?? "";
-      // ...and rejoin the same way: entries for a contents list, nodes for prose.
-      const fold = (parts: GridBlock["content"][]): GridBlock["content"] => isToc
-        ? { ...(block.content as Record<string, unknown>), entries: parts.flatMap((p) => (p as { entries?: TocEntry[] }).entries ?? []) }
-        : { ...doc, content: parts.flatMap((p) => (p as JSONContent).content ?? []) };
-
-      const rowsFor = pieces.map((piece) => 
-        Math.max(1, heightToRows(measureHtmlHeight(htmlOf(piece), widthPx, theme) + padY, page))
-      );
-      const mk = (piece: GridBlock["content"], rowStart: number, rowEnd: number): GridBlock => ({
+      const blockAt = (content: GridBlock["content"], rowStart: number, rowEnd: number): GridBlock => ({
         id: Math.random().toString(36).slice(2, 10), block: block.block, style: block.style,
         area: { rowStart, colStart: block.area.colStart, rowEnd, colEnd: block.area.colEnd },
-        content: piece,
+        content,
       });
+      const newBlocks = tops.map((top, i) => blockAt(pieces[i]!, top, top + heights[i]!));
 
-      // Break only what genuinely fits. Walk forward through the free runs placing whole
-      // pieces at their natural size — never squeezed, so nothing is clipped just to make
-      // the count fit. The first piece that no longer fits ends the break.
-      const newBlocks: GridBlock[] = [];
-      let ri = 0, used = 0, i = 0;
-      for (; i < pieces.length; i++) {
-        const want = rowsFor[i]!;
-        let tri = ri, tused = used;
-        while (tri < runs.length && runs[tri]!.len - tused < want) { tri++; tused = 0; } // won't fit this gap — try the next
-        if (tri >= runs.length) break; // no gap left can hold this piece whole
-        ri = tri; used = tused;
-        const rowStart = runs[ri]!.start + used;
-        used += want;
-        newBlocks.push(mk(pieces[i]!, rowStart, rowStart + want));
+      // 4. Pieces that didn't fit stay together: in the rows still free, or — if the page
+      //    is full — added to the last block. Either way the overflow bar shows, so Split
+      //    can move them to a new page.
+      const leftover = pieces.slice(tops.length);
+      if (leftover.length && rest) {
+        newBlocks.push(blockAt(joinPieces(block.content, leftover, isToc), rest.start, rest.end));
+      } else if (leftover.length) {
+        const last = newBlocks[newBlocks.length - 1]!;
+        last.content = joinPieces(block.content, [last.content, ...leftover], isToc);
       }
-      if (!newBlocks.length) return; // not even the first piece fits — leave the frame as it is
 
-      // Whatever is left over rides along in ONE trailing block rather than being shrunk
-      // across the page or pushed onto another one. It carries the usual overflow bar, so
-      // Split can spill it to a new page when the user wants that.
-      if (i < pieces.length) {
-        const rest = pieces.slice(i);
-        while (ri < runs.length && runs[ri]!.len - used <= 0) { ri++; used = 0; } // find any rows still free
-        const run = runs[ri];
-        if (run) {
-          newBlocks.push(mk(fold(rest), run.start + used, run.start + run.len));
-        } else {
-          const last = newBlocks[newBlocks.length - 1]!; // page is full — fold it into the last block
-          last.content = fold([last.content, ...rest]);
-        }
-      }
       edit(sectionId, { ...sec.content, blocks: [...others, ...newBlocks] });
       set({ selectedBlockIds: newBlocks.map((b) => b.id), editingBlockId: null });
     },
