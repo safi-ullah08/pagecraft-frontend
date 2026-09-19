@@ -370,28 +370,19 @@ export const useStore = create<Store>((set, get) => {
 
       let pieces: GridBlock["content"][];
       if (isToc) {
-        // A contents list breaks by ENTRY, not by prose. Prefer one block per top-level
-        // section so a chapter keeps its sub-entries; when the list has a single top
-        // level (the usual one-title TOC), fall back to one block per entry.
 
-        // const cfg = block.content as { entries?: TocEntry[]; maxLevel?: unknown };
         const contents = block.content as { entries?: TocEntry[]; maxLevel?: number };
         const entries = contents.entries ?? [];
-        // The renderer hides entries deeper than maxLevel, so only a VISIBLE entry may
-        // start a new block — otherwise a deep entry gets a box of its own and renders
-        // as the "No headings yet" placeholder. Hidden entries ride with the piece above.
+
         const maxLevel = Math.max(1, Math.min(6, Number(contents.maxLevel) || 3));
         const shown = (e: TocEntry) => (Number(e.level) || 1) <= maxLevel;
         const chunkAt = (boundary: (e: TocEntry) => boolean) => {
           const out: TocEntry[][] = [];
-          console.log("entries:", entries)
           for (const e of entries) {
             if (!out.length || boundary(e)) {
-              console.log("length: ", out.length, "pushing: ", e, "shown: ", shown(e), "boundary: ", boundary(e))
               out.push([e]);
             }
             else {
-              console.log("length: ", out.length, out[out.length-1], "pushing: ", e, "shown: ", shown(e), "boundary: ", boundary(e))
               out[out.length - 1]!.push(e)
             }
           }
