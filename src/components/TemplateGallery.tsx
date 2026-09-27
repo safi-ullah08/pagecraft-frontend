@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { gridSerialize, layout, type LayoutPlan, type GridSection as ModelGridSection } from "@pagecraft/model";
 import { documentCss, themeNames } from "../themes.ts";
-import { listTemplates, templateSections, structureToLayoutSpec, docPlanToLayout, STRUCTURES, DOC_LABELS, CANVA_LABEL, isLockedTemplate, type Template, type DocType } from "../grid/templates.ts";
+import { listTemplates, templateSections, structureToLayoutSpec, docPlanToLayout, STRUCTURES, DOC_LABELS, CANVA_LABEL, OWNED_LABEL, isLockedTemplate, isOwnedTemplate, type Template, type DocType } from "../grid/templates.ts";
 import { createFromTemplate, getDocument } from "../api.ts";
+import { fontFaceCss } from "../catalog.ts";
 
 // The user-facing "Templates" surface — NO theme picker. Each card is one structure
 // bound to one theme (the 15 = themes × 3 structures). The thumbnail is page 1 of the
@@ -33,10 +34,10 @@ function thumbHtml(t: Template, plan: LayoutPlan | null): string {
   let page1: ModelGridSection = templateSections(t)[0]!;
   if (plan) {
     try {
-      page1 = layout(plan, structureToLayoutSpec(STRUCTURES[t.structKey]), PREVIEW_GEOM, previewMeasure).sections[0] ?? page1;
+      page1 = layout(plan, structureToLayoutSpec(STRUCTURES[t.structKey]!), PREVIEW_GEOM, previewMeasure).sections[0] ?? page1;
     } catch { /* placeholder preview beats a broken card */ }
   }
-  return `<!doctype html><html><head><meta charset="utf-8">${FONT_LINKS}<style>html,body{margin:0}${documentCss(t.theme, "grid")}</style></head><body>${gridSerialize(page1)}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8">${FONT_LINKS}<style>html,body{margin:0}${fontFaceCss()}${documentCss(t.theme, "grid")}</style></head><body>${gridSerialize(page1)}</body></html>`;
 }
 
 const prettyTheme = (t: string) => t.replace(/-/g, " ").replace(/^\w/, (c) => c.toUpperCase());
@@ -62,12 +63,15 @@ export function TemplateGallery({ onClose, applyToDocId, onPick, previewPlan }: 
       .catch(() => { /* placeholder previews */ });
   }, [applyToDocId, previewPlan]);
 
-  // The open structures group by docType; the locked Canva matched designs get
-  // their own section (one card each, bound to their own skin — no cross-product).
+  // The workspace's own custom templates lead; then the open system structures
+  // grouped by docType; then the locked Canva matched designs (one card each,
+  // bound to their own skin — no cross-product).
   const all = listTemplates(themeNames());
+  const system = all.filter((t) => !isOwnedTemplate(t));
   const groups = [
-    ...(Object.keys(DOC_LABELS) as DocType[]).map((dt) => ({ label: DOC_LABELS[dt], items: all.filter((t) => t.docType === dt && !isLockedTemplate(t)) })),
-    { label: CANVA_LABEL, items: all.filter(isLockedTemplate) },
+    { label: OWNED_LABEL, items: all.filter(isOwnedTemplate) },
+    ...(Object.keys(DOC_LABELS) as DocType[]).map((dt) => ({ label: DOC_LABELS[dt], items: system.filter((t) => t.docType === dt && !isLockedTemplate(t)) })),
+    { label: CANVA_LABEL, items: system.filter(isLockedTemplate) },
   ].filter((g) => g.items.length);
 
   async function pick(t: Template) {

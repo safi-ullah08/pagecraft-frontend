@@ -698,14 +698,16 @@ export const useStore = create<Store>((set, get) => {
             })),
           };
 
-      const spec = structureToLayoutSpec(STRUCTURES[t.structKey]);
+      const struct = STRUCTURES[t.structKey];
+      if (!struct) throw new Error(`unknown template "${t.structKey}"`);
+      const spec = structureToLayoutSpec(struct);
       const { sections: laid, report } = await runLayout(plan, spec, t.theme, page);
       if (report.length) console.info("layout report:", report);
 
       const { sections: fresh } = await convertDocument(documentId, laid.map((s) => assetsToCanonical(s as SectionContent)));
       set({ sections: fresh.map((s) => ({ ...s, content: assetsToDisplay(s.content) })), activeId: fresh[0]?.id ?? null });
 
-      const pn = STRUCTURES[t.structKey].pageNumbers;
+      const pn = struct.pageNumbers;
       if (pn) {
         set({ pageNumbers: pn });
         try { await updatePageNumbers(documentId, pn); } catch (e) { console.error("page numbers persist failed:", e); }

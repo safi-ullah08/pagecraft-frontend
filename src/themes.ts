@@ -20,6 +20,14 @@ for (const [file, css] of Object.entries(
   skins[file.split("/").pop()!.replace(/\.css$/, "")] = css;
 }
 
+// Skins served by the backend (GET /api/themes: seeded system skins + the
+// workspace's custom ones) override/extend the bundled files. catalog.ts calls
+// this once at boot; the bundled glob stays as the fallback for tests and for a
+// backend that hasn't been seeded yet.
+export function registerThemes(list: Array<{ slug: string; css: string }>): void {
+  for (const t of list) skins[t.slug] = t.css;
+}
+
 export function themeNames(): ThemeName[] {
   return Object.keys(skins).sort();
 }

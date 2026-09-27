@@ -3,7 +3,7 @@ import type { JSONContent } from "@tiptap/react";
 import type { PageNumberConfig, DesignTokens } from "@pagecraft/model";
 import { DEFAULT_THEME } from "./themes.ts";
 import type { GridSection } from "./grid/types.ts";
-import { STRUCTURES, templateSections, type Template } from "./grid/templates.ts";
+import { STRUCTURES, templateSections, type Template, type StructureSpec } from "./grid/templates.ts";
 
 // Clerk's getToken(), injected at startup by <AuthBridge> (see main.tsx).
 // When Clerk is on, requests must wait for it to be wired or they fire tokenless
@@ -67,9 +67,85 @@ export async function createFromTemplate(t: Template): Promise<string> {
   await convertDocument(document.id, templateSections(t));
   // Structures that want a specific page-number look (e.g. wellness's accent
   // corner tab) set it on the new doc; others keep the default bottom-centre.
-  const pn = STRUCTURES[t.structKey].pageNumbers;
+  const pn = STRUCTURES[t.structKey]?.pageNumbers;
   if (pn) await updatePageNumbers(document.id, pn);
   return document.id;
+}
+
+// ---- template catalog (backend-stored) ------------------------------------
+// System rows are shared by every workspace; `owned` rows are this workspace's
+// custom templates / skins / fonts. See catalog.ts for how they're registered.
+export type ApiTemplate = { id: string; key: string; name: string; docType: StructureSpec["docType"]; spec: Pick<StructureSpec, "pages" | "pageNumbers" | "lockedTheme">; sortOrder: number; version: number; owned: boolean };
+export type ApiTheme = { slug: string; name: string; css: string; fontIds: string[]; version: number; owned: boolean };
+export type ApiFont = { id: string; family: string; style: "normal" | "italic"; weight: string; source: "system" | "upload"; format: string | null; owned: boolean };
+
+async function getJson<T>(url: string): Promise<T> {
+  const res = await authedFetch(url);
+  if (!res.ok) throw new Error(`${url} failed: ${res.status}`);
+  return res.json() as Promise<T>;
+}
+export const fetchTemplates = () => getJson<{ templates: ApiTemplate[] }>("/api/templates").then((r) => r.templates);
+export const fetchThemes = () => getJson<{ themes: ApiTheme[] }>("/api/themes").then((r) => r.themes);
+export const fetchFonts = () => getJson<{ fonts: ApiFont[] }>("/api/fonts").then((r) => r.fonts);
+
+// An uploaded font's bytes (authed — a CSS url() can't carry the bearer token,
+// so the caller turns this into a blob: URL for @font-face).
+export async function fetchFontFile(id: string): Promise<Blob> {
+  const res = await authedFetch(`/api/fonts/${id}/file`);
+  if (!res.ok) throw new Error(`font ${id} failed: ${res.status}`);
+  return res.blob();
+}
+
+// ---- staff: save a designed document as another workspace's template ---------
+// The admin routes 404 for everyone else, so a failed whoami simply means "not
+// staff" and the editor hides the action.
+export type AdminWorkspace = { id: string; name: string | null; email: string | null; imageUrl: string | null; clerkId: string | null; plan: string; documents: number; templates: number };
+export type TemplateSave = { id: string; name: string; workspaceId: string; version: number; updatedAt: string };
+export type SavedTemplate = { id: string; name: string; workspaceId: string; theme: string; updated: boolean; version: number; pages: number; blocks: number; imagesCopied: number; imagesMissing: number; skippedFlowPages: number };
+
+export async function amIStaff(): Promise<boolean> {
+  try {
+    const res = await authedFetch("/api/admin/whoami");
+    return res.ok && !!(await res.json()).staff;
+  } catch {
+    return false;
+  }
+}
+
+export async function listWorkspaces(): Promise<AdminWorkspace[]> {
+  const res = await authedFetch("/api/admin/workspaces");
+  // The admin routes 404 rather than 403 (they don't advertise themselves), so
+  // say what that actually means instead of showing a bare status code.
+  if (res.status === 404) throw new Error("This account isn't on the backend's staff list (STAFF_CLERK_IDS).");
+  if (!res.ok) throw new Error(`Couldn't load workspaces (${res.status}).`);
+  return (await res.json()).workspaces as AdminWorkspace[];
+}
+
+// What this document has already been saved as (so the dialog can say a save
+// will update, not duplicate).
+export async function templateSavesOf(documentId: string): Promise<TemplateSave[]> {
+  const res = await authedFetch(`/api/admin/templates?documentId=${encodeURIComponent(documentId)}`);
+  if (!res.ok) return [];
+  return (await res.json()).saves as TemplateSave[];
+}
+
+// Saves THIS document (the designer's) as a template owned by the target workspace.
+export async function saveAsTemplateFor(body: {
+  documentId: string;
+  targetWorkspaceId: string;
+  name: string;
+  docType: "leadMagnet" | "ebook" | "report";
+  themeName?: string;
+}): Promise<SavedTemplate> {
+  const res = await authedFetch("/api/admin/templates", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 404 && json.error === "not_found") throw new Error("This account isn't on the backend's staff list (STAFF_CLERK_IDS).");
+  if (!res.ok) throw new Error(json.message || json.error || `save failed: ${res.status}`);
+  return json as SavedTemplate;
 }
 
 // ---- integration connections + content pickers (ImportHub) ----------------

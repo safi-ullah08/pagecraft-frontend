@@ -1,11 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { layout, type LayoutPlan } from "@pagecraft/model";
-import { STRUCTURES, interpret, assertAreasValid, listTemplates, templateSections, parseTemplateId, structureToLayoutSpec, foldChapters, docPlanToLayout } from "./templates.ts";
+import { interpret, assertAreasValid, listTemplates, templateSections, parseTemplateId, structureToLayoutSpec, foldChapters, docPlanToLayout, setStructures } from "./templates.ts";
+import { BUILTIN_STRUCTURES as STRUCTURES, BUILTIN_ORDER } from "./builtinStructures.ts";
 import { isCoverSection } from "./covers.ts";
 import { isTocSection, collectToc } from "./toc.ts";
 
 // run: cd pagecraft-backend && node --import tsx --test ../pagecraft-frontend/src/grid/templates.test.ts
+
+// The app fills the registry from GET /api/templates; the tests fill it with the
+// built-ins those system rows are seeded from.
+setStructures(BUILTIN_ORDER.map((k) => STRUCTURES[k]));
 
 test("every structure interprets to the expected page count", () => {
   assert.equal(interpret(STRUCTURES.leadMagnet).length, 3);
@@ -46,7 +51,7 @@ test("catalog: open structures cross-product; locked Canva designs ship one card
   // canva-* themes never enter the cross-product; locked structures appear once
   assert.equal(all.length, (themes.length - 1) * open + locked);
   assert.equal(new Set(all.map((t) => t.id)).size, all.length, "ids are unique");
-  assert.ok(!all.some((t) => t.theme.startsWith("canva-") && !STRUCTURES[t.structKey].lockedTheme), "no open structure wears a canva skin");
+  assert.ok(!all.some((t) => t.theme.startsWith("canva-") && !STRUCTURES[t.structKey as keyof typeof STRUCTURES].lockedTheme), "no open structure wears a canva skin");
   for (const key of ["guidebook", "wellness", "mediaKit", "emailAutomation", "remoteReport", "mindful", "freelancer"] as const) {
     const cards = all.filter((t) => t.structKey === key);
     assert.equal(cards.length, 1, `${key} ships exactly one card`);

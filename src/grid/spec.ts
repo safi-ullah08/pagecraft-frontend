@@ -4,7 +4,7 @@
 // (templates.ts imports the structures; the structures import only this).
 import type { JSONContent } from "@tiptap/react";
 import type { PageNumberConfig, SlotKind, PageRole } from "@pagecraft/model";
-import type { BlockStyleTokens, PageBackground } from "./types.ts";
+import type { BlockStyleTokens, BlockType, PageBackground } from "./types.ts";
 
 // A placed block: [rowStart, colStart, rowEnd, colEnd] on the 12×12 grid.
 // `image: true` = an empty image slot (the editor shows a click-to-fill placeholder).
@@ -14,7 +14,11 @@ import type { BlockStyleTokens, PageBackground } from "./types.ts";
 // applied to an import. `props` merges into a slot block's typed content.
 // `furniture` = designed micro-copy that SHIPS on apply (a contents title, a
 // worksheet label) — everything else literal-with-text is preview-only.
-export type BlockSpec = { at: [number, number, number, number]; nodes?: JSONContent[]; style?: BlockStyleTokens; z?: number; image?: true; slot?: SlotKind; fallback?: "hide" | "keep" | "empty"; furniture?: true; props?: Record<string, unknown> };
+// `block` + `content` carry a TYPED block verbatim (a stat, CTA, table, a filled
+// image…) — what a template saved from a designed document needs, since the
+// author placed real blocks rather than writing `nodes`. Absent = a text frame
+// built from `nodes`, or an empty image slot with `image: true`.
+export type BlockSpec = { at: [number, number, number, number]; nodes?: JSONContent[]; style?: BlockStyleTokens; z?: number; image?: true; block?: BlockType; content?: unknown; slot?: SlotKind; fallback?: "hide" | "keep" | "empty"; furniture?: true; props?: Record<string, unknown> };
 // `role` groups pages for the engine: front matter (default), the per-chapter
 // opener, cycling flow pages, back matter. interpret() ignores roles — the
 // placeholder template renders every page once, exactly as authored.
@@ -25,8 +29,9 @@ export type PageSpec =
 export type DocType = "leadMagnet" | "ebook" | "report";
 // Structures beyond the original three (one per docType) get their own key but
 // still belong to a docType for gallery grouping + import covers.
-export type StructKey = DocType | "guidebook" | "wellness"
-  | "mediaKit" | "emailAutomation" | "remoteReport" | "mindful" | "freelancer";
+// Built-in keys are authored names ("guidebook"); a workspace's custom template
+// is keyed "custom-<uuid>" by the backend — so this is an open string.
+export type StructKey = string;
 export type StructureSpec = {
   key: StructKey; docType: DocType; name: string; pages: PageSpec[];
   pageNumbers?: PageNumberConfig; // set on the new doc when the structure wants a specific look (e.g. wellness's corner tab)

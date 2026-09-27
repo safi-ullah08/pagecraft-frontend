@@ -15,7 +15,7 @@ import {
   heading, para, emptyP, BG, INK, ACCENT, ON_ACCENT, DISPLAY, BODY, UPPER,
   MUTED, SURFACE, BORDER, pq, callout, aside, KICKER, TITLE, H2, BODY_S,
   kicker, img, panel, ol, ul, rule, stat, HAIR_ACCENT, HAIR_ON_ACCENT,
-  type BlockSpec, type StructureSpec, type StructKey,
+  type BlockSpec, type StructureSpec,
 } from "./spec.ts";
 import type { BlockStyleTokens } from "./types.ts";
 
@@ -507,7 +507,4 @@ const freelancer: StructureSpec = {
   ],
 };
 
-export const CANVA_STRUCTURES = { mediaKit, emailAutomation, remoteReport, mindful, freelancer } satisfies Record<
-  Extract<StructKey, "mediaKit" | "emailAutomation" | "remoteReport" | "mindful" | "freelancer">,
-  StructureSpec
->;
+export const CANVA_STRUCTURES = { mediaKit, emailAutomation, remoteReport, mindful, freelancer } satisfies Record<string, StructureSpec>;

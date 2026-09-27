@@ -7,6 +7,7 @@ import { ExportButton } from "./components/ExportButton.tsx";
 import { ImportBar } from "./components/ImportBar.tsx";
 import { ImportHub } from "./components/ImportHub.tsx";
 import { useStore } from "./store.ts";
+import { amIStaff } from "./api.ts";
 import { themeSkinCss, typedBlockCss } from "./themes.ts";
 import { designCss } from "@pagecraft/model";
 import { scopeThemeCss } from "./scope-css.ts";
@@ -17,6 +18,7 @@ import { isAnyCover } from "./grid/covers.ts";
 import { isTocSection } from "./grid/toc.ts";
 import { DesignWizard } from "./grid/DesignWizard.tsx";
 import { ControlsPanel } from "./grid/ControlsPanel.tsx";
+import { SaveAsTemplate } from "./components/SaveAsTemplate.tsx";
 import type { JSONContent } from "@tiptap/react";
 
 // Document title in the top bar: click to edit, Enter/blur to save, Esc to cancel.
@@ -101,6 +103,12 @@ export function App() {
   // The wizard auto-opens once per document — the answer to "imported, now I'm
   // staring at a blank grid". Dismissing it sticks (per document, per browser).
   const [wizardOpen, setWizardOpen] = useState(false);
+  // Staff (us) can save this document as a template for a customer who asked for
+  // one; /api/admin 404s for everyone else, so amIStaff() hides the action.
+  const docTitle = useStore((s) => s.title);
+  const [staff, setStaff] = useState(false);
+  const [saveTplOpen, setSaveTplOpen] = useState(false);
+  useEffect(() => { void amIStaff().then(setStaff); }, []);
   const [hubOpen, setHubOpen] = useState(false);
   useEffect(() => {
     if (loading || !documentId || !sections.length) return;
@@ -168,6 +176,9 @@ export function App() {
   return (
     <div className="app-shell">
       {wizardOpen && <DesignWizard onClose={() => setWizardOpen(false)} />}
+      {saveTplOpen && documentId && (
+        <SaveAsTemplate documentId={documentId} title={docTitle} onClose={() => setSaveTplOpen(false)} />
+      )}
       {hubOpen && documentId && (
         <ImportHub
           onClose={() => setHubOpen(false)}
@@ -192,6 +203,9 @@ export function App() {
               : "Scan every page's headings and add a contents page as page 1"}>
             {hasToc ? "⟳ Refresh contents" : "+ Contents"}
           </button>
+          { documentId && (
+            <button onClick={() => setSaveTplOpen(true)} className="app-btn" title="Staff: save this document as a template for a customer">⎘ Save as template</button>
+          )}
           {documentId && <ExportButton documentId={documentId} theme={theme} />}
           {/* UserButton only mounts under ClerkProvider (i.e. when a key is set) */}
           {import.meta.env.VITE_CLERK_PUBLISHABLE_KEY && <UserButton afterSignOutUrl="/" />}
