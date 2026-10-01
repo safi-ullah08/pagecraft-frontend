@@ -1,7 +1,9 @@
+import { useEffect } from "react";
 import { useEditor, EditorContent, BubbleMenu, type JSONContent } from "@tiptap/react";
 import { extensions } from "@pagecraft/model";
 import { SlashCommands } from "../slash.ts";
 import { setBlockAttr, deleteBlock, moveBlock } from "../node-controls.ts";
+import { useStore } from "../store.ts";
 
 // One Tiptap instance per section, on the SHARED schema. The editing surface is
 // skinned by the App-level scoped theme CSS (.editor-surface), so all sections
@@ -13,12 +15,21 @@ export function Editor({ content, onChange, onFocus }: {
   onChange: (doc: JSONContent) => void;
   onFocus?: () => void;
 }) {
+  const setActiveEditor = useStore((s) => s.setActiveEditor);
+  const bumpSel = useStore((s) => s.bumpSel);
   const editor = useEditor({
     extensions: [...extensions, SlashCommands],
     content,
-    onUpdate: ({ editor }) => onChange(editor.getJSON()),
-    onFocus: () => onFocus?.(),
+    onUpdate: ({ editor }) => { onChange(editor.getJSON()); bumpSel(); },
+    onFocus: ({ editor }) => { onFocus?.(); setActiveEditor(editor); },
+    onSelectionUpdate: () => bumpSel(), // keep the top-bar font size mirrored to the caret
   });
+
+  // Drop the top bar's reference when this instance unmounts, so it never points
+  // at a destroyed editor (a stale one would throw when the control reads it).
+  useEffect(() => () => {
+    if (useStore.getState().activeEditor === editor) setActiveEditor(null);
+  }, [editor, setActiveEditor]);
 
   const btn = { padding: "2px 6px", border: "1px solid #ccc", background: "#fff", borderRadius: 3, cursor: "pointer", fontSize: 12 } as const;
 

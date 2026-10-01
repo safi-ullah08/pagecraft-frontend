@@ -99,6 +99,10 @@ export function App() {
   const hasToc = sections.some((s) => isTocSection(s.content));
   const [pagesOpen, togglePages] = usePanelOpen("pc-panel-pages");
   const [controlsOpen, toggleControls] = usePanelOpen("pc-panel-controls");
+  const requestPanel = useStore((s) => s.requestPanel);
+  // Clicking the on-page number opens the controls panel on its Design tab, where
+  // the page-number design + position live (otherwise a few clicks to find).
+  const openPageNumbers = () => { if (!controlsOpen) toggleControls(); requestPanel("design"); };
 
   // The wizard auto-opens once per document — the answer to "imported, now I'm
   // staring at a blank grid". Dismissing it sticks (per document, per browser).
@@ -259,6 +263,7 @@ export function App() {
                       onMoveGroupAcross={(ids, toId, dCol, dRow) => moveBlocksToPage(s.id, ids, toId, dCol, dRow)}
                       page={page}
                       pageNumbers={isAnyCover(s.content) ? null : pageNumbers} /* a cover is never numbered — same rule as the worker */
+                      onEditPageNumbers={openPageNumbers}
                       pageIndex={i}
                       pageCount={sections.length}
                       selected={activeId === s.id ? selectedBlockIds : []}
