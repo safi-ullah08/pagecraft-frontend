@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BLOCKS, BLOCK_ORDER, PAGE_NUMBER_POSITIONS, PAGE_BACKGROUND_FITS, type BlockCategory, type BlockType, type PageBackground, type PageBackgroundFit } from "@pagecraft/model";
 import { useStore } from "../store.ts";
 import { uploadAsset } from "../api.ts";
@@ -19,6 +19,9 @@ type Panel = "design" | "blocks" | "layers" | "templates";
 
 export function ControlsPanel() {
   const [panel, setPanel] = useState<Panel>("blocks");
+  // Jump to a tab when something asks (e.g. clicking the on-page number → Design).
+  const panelRequest = useStore((s) => s.panelRequest);
+  useEffect(() => { if (panelRequest) setPanel(panelRequest.tab); }, [panelRequest]);
   return (
     <div style={{ width: 264, flexShrink: 0, background: "var(--ui-panel)", borderLeft: `1px solid ${PALETTE.BORDER}`, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: `1px solid ${PALETTE.BORDER}` }}>
@@ -254,6 +257,9 @@ function PageNumberControls() {
         {!known && <Field label="Custom"><input value={cfg.format} onChange={(e) => set({ format: e.target.value })} placeholder="{n} of {total}" style={inputStyle} /></Field>}
         <Field label="Start at"><input type="number" min={0} value={cfg.startAt ?? 1} onChange={(e) => set({ startAt: Number(e.target.value) })} style={inputStyle} /></Field>
         <Field label="Size (pt)"><input type="number" min={6} max={72} value={cfg.fontSize ?? 10} onChange={(e) => set({ fontSize: Number(e.target.value) })} style={inputStyle} /></Field>
+        <Field label="Distance from top/bottom (mm)"><input type="number" value={cfg.offsetY ?? ""} placeholder="auto" onChange={(e) => set({ offsetY: e.target.value === "" ? undefined : Number(e.target.value) })} style={inputStyle} /></Field>
+        <Field label="Distance from side (mm)"><input type="number" value={cfg.offsetX ?? ""} placeholder="auto" disabled={cfg.position.endsWith("center")} onChange={(e) => set({ offsetX: e.target.value === "" ? undefined : Number(e.target.value) })} style={inputStyle} /></Field>
+        <div style={{ fontSize: 10, color: PALETTE.MUTED }}>Distances: <b>0</b> = flush to the page edge, blank = default margin. Use these to move the number into the very top/corner.</div>
         <Field label="Custom CSS"><textarea value={cfg.css ?? ""} onChange={(e) => set({ css: e.target.value })} rows={3} placeholder="color: #888; font-style: italic; letter-spacing: 1px" style={{ ...inputStyle, resize: "vertical", fontFamily: "monospace", fontSize: 11 }} /></Field>
         <div style={{ fontSize: 10, color: PALETTE.MUTED }}>{"{n}"} = page number · {"{total}"} = total pages</div>
       </>}

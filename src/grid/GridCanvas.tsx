@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEditor, EditorContent, BubbleMenu, type Editor, type JSONContent } from "@tiptap/react";
-import { extensions, blockStyleProps, blockMargin, renderTypedBlock, scopeCustomCss, stackOrder, backgroundCss, type PageNumberConfig } from "@pagecraft/model";
+import { extensions, blockStyleProps, blockMargin, renderTypedBlock, scopeCustomCss, stackOrder, backgroundCss, pageNumberPosCss, type PageNumberConfig } from "@pagecraft/model";
 import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
 import { minArea, moveBlock, moveBlocks, resizeBlock, fitBlockRows, pushDownOverlaps, updateBlockContent, removeBlock, setBlockType, reorderLayer, clampArea, type LayerMove } from "./ops.ts";
 import { PAGE_MARGIN_MM, type PageDims } from "../pages.ts";
+import { useStore } from "../store.ts";
 
 // Recreated grid designer with temp/src's interaction feel on OUR stack:
 // single click = SELECT, double click = EDIT (inline Tiptap); the whole block is
@@ -43,23 +44,22 @@ function cssTextToObject(css?: string): React.CSSProperties {
 // inline styles (the grid CSS classes aren't loaded on the editing surface). The
 // sheet is position:relative with PAGE_MARGIN_MM padding, so this sits in the band.
 // ponytail: parallel to pageNumberHtml — keep the two in sync if format/position grows.
-function PageNumber({ cfg, index, total }: { cfg?: PageNumberConfig | null; index: number; total: number }) {
+function PageNumber({ cfg, index, total, onEdit }: { cfg?: PageNumberConfig | null; index: number; total: number; onEdit?: () => void }) {
   if (!cfg?.enabled) return null;
   const n = (cfg.startAt ?? 1) + index;
   const text = (cfg.format || "{n}").replace(/\{n\}/g, String(n)).replace(/\{total\}/g, String(total));
-  const [vert, horiz] = cfg.position.split("-") as ["top" | "bottom", "left" | "center" | "right"];
   const style: React.CSSProperties = {
-    position: "absolute", fontSize: `${cfg.fontSize ?? 10}pt`, lineHeight: 1, color: "#000", pointerEvents: "none",
-    [vert]: `${PAGE_MARGIN_MM * 0.4}mm`,
-    ...(horiz === "center" ? { left: 0, right: 0, textAlign: "center" }
-      : horiz === "right" ? { right: `${PAGE_MARGIN_MM}mm`, textAlign: "right" }
-      : { left: `${PAGE_MARGIN_MM}mm` }),
+    position: "absolute", fontSize: `${cfg.fontSize ?? 10}pt`, lineHeight: 1, color: "#000",
+    pointerEvents: onEdit ? "auto" : "none", cursor: onEdit ? "pointer" : "default",
+    ...cssTextToObject(pageNumberPosCss(cfg)), // position (shared with the PDF) — honours offsetX/offsetY
     ...cssTextToObject(cfg.css), // user CSS overrides the defaults above
   };
-  return <div style={style}>{text}</div>;
+  // Click the number to jump straight to its controls — the design/position live in
+  // the right panel's Design tab, which is otherwise easy to miss.
+  return <div style={style} title="Edit page numbers" onPointerDown={(e) => { if (!onEdit) return; e.stopPropagation(); onEdit(); }}>{text}</div>;
 }
 
-export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveGroupAcross, selected, onSelect, editingId, onEdit, onReflow, onBreak, onMerge, page, pageNumbers, pageIndex, pageCount, showGrid }: {
+export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveGroupAcross, selected, onSelect, editingId, onEdit, onReflow, onBreak, onMerge, page, pageNumbers, onEditPageNumbers, pageIndex, pageCount, showGrid }: {
   section: GridSection;
   sectionId: string;
   onChange: (s: GridSection) => void;
@@ -67,6 +67,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
   onMoveGroupAcross: (ids: string[], toSectionId: string, dCol: number, dRow: number) => void;
   page: PageDims;
   pageNumbers?: PageNumberConfig | null; // document-level page numbering
+  onEditPageNumbers?: () => void; // click the on-page number → open its controls
   pageIndex: number; // this page's 0-based index (for the number)
   pageCount: number; // total pages (for {total})
   selected: string[]; // ids selected in this section (multi-select)
@@ -243,6 +244,9 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
   const sheet: React.CSSProperties = {
     width: `${dim.w}mm`, height: `${dim.h}mm`, boxSizing: "border-box",
     padding: `${PAGE_MARGIN_MM}mm`, position: "relative", margin: "0 auto",
+    // Match the PDF's :root token so a block's bleed (margin: calc(-1 *
+    // var(--pc-margin))) reaches the page edge identically on canvas and in print.
+    ["--pc-margin" as string]: `${PAGE_MARGIN_MM}mm`,
     // Default page bg = the THEME's --pc-bg (set on .editor-surface by the scoped
     // skin), matching the PDF where .page inherits the skin's body background —
     // a hardcoded #fff here made e.g. luxe-dark pages white in the editor only.
@@ -283,7 +287,8 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
             );
           })}
         </div>
-        <PageNumber cfg={pageNumbers} index={pageIndex} total={pageCount} />
+        <PageNumber cfg={pageNumbers} index={pageIndex} total={pageCount}
+          onEdit={onEditPageNumbers ? () => { onSelect(null); onEditPageNumbers(); } : undefined} />
       </div>
       {/* floating drag layer: the block travels above every page; footprint shows
           where it will land on the page under the cursor */}
@@ -525,12 +530,20 @@ function BlockBody({ b, editing, caret, onContent }: { b: GridBlock; editing: bo
 // so clicks fall through to the block wrapper (select/drag), matching temp's
 // select-vs-edit split. Focuses on entering edit mode.
 function BlockText({ content, editable, caret, onContent }: { content: JSONContent; editable: boolean; caret: { x: number; y: number } | null; onContent: (c: unknown) => void }) {
+  const setActiveEditor = useStore((s) => s.setActiveEditor);
+  const bumpSel = useStore((s) => s.bumpSel);
   const editor = useEditor({
     extensions,
     content,
     editable,
-    onUpdate: ({ editor }) => onContent(editor.getJSON()),
+    onUpdate: ({ editor }) => { onContent(editor.getJSON()); bumpSel(); },
+    onFocus: ({ editor }) => setActiveEditor(editor), // top-bar font size targets this block
+    onSelectionUpdate: () => bumpSel(),
   });
+  // Release the top bar's reference when this block unmounts (edit ends / reflow).
+  useEffect(() => () => {
+    if (useStore.getState().activeEditor === editor) setActiveEditor(null);
+  }, [editor, setActiveEditor]);
   useEffect(() => {
     if (!editor) return;
     editor.setEditable(editable);

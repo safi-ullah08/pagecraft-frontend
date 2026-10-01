@@ -73,6 +73,9 @@ export function Inspector() {
         </Section>
       )}
       <PositionSection block={block} onArea={(a) => apply(moveBlock(section, block.id, { ...block.area, ...a }))} />
+      <Section title="Bleed to page edge">
+        <BleedControl value={block.style?.bleed} onChange={(v) => apply(updateBlockStyle(section, block.id, { bleed: v }))} />
+      </Section>
       <Section title="Fit">
         <button onClick={() => fitBlock(active!.id, block.id)} title="size the block's height to its content"
           style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER}`, color: PALETTE.TEXT, padding: "8px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
@@ -198,6 +201,40 @@ function BoxControl({ value, onChange }: { value?: number | SideValues; onChange
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
       {cell("top", "Top")}{cell("right", "Right")}{cell("bottom", "Bottom")}{cell("left", "Left")}
     </div>
+  );
+}
+
+// Full-bleed toggles: extend any block edge past the 18mm page margin to the paper edge
+// (e.g. edge-hugging bars or bands). Edges toggle independently; "Full bleed" flips all four.
+type BleedTokens = NonNullable<BlockStyleTokens["bleed"]>;
+const BLEED_SIDES = ["top", "right", "bottom", "left"] as const;
+function BleedControl({ value, onChange }: { value?: BleedTokens; onChange: (v: BleedTokens | undefined) => void }) {
+  const cur: BleedTokens = value ?? {};
+  const emit = (next: BleedTokens) => {
+    const on: BleedTokens = {};
+    for (const k of BLEED_SIDES) if (next[k]) on[k] = true;
+    onChange(BLEED_SIDES.some((k) => on[k]) ? on : undefined);
+  };
+  const toggle = (side: (typeof BLEED_SIDES)[number]) => emit({ ...cur, [side]: !cur[side] });
+  const allOn = BLEED_SIDES.every((k) => cur[k]);
+  const btn = (side: (typeof BLEED_SIDES)[number], label: string) => (
+    <button key={side} onClick={() => toggle(side)} title={`Bleed to the ${side} edge`}
+      style={{ flex: 1, padding: "6px 0", fontSize: 11, fontWeight: 600, cursor: "pointer", borderRadius: 3,
+        background: cur[side] ? PALETTE.ACCENT : PALETTE.SURFACE, color: cur[side] ? "#fff" : PALETTE.MUTED,
+        border: `1px solid ${cur[side] ? PALETTE.ACCENT : PALETTE.BORDER}` }}>{label}</button>
+  );
+  return (
+    <>
+      <div style={{ display: "flex", gap: 2 }}>
+        {btn("left", "⇤ Left")}{btn("top", "⤒ Top")}{btn("bottom", "⤓ Bottom")}{btn("right", "Right ⇥")}
+      </div>
+      <button onClick={() => onChange(allOn ? undefined : { top: true, right: true, bottom: true, left: true })}
+        style={{ marginTop: 4, background: allOn ? PALETTE.ACCENT : PALETTE.SURFACE, color: allOn ? "#fff" : PALETTE.TEXT,
+          border: `1px solid ${allOn ? PALETTE.ACCENT : PALETTE.BORDER}`, padding: "6px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer" }}>
+        {allOn ? "✓ Full bleed (all edges)" : "Full bleed (all edges)"}
+      </button>
+      <div style={{ fontSize: 10, color: PALETTE.MUTED, marginTop: 2 }}>Extends the block past the page margin to the paper edge. Place it at the matching row/column first (e.g. column 1 for a left bleed).</div>
+    </>
   );
 }
 
