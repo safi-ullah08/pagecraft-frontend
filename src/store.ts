@@ -2,10 +2,10 @@ import { create } from "zustand";
 import { DEFAULT_THEME } from "./themes.ts";
 import { A4, presetOf, type PageDims } from "./pages.ts";
 import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
-import type { JSONContent } from "@tiptap/react";
-import { addSection, convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
+import type { Editor, JSONContent } from "@tiptap/react";
+import { convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
 import { BLOCKS, serialize, DEFAULT_PAGE_NUMBERS, EMPTY_DESIGN, type PageNumberConfig, type DesignTokens } from "@pagecraft/model";
-import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock, type GridSection } from "./grid/types.ts";
+import { isGridSection, emptyGridSection, ROWS, type BlockType, type GridArea, type GridBlock, type GridSection } from "./grid/types.ts";
 import { minArea, addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
 import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries, type TocEntry } from "./grid/toc.ts";
@@ -37,6 +37,14 @@ type Store = {
   clipboard: GridBlock[]; // copied/cut blocks (in-app clipboard)
   showGrid: boolean; // canvas grid-guide overlay
   zoom: number; // editor zoom (1 = 100%)
+  activeEditor: Editor | null; // the Tiptap instance last focused — the top bar's text-format target
+  selTick: number; // bumps on the active editor's selection/content change so the top-bar controls re-read the caret
+  setActiveEditor: (e: Editor | null) => void;
+  bumpSel: () => void;
+  // Ask the UI to reveal a right-panel tab (App opens the panel, ControlsPanel
+  // switches to it). The nonce re-fires even when the same tab is requested twice.
+  panelRequest: { tab: "design" | "blocks" | "layers" | "templates"; nonce: number } | null;
+  requestPanel: (tab: "design" | "blocks" | "layers" | "templates") => void;
   setTheme: (t: string) => void;
   rename: (title: string) => void;
   setPage: (p: PageDims) => void;
@@ -174,6 +182,16 @@ export const useStore = create<Store>((set, get) => {
     clipboard: [],
     showGrid: true,
     zoom: 1,
+    activeEditor: null,
+    selTick: 0,
+    // Which editor the top bar acts on. Focusing an editor registers it here (and
+    // bumps selTick so the controls re-read); the instance is kept after blur so
+    // clicking a top-bar control — which blurs the editor — can still target it
+    // via chain().focus(), which restores the last selection.
+    setActiveEditor: (activeEditor) => set((st) => ({ activeEditor, selTick: st.selTick + 1 })),
+    bumpSel: () => set((st) => ({ selTick: st.selTick + 1 })),
+    panelRequest: null,
+    requestPanel: (tab) => set((st) => ({ panelRequest: { tab, nonce: (st.panelRequest?.nonce ?? 0) + 1 } })),
     // ponytail: theme is session view-state — seeded from doc.theme on load, but
     // switching is NOT persisted back yet (export/preview honour it live). DB
     // theme persistence lands with the theme/template builder phase.
@@ -608,11 +626,21 @@ export const useStore = create<Store>((set, get) => {
       if (t) clearTimeout(t);
       timers.set(id, setTimeout(() => { timers.delete(id); void flush(id); }, 800));
     },
+    // Add a new page (grid section) after the active page, or at the end if none is active.
     addPage: async () => {
-      const docId = get().documentId;
-      if (!docId) return;
-      const section = await addSection(docId);
-      set((st) => ({ sections: [...st.sections, section], activeId: section.id }));
+      const { documentId, sections, activeId } = get();
+      if (!documentId) return;
+      const afterId = sections.find((s) => s.id === activeId)?.id ?? sections[sections.length - 1]?.id ?? null;
+      const blank = assetsToCanonical(emptyGridSection() as SectionContent);
+      const { sections: inserted } = await insertSectionsAfter(documentId, afterId, [blank]);
+      const added = inserted.map((s) => ({ ...s, content: assetsToDisplay(s.content) }));
+      set((st) => {
+        const arr = [...st.sections];
+        const pos = afterId ? arr.findIndex((s) => s.id === afterId) : -1;
+        const at = pos >= 0 ? pos + 1 : arr.length; // after the active page, else append
+        arr.splice(at, 0, ...added);
+        return { sections: arr, activeId: added[0]?.id ?? st.activeId };
+      });
     },
     // Build (or refresh) the table of contents — ALWAYS page 1. Grid pages ARE pages,
     // so a heading's page number is its section index; no paged.js capture needed.
