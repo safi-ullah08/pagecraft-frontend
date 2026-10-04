@@ -2,9 +2,9 @@ import type { JSONContent } from "@tiptap/react";
 import type { SideValues } from "@pagecraft/model";
 import { useStore } from "../store.ts";
 import { uploadAsset } from "../api.ts";
-import { isGridSection, type BlockStyleTokens, type GridBlock, type GridSection } from "./types.ts";
+import { isGridSection, type BlockStyleTokens, type FloatRect, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
-import { moveBlock, updateBlockStyle, updateBlockContent, removeBlock } from "./ops.ts";
+import { moveBlock, updateBlockStyle, updateBlockContent, removeBlock, setFloat, toFloat, toGrid } from "./ops.ts";
 import { Section, Field, Slider, ColorPicker, Select, inputStyle, resetBtn, PALETTE } from "./controls.tsx";
 
 const textareaStyle: React.CSSProperties = { ...inputStyle, resize: "vertical", fontFamily: "inherit" };
@@ -72,7 +72,11 @@ export function Inspector() {
           </Field>
         </Section>
       )}
-      <PositionSection block={block} onArea={(a) => apply(moveBlock(section, block.id, { ...block.area, ...a }))} />
+      <PositionSection block={block}
+        onArea={(a) => apply(moveBlock(section, block.id, { ...block.area, ...a }))}
+        onFloat={(f) => apply(setFloat(section, block.id, f))}
+        onToFloat={() => apply(toFloat(section, block.id))}
+        onToGrid={() => apply(toGrid(section, block.id))} />
       <Section title="Bleed to page edge">
         <BleedControl value={block.style?.bleed} onChange={(v) => apply(updateBlockStyle(section, block.id, { bleed: v }))} />
       </Section>
@@ -113,7 +117,34 @@ export function Inspector() {
   );
 }
 
-function PositionSection({ block, onArea }: { block: GridBlock; onArea: (a: Partial<GridBlock["area"]>) => void }) {
+const floatBtnStyle: React.CSSProperties = {
+  background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER}`, color: PALETTE.TEXT,
+  padding: "8px 12px", borderRadius: 4, fontSize: 12, cursor: "pointer", textAlign: "left",
+};
+
+function PositionSection({ block, onArea, onFloat, onToFloat, onToGrid }: {
+  block: GridBlock;
+  onArea: (a: Partial<GridBlock["area"]>) => void;
+  onFloat: (f: FloatRect) => void;
+  onToFloat: () => void;
+  onToGrid: () => void;
+}) {
+  // Free-positioned: edit the fractional rect as percentages (x/y go negative so the
+  // block can bleed off the page edge). Otherwise the usual 12×12 cell sliders.
+  if (block.float) {
+    const f = block.float;
+    const pct = (n: number) => Math.round(n * 100);
+    return (
+      <Section title="Position (free)">
+        <Field label="X (% — negative bleeds off the left)"><Slider value={pct(f.x)} min={-50} max={100} onChange={(v) => onFloat({ ...f, x: v / 100 })} unit="%" /></Field>
+        <Field label="Y (% — negative bleeds off the top)"><Slider value={pct(f.y)} min={-50} max={100} onChange={(v) => onFloat({ ...f, y: v / 100 })} unit="%" /></Field>
+        <Field label="Width %"><Slider value={pct(f.w)} min={2} max={150} onChange={(v) => onFloat({ ...f, w: v / 100 })} unit="%" /></Field>
+        <Field label="Height %"><Slider value={pct(f.h)} min={2} max={150} onChange={(v) => onFloat({ ...f, h: v / 100 })} unit="%" /></Field>
+        <button onClick={onToGrid} title="Snap this block back onto the 12×12 grid" style={floatBtnStyle}>⊞ Snap back to grid</button>
+        <div style={{ fontSize: 10, color: PALETTE.MUTED }}>Drag the block to move it freely, or resize from its handles. Negative X/Y let it bleed past the page edge.</div>
+      </Section>
+    );
+  }
   const a = block.area;
   return (
     <Section title="Position">
@@ -121,6 +152,7 @@ function PositionSection({ block, onArea }: { block: GridBlock; onArea: (a: Part
       <Field label="Row end"><Slider value={a.rowEnd} min={2} max={13} onChange={(v) => onArea({ rowEnd: v })} /></Field>
       <Field label="Column start"><Slider value={a.colStart} min={1} max={12} onChange={(v) => onArea({ colStart: v })} /></Field>
       <Field label="Column end"><Slider value={a.colEnd} min={2} max={13} onChange={(v) => onArea({ colEnd: v })} /></Field>
+      <button onClick={onToFloat} title="Lift this block off the grid to position it freely (Canva-style)" style={floatBtnStyle}>📌 Free position (off-grid)</button>
     </Section>
   );
 }

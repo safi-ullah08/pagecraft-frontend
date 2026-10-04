@@ -1,4 +1,4 @@
-import { COLS, ROWS, type BlockStyleTokens, type BlockType, type GridArea, type GridBlock, type GridSection } from "./types.ts";
+import { COLS, ROWS, type BlockStyleTokens, type BlockType, type FloatRect, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
 import { stackOrder } from "@pagecraft/model";
 
@@ -52,6 +52,59 @@ export function setBlockType(section: GridSection, blockId: string, block: Block
 
 export function resizeBlock(section: GridSection, blockId: string, area: GridArea): GridSection {
   return moveBlock(section, blockId, area); // same clamp path; resize just changes the end edges
+}
+
+// --- Free positioning (float) ---------------------------------------------
+// A floating block is lifted off the 12×12 grid into absolute positioning, so it can
+// be dragged anywhere and bleed off the page edges (Canva-style). Positions are kept
+// as FRACTIONS of the page content box; see FloatRect.
+
+const MIN_FLOAT = 0.02; // ~2% of the page — never let a block shrink/slide out of reach
+
+// Keep a float usable: a minimum size, and at least a sliver on the page so it can
+// always be grabbed again. x/y stay free otherwise (negative = bleed off an edge).
+function normalizeFloat(f: FloatRect): FloatRect {
+  const w = Math.max(MIN_FLOAT, f.w);
+  const h = Math.max(MIN_FLOAT, f.h);
+  const x = Math.min(Math.max(f.x, -w + MIN_FLOAT), 1 - MIN_FLOAT);
+  const y = Math.min(Math.max(f.y, -h + MIN_FLOAT), 1 - MIN_FLOAT);
+  return { x, y, w, h };
+}
+
+// Lift a grid block into free positioning, seeding the float rect from its current
+// cell area (fractions of the grid; the 4mm inter-cell gap is ignored — close
+// enough, and the user positions freely from here).
+export function toFloat(section: GridSection, blockId: string): GridSection {
+  return patch(section, blockId, (b) => {
+    if (b.float) return b;
+    const a = b.area;
+    const float = normalizeFloat({
+      x: (a.colStart - 1) / COLS,
+      y: (a.rowStart - 1) / ROWS,
+      w: (a.colEnd - a.colStart) / COLS,
+      h: (a.rowEnd - a.rowStart) / ROWS,
+    });
+    return { ...b, float };
+  });
+}
+
+// Drop a floating block back onto the grid, snapping its rect to the nearest cells.
+export function toGrid(section: GridSection, blockId: string): GridSection {
+  return patch(section, blockId, (b) => {
+    if (!b.float) return b;
+    const f = b.float;
+    const colStart = Math.round(f.x * COLS) + 1;
+    const rowStart = Math.round(f.y * ROWS) + 1;
+    const colEnd = colStart + Math.max(1, Math.round(f.w * COLS));
+    const rowEnd = rowStart + Math.max(1, Math.round(f.h * ROWS));
+    const { float: _drop, ...rest } = b;
+    return { ...rest, area: clampArea({ colStart, rowStart, colEnd, rowEnd }, minArea(b.block)) };
+  });
+}
+
+// Update a floating block's rect (no grid clamp — floats may bleed off any edge).
+export function setFloat(section: GridSection, blockId: string, float: FloatRect): GridSection {
+  return patch(section, blockId, (b) => ({ ...b, float: normalizeFloat(float) }));
 }
 
 // Snap a block's row span so the box wraps its content exactly (to the nearest
