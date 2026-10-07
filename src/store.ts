@@ -12,6 +12,7 @@ import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, 
 import { buildCover, isCoverSection, isBackCoverSection } from "./grid/covers.ts";
 import { insertSectionsAfter, updatePageNumbers, updateDesign, updateTheme, renameDocument } from "./api.ts";
 import { parseTemplateId, structureToLayoutSpec, foldChapters, docPlanToLayout, STRUCTURES, IMPORT_COVER, type Template } from "./grid/templates.ts";
+import { withColumnCount } from "./grid/columns.ts";
 import { runLayout } from "./grid/layoutDoc.ts";
 import type { SourceMeta, StoredDocPlan } from "./api.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
@@ -30,6 +31,8 @@ type Store = {
   loading: boolean; // true until load (incl. any auto flow→grid conversion) settles
   sourceMeta: SourceMeta; // import-harvested cover metadata (empty for in-app docs)
   docPlan: StoredDocPlan | null; // frozen imported chapters — template switching re-lays these
+  columns: 1 | 2; // body layout for the template engine: 2 = template as authored, 1 = collapsed single column
+  appliedTemplate: Template | null; // the last template laid into this doc (session) — re-lay target for a column switch
   sections: Section[]; // ordered; ALL rendered at once (continuous scroll)
   activeId: string | null; // section in focus/view — ChapterNav highlight, toolbar target
   selectedBlockIds: string[]; // grid blocks selected in the active section (multi-select)
@@ -50,6 +53,7 @@ type Store = {
   setPage: (p: PageDims) => void;
   setPageNumbers: (patch: Partial<PageNumberConfig>) => void;
   setDesign: (patch: Partial<DesignTokens> | null) => void; // null = reset to the pure theme
+  setColumns: (n: 1 | 2) => Promise<void>; // re-lay the current template's flow pages as one/two columns
   applyImportedTemplate: (t: Template) => Promise<void>; // legacy: look + cover + TOC on an already-grid doc
   applyTemplateLayout: (t: Template, meta: SourceMeta) => Promise<void>; // engine: lay flow chapters into the template's designed pages
   setActive: (id: string) => void;
@@ -174,6 +178,8 @@ export const useStore = create<Store>((set, get) => {
     documentId: null,
     sourceMeta: {},
     docPlan: null,
+    columns: 2,
+    appliedTemplate: null,
     loading: true,
     sections: [],
     activeId: null,
@@ -220,6 +226,16 @@ export const useStore = create<Store>((set, get) => {
       set({ design });
       const id = get().documentId;
       if (id) void updateDesign(id, design).catch(() => {});
+    },
+    // Toggle 1/2 columns by re-laying chapters through the same template (cover, openers, TOC unchanged).
+    // The choice is saved per-document in localStorage so template switches and ?tpl= links keep it.
+    setColumns: async (n) => {
+      if (get().columns === n) return;
+      set({ columns: n });
+      const id = get().documentId;
+      if (id) { try { localStorage.setItem(`pc-columns:${id}`, String(n)); } catch { /* ignore */ } }
+      const t = get().appliedTemplate;
+      if (t && get().docPlan) await get().applyTemplateLayout(t, get().sourceMeta);
     },
     setActive: (activeId) => set({ activeId }),
     // Select a block. additive (shift) toggles it in the multi-selection; otherwise
@@ -570,7 +586,11 @@ export const useStore = create<Store>((set, get) => {
         // page size comes from the document (e.g. a docx's page size); else A4.
         // If it's not a preset, remember it as customPage so it stays selectable.
         const page = doc.pageWidthMm && doc.pageHeightMm ? { w: doc.pageWidthMm, h: doc.pageHeightMm } : A4;
-        set({ documentId: id, title: doc.title || "Untitled", sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME, page, customPage: presetOf(page) ? null : page, pageNumbers: doc.pageNumbers ?? DEFAULT_PAGE_NUMBERS, design: doc.designTokens ?? EMPTY_DESIGN, sourceMeta: doc.sourceMeta ?? {}, docPlan: doc.docPlan ?? null });
+        // column choice is a per-document, per-browser pref (no backend column yet):
+        // honoured by the ?tpl= auto-apply below and by later template switches.
+        let columns: 1 | 2 = 2;
+        try { if (localStorage.getItem(`pc-columns:${id}`) === "1") columns = 1; } catch { /* ignore */ }
+        set({ documentId: id, title: doc.title || "Untitled", sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME, page, customPage: presetOf(page) ? null : page, pageNumbers: doc.pageNumbers ?? DEFAULT_PAGE_NUMBERS, design: doc.designTokens ?? EMPTY_DESIGN, sourceMeta: doc.sourceMeta ?? {}, docPlan: doc.docPlan ?? null, columns, appliedTemplate: null });
         // ?tpl=<catalog id>: a template chosen for this freshly-imported doc.
         const tpl = new URLSearchParams(location.search).get("tpl");
         const t = tpl ? parseTemplateId(tpl) : null;
@@ -728,7 +748,8 @@ export const useStore = create<Store>((set, get) => {
 
       const struct = STRUCTURES[t.structKey];
       if (!struct) throw new Error(`unknown template "${t.structKey}"`);
-      const spec = structureToLayoutSpec(struct);
+      set({ appliedTemplate: t }); // remember the target so a column switch can re-lay
+      const spec = withColumnCount(structureToLayoutSpec(struct), get().columns);
       const { sections: laid, report } = await runLayout(plan, spec, t.theme, page);
       if (report.length) console.info("layout report:", report);
 
