@@ -1,5 +1,6 @@
 import { Extension, type Editor } from "@tiptap/core";
 import Suggestion from "@tiptap/suggestion";
+import { promptDialog } from "./components/ConfirmModal.tsx";
 
 // Slash menu: type "/" to insert one of the schema's blocks. A thin, dependency-
 // light command palette over @tiptap/suggestion — the popup is plain DOM (no
@@ -19,8 +20,8 @@ const ITEMS: Item[] = [
   ] }).run() },
   { title: "Divider", hint: "horizontal rule", run: (e) => e.chain().focus().setHorizontalRule().run() },
   { title: "Page break", hint: "start new page", run: (e) => e.chain().focus().insertContent({ type: "paragraph", attrs: { breakBefore: true } }).run() },
-  { title: "Figure", hint: "image + caption", run: (e) => {
-    const src = window.prompt("Image URL");
+  { title: "Figure", hint: "image + caption", run: async (e) => {
+    const src = await promptDialog({ title: "Image URL", placeholder: "https://…", confirmLabel: "Insert" });
     if (src) e.chain().focus().insertContent({ type: "figure", attrs: { src, alt: "" }, content: [{ type: "text", text: "Caption" }] }).run();
   } },
 ];

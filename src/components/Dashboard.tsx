@@ -3,6 +3,7 @@ import { listDocuments, createDocument, deleteDocument, renameDocument, getBilli
 import { ImportBar } from "./ImportBar.tsx";
 import { ImportHub } from "./ImportHub.tsx";
 import { TemplateGallery } from "./TemplateGallery.tsx";
+import { confirmDialog, promptDialog } from "./ConfirmModal.tsx";
 
 // The landing view (no ?doc in the URL): list / create / import / open / delete
 // my documents. Navigation is a real reload to ?doc=<id> — the editor bootstraps
@@ -78,7 +79,7 @@ export function Dashboard() {
 
   async function create() {
     if (creating) return;
-    const name = prompt("Name your document", "Untitled");
+    const name = await promptDialog({ title: "Name your document", defaultValue: "Untitled", confirmLabel: "Create" });
     if (name === null) return; // cancelled
     setCreating(true);
     try {
@@ -91,7 +92,7 @@ export function Dashboard() {
   }
 
   async function rename(id: string, current: string) {
-    const name = prompt("Rename document", current || "Untitled");
+    const name = await promptDialog({ title: "Rename document", defaultValue: current || "Untitled", confirmLabel: "Rename" });
     if (name === null || !name.trim() || name.trim() === current) return;
     const title = name.trim();
     setDocs((d) => d?.map((x) => (x.id === id ? { ...x, title } : x)) ?? null); // optimistic
@@ -104,7 +105,13 @@ export function Dashboard() {
   }
 
   async function remove(id: string, title: string) {
-    if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
+    const ok = await confirmDialog({
+      title: `Delete "${title || "Untitled"}"?`,
+      body: "This cannot be undone.",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     setDocs((d) => d?.filter((x) => x.id !== id) ?? null); // optimistic
     try {
       await deleteDocument(id);
