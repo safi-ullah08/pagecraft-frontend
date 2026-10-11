@@ -41,6 +41,22 @@ function Preview({ theme, design, html, height }: {
   );
 }
 
+// A tiny page glyph showing one vs two text columns — the whole choice at a glance.
+function ColsGlyph({ cols, active }: { cols: 1 | 2; active: boolean }) {
+  const ink = active ? "var(--ui-accent)" : "#9a9a9a";
+  const line = (x: number, y: number, w: number) => (
+    <rect x={x} y={y} width={w} height={2.4} rx={1.2} fill={ink} />
+  );
+  return (
+    <svg width={34} height={44} viewBox="0 0 34 44" style={{ flexShrink: 0 }} aria-hidden>
+      <rect x={1} y={1} width={32} height={42} rx={3} fill="#fff" stroke={active ? "var(--ui-accent)" : "#d9d4c7"} strokeWidth={1.4} />
+      {cols === 1
+        ? [7, 12, 17, 22, 27, 32].map((y) => <g key={y}>{line(6, y, 22)}</g>)
+        : [7, 12, 17, 22, 27, 32].map((y) => <g key={y}>{line(6, y, 9)}{line(19, y, 9)}</g>)}
+    </svg>
+  );
+}
+
 const FONTS = [
   { value: "", label: "Theme default" },
   { value: "Georgia, serif", label: "Georgia" },
@@ -56,13 +72,22 @@ export function DesignWizard({ onClose }: { onClose: () => void }) {
   const setTheme = useStore((s) => s.setTheme);
   const design = useStore((s) => s.design);
   const setDesign = useStore((s) => s.setDesign);
+  const columns = useStore((s) => s.columns);
+  const setColumns = useStore((s) => s.setColumns);
+  const appliedTemplate = useStore((s) => s.appliedTemplate);
 
   const [step, setStep] = useState(0);
+  const [applyingCols, setApplyingCols] = useState(false);
+  const chooseColumns = async (n: 1 | 2) => {
+    if (n === columns || applyingCols) return;
+    setApplyingCols(true);
+    try { await setColumns(n); } finally { setApplyingCols(false); }
+  };
   const specimen = useMemo(() => extractSpecimen(sections), [sections]);
   const html = useMemo(() => specimenHtml(specimen), [specimen]);
   const usingTheirs = sections.length > 0;
 
-  const STEPS = ["Look", "Headings", "Body"];
+  const STEPS = ["Look", "Headings", "Body", "Columns"];
   const set = (patch: Partial<DesignTokens>) => setDesign(patch);
 
   return (
@@ -132,6 +157,40 @@ export function DesignWizard({ onClose }: { onClose: () => void }) {
                 <Field label="Drop cap">
                   <input type="checkbox" checked={!!design.dropCap} onChange={(e) => set({ dropCap: e.target.checked })} />
                 </Field>
+              </Section>
+            )}
+
+            {step === 3 && (
+              <Section title="Body columns">
+                <div style={{ fontSize: 10, color: PALETTE.MUTED, marginTop: -4, marginBottom: 2 }}>
+                  How the body text flows on each page. Photos stay where the template places them.
+                </div>
+                {([
+                  { n: 2 as const, label: "Two columns", hint: "The template as designed — text reads left column, then right." },
+                  { n: 1 as const, label: "Single column", hint: "One full-width column per page. Simpler, easier to read." },
+                ]).map(({ n, label, hint }) => {
+                  const active = columns === n;
+                  return (
+                    <button key={n} disabled={applyingCols} onClick={() => chooseColumns(n)}
+                      style={{ display: "flex", gap: 10, alignItems: "center", textAlign: "left", width: "100%",
+                        padding: "10px 11px", marginBottom: 8, borderRadius: 6, cursor: applyingCols ? "wait" : "pointer",
+                        border: `2px solid ${active ? "var(--ui-accent)" : PALETTE.BORDER}`,
+                        background: active ? "var(--ui-accent-soft)" : "#fff", opacity: applyingCols && !active ? 0.6 : 1 }}>
+                      <ColsGlyph cols={n} active={active} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: PALETTE.TEXT }}>{label}</div>
+                        <div style={{ fontSize: 10, color: PALETTE.MUTED, lineHeight: 1.35, marginTop: 2 }}>{hint}</div>
+                      </div>
+                    </button>
+                  );
+                })}
+                <div style={{ fontSize: 10, color: PALETTE.MUTED, lineHeight: 1.4, marginTop: 2 }}>
+                  {applyingCols
+                    ? "Re-laying your document…"
+                    : appliedTemplate
+                      ? "Changing this re-lays your document right away."
+                      : "Applies when you lay this document out with a template."}
+                </div>
               </Section>
             )}
 

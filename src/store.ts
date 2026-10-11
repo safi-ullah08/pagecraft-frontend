@@ -2,16 +2,17 @@ import { create } from "zustand";
 import { DEFAULT_THEME } from "./themes.ts";
 import { A4, presetOf, type PageDims } from "./pages.ts";
 import { assetsToDisplay, assetsToCanonical } from "./assets.ts";
-import type { JSONContent } from "@tiptap/react";
-import { addSection, convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
+import type { Editor, JSONContent } from "@tiptap/react";
+import { convertDocument, deleteSection, getDocument, getSection, saveSection, type SectionContent } from "./api.ts";
 import { BLOCKS, serialize, DEFAULT_PAGE_NUMBERS, EMPTY_DESIGN, type PageNumberConfig, type DesignTokens } from "@pagecraft/model";
-import { isGridSection, ROWS, type BlockType, type GridArea, type GridBlock, type GridSection } from "./grid/types.ts";
-import { addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
+import { isGridSection, emptyGridSection, ROWS, type BlockType, type GridArea, type GridBlock, type GridSection } from "./grid/types.ts";
+import { minArea, addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
-import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries } from "./grid/toc.ts";
+import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries, type TocEntry } from "./grid/toc.ts";
 import { buildCover, isCoverSection, isBackCoverSection } from "./grid/covers.ts";
 import { insertSectionsAfter, updatePageNumbers, updateDesign, updateTheme, renameDocument } from "./api.ts";
 import { parseTemplateId, structureToLayoutSpec, foldChapters, docPlanToLayout, STRUCTURES, IMPORT_COVER, type Template } from "./grid/templates.ts";
+import { withColumnCount } from "./grid/columns.ts";
 import { runLayout } from "./grid/layoutDoc.ts";
 import type { SourceMeta, StoredDocPlan } from "./api.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
@@ -30,6 +31,8 @@ type Store = {
   loading: boolean; // true until load (incl. any auto flow→grid conversion) settles
   sourceMeta: SourceMeta; // import-harvested cover metadata (empty for in-app docs)
   docPlan: StoredDocPlan | null; // frozen imported chapters — template switching re-lays these
+  columns: 1 | 2; // body layout for the template engine: 2 = template as authored, 1 = collapsed single column
+  appliedTemplate: Template | null; // the last template laid into this doc (session) — re-lay target for a column switch
   sections: Section[]; // ordered; ALL rendered at once (continuous scroll)
   activeId: string | null; // section in focus/view — ChapterNav highlight, toolbar target
   selectedBlockIds: string[]; // grid blocks selected in the active section (multi-select)
@@ -37,11 +40,20 @@ type Store = {
   clipboard: GridBlock[]; // copied/cut blocks (in-app clipboard)
   showGrid: boolean; // canvas grid-guide overlay
   zoom: number; // editor zoom (1 = 100%)
+  activeEditor: Editor | null; // the Tiptap instance last focused — the top bar's text-format target
+  selTick: number; // bumps on the active editor's selection/content change so the top-bar controls re-read the caret
+  setActiveEditor: (e: Editor | null) => void;
+  bumpSel: () => void;
+  // Ask the UI to reveal a right-panel tab (App opens the panel, ControlsPanel
+  // switches to it). The nonce re-fires even when the same tab is requested twice.
+  panelRequest: { tab: "design" | "blocks" | "layers" | "templates"; nonce: number } | null;
+  requestPanel: (tab: "design" | "blocks" | "layers" | "templates") => void;
   setTheme: (t: string) => void;
   rename: (title: string) => void;
   setPage: (p: PageDims) => void;
   setPageNumbers: (patch: Partial<PageNumberConfig>) => void;
   setDesign: (patch: Partial<DesignTokens> | null) => void; // null = reset to the pure theme
+  setColumns: (n: 1 | 2) => Promise<void>; // re-lay the current template's flow pages as one/two columns
   applyImportedTemplate: (t: Template) => Promise<void>; // legacy: look + cover + TOC on an already-grid doc
   applyTemplateLayout: (t: Template, meta: SourceMeta) => Promise<void>; // engine: lay flow chapters into the template's designed pages
   setActive: (id: string) => void;
@@ -166,6 +178,8 @@ export const useStore = create<Store>((set, get) => {
     documentId: null,
     sourceMeta: {},
     docPlan: null,
+    columns: 2,
+    appliedTemplate: null,
     loading: true,
     sections: [],
     activeId: null,
@@ -174,6 +188,16 @@ export const useStore = create<Store>((set, get) => {
     clipboard: [],
     showGrid: true,
     zoom: 1,
+    activeEditor: null,
+    selTick: 0,
+    // Which editor the top bar acts on. Focusing an editor registers it here (and
+    // bumps selTick so the controls re-read); the instance is kept after blur so
+    // clicking a top-bar control — which blurs the editor — can still target it
+    // via chain().focus(), which restores the last selection.
+    setActiveEditor: (activeEditor) => set((st) => ({ activeEditor, selTick: st.selTick + 1 })),
+    bumpSel: () => set((st) => ({ selTick: st.selTick + 1 })),
+    panelRequest: null,
+    requestPanel: (tab) => set((st) => ({ panelRequest: { tab, nonce: (st.panelRequest?.nonce ?? 0) + 1 } })),
     // ponytail: theme is session view-state — seeded from doc.theme on load, but
     // switching is NOT persisted back yet (export/preview honour it live). DB
     // theme persistence lands with the theme/template builder phase.
@@ -202,6 +226,16 @@ export const useStore = create<Store>((set, get) => {
       set({ design });
       const id = get().documentId;
       if (id) void updateDesign(id, design).catch(() => {});
+    },
+    // Toggle 1/2 columns by re-laying chapters through the same template (cover, openers, TOC unchanged).
+    // The choice is saved per-document in localStorage so template switches and ?tpl= links keep it.
+    setColumns: async (n) => {
+      if (get().columns === n) return;
+      set({ columns: n });
+      const id = get().documentId;
+      if (id) { try { localStorage.setItem(`pc-columns:${id}`, String(n)); } catch { /* ignore */ } }
+      const t = get().appliedTemplate;
+      if (t && get().docPlan) await get().applyTemplateLayout(t, get().sourceMeta);
     },
     setActive: (activeId) => set({ activeId }),
     // Select a block. additive (shift) toggles it in the multi-selection; otherwise
@@ -293,7 +327,7 @@ export const useStore = create<Store>((set, get) => {
       const marX = sidesX(block.style?.margin), marY = sidesY(block.style?.margin);
       const h = measureHtmlHeight(html, blockWidthPx(cols, page) - marX - padX, theme) + padY + marY;
       const rows = heightToRows(h, page);
-      const min = BLOCKS[block.block].min.rows;
+      const min = minArea(block.block).rows;
       const rowStart = block.area.rowStart;
       const rowEnd = rowStart + Math.max(min, Math.min(rows, ROWS - rowStart + 1));
       edit(sectionId, resizeBlock(sec.content, blockId, { ...block.area, rowEnd }));
@@ -350,14 +384,16 @@ export const useStore = create<Store>((set, get) => {
     },
     // Break a text frame into smaller blocks on the SAME page (no new pages, no
     // page-pushing). One block per paragraph; a lone overflowing paragraph is
-    // chunked by page-fit so it still breaks into pieces. Each piece is fit-sized
-    // and stacked below the previous — the user then arranges them freely.
+    // chunked by page-fit so it still breaks into pieces. Pieces are fit-sized and laid
+    // into the page's FREE rows (flowing around the blocks already there); once the page
+    // runs out, the rest stays whole in one trailing block instead of overlapping.
     breakTextFrame: (sectionId, blockId) => {
       const { sections, theme, page, edit } = get();
       const sec = sections.find((s) => s.id === sectionId);
       if (!sec || !isGridSection(sec.content)) return;
       const block = sec.content.blocks.find((b) => b.id === blockId);
-      if (!block || block.block !== "textFrame") return;
+      if (!block || (block.block !== "textFrame" && block.block !== "tocList")) return;
+      const isToc = block.block === "tocList";
       const doc = block.content as JSONContent;
       const nodes = doc.content ?? [];
       const cols = block.area.colEnd - block.area.colStart;
@@ -366,8 +402,48 @@ export const useStore = create<Store>((set, get) => {
       const padY = sidesY(block.style?.padding) + sidesY(block.style?.margin);
       const maxHpx = blockHeightPx(rows, page) - padY;
 
-      let pieces: JSONContent[];
-      if (nodes.length >= 2) {
+      let pieces: GridBlock["content"][];
+      if (isToc) {
+        // A contents list breaks by ENTRY, not by prose. Prefer one block per top-level
+        // section so a chapter keeps its sub-entries; when the list has a single top
+        // level (the usual one-title TOC), fall back to one block per entry.
+
+        // const cfg = block.content as { entries?: TocEntry[]; maxLevel?: unknown };
+        const contents = block.content as { entries?: TocEntry[]; maxLevel?: number };
+        const entries = contents.entries ?? [];
+        // The renderer hides entries deeper than maxLevel, so only a VISIBLE entry may
+        // start a new block — otherwise a deep entry gets a box of its own and renders
+        // as the "No headings yet" placeholder. Hidden entries ride with the piece above.
+        const maxLevel = Math.max(1, Math.min(6, Number(contents.maxLevel) || 3));
+        const shown = (e: TocEntry) => (Number(e.level) || 1) <= maxLevel;
+        const chunkAt = (boundary: (e: TocEntry) => boolean) => {
+          const out: TocEntry[][] = [];
+          console.log("entries:", entries)
+          for (const e of entries) {
+            if (!out.length || boundary(e)) {
+              console.log("length: ", out.length, "pushing: ", e, "shown: ", shown(e), "boundary: ", boundary(e))
+              out.push([e]);
+            }
+            else {
+              console.log("length: ", out.length, out[out.length-1], "pushing: ", e, "shown: ", shown(e), "boundary: ", boundary(e))
+              out[out.length - 1]!.push(e)
+            }
+          }
+          // Only the first chunk can be all-hidden (it is forced open); fold it forward.
+          if (out.length > 1 && !out[0]!.some(shown)){
+            out[1]!.unshift(...out.shift()!);
+          } 
+          return out;
+        };
+
+        const top = Math.min(...entries.filter(shown).map((e) => e.level));
+        let chunks: TocEntry[][] = [];
+        for (let d = top; d <= maxLevel; d++) {
+          chunks = chunkAt((e) => (Number(e.level) || 1) <= d);
+          if (chunks.length >= 2) break;
+        }
+        pieces = chunks.map((c) => ({ ...contents, entries: c }) as GridBlock["content"]);
+      } else if (nodes.length >= 2) {
         pieces = nodes.map((n) => ({ ...doc, content: [n] })); // one block per paragraph
       } else {
         // single node: split a paragraph into sentences; else chunk by page-fit
@@ -386,19 +462,73 @@ export const useStore = create<Store>((set, get) => {
           }
         }
       }
-      if (pieces.length < 2) return; // nothing to break
-
-      let row = block.area.rowStart;
-      const newBlocks: GridBlock[] = pieces.map((piece) => {
-        const h = measureHtmlHeight(serialize(piece), widthPx, theme) + padY;
-        const area = clampArea(
-          { rowStart: row, colStart: block.area.colStart, rowEnd: row + heightToRows(h, page), colEnd: block.area.colEnd },
-          BLOCKS.textFrame.min,
-        );
-        row = area.rowEnd;
-        return { id: Math.random().toString(36).slice(2, 10), area, block: "textFrame", content: piece, style: block.style };
-      });
+      if (pieces.length < 2) return;
+      
+      // Everything stays on THIS page. Rows already held by OTHER blocks that share
+      // our columns are off limits, so the pieces flow into the page's real free space
+      // instead of marching down from our own top and landing on top of them.
       const others = sec.content.blocks.filter((b) => b.id !== blockId);
+      const taken = new Set<number>();
+      for (const o of others) {
+        if (o.area.colEnd <= block.area.colStart || o.area.colStart >= block.area.colEnd) continue; // different columns never clash
+        for (let r = o.area.rowStart; r < o.area.rowEnd; r++) taken.add(r);
+      }
+      // Contiguous runs of free rows, from this block's own top down to the page bottom.
+      const runs: { start: number; len: number }[] = [];
+      for (let r = block.area.rowStart; r <= ROWS; r++) {
+        if (taken.has(r)) continue;
+        const prev = runs[runs.length - 1];
+        if (prev && prev.start + prev.len === r) prev.len++;
+        else runs.push({ start: r, len: 1 });
+      }
+
+      // Both kinds measure the same way — render the piece exactly as the block renders.
+      const htmlOf = (piece: GridBlock["content"]) => blockHtml({ ...block, content: piece }) ?? "";
+      // ...and rejoin the same way: entries for a contents list, nodes for prose.
+      const fold = (parts: GridBlock["content"][]): GridBlock["content"] => isToc
+        ? { ...(block.content as Record<string, unknown>), entries: parts.flatMap((p) => (p as { entries?: TocEntry[] }).entries ?? []) }
+        : { ...doc, content: parts.flatMap((p) => (p as JSONContent).content ?? []) };
+
+      const rowsFor = pieces.map((piece) => 
+        Math.max(1, heightToRows(measureHtmlHeight(htmlOf(piece), widthPx, theme) + padY, page))
+      );
+      const mk = (piece: GridBlock["content"], rowStart: number, rowEnd: number): GridBlock => ({
+        id: Math.random().toString(36).slice(2, 10), block: block.block, style: block.style,
+        area: { rowStart, colStart: block.area.colStart, rowEnd, colEnd: block.area.colEnd },
+        content: piece,
+      });
+
+      // Break only what genuinely fits. Walk forward through the free runs placing whole
+      // pieces at their natural size — never squeezed, so nothing is clipped just to make
+      // the count fit. The first piece that no longer fits ends the break.
+      const newBlocks: GridBlock[] = [];
+      let ri = 0, used = 0, i = 0;
+      for (; i < pieces.length; i++) {
+        const want = rowsFor[i]!;
+        let tri = ri, tused = used;
+        while (tri < runs.length && runs[tri]!.len - tused < want) { tri++; tused = 0; } // won't fit this gap — try the next
+        if (tri >= runs.length) break; // no gap left can hold this piece whole
+        ri = tri; used = tused;
+        const rowStart = runs[ri]!.start + used;
+        used += want;
+        newBlocks.push(mk(pieces[i]!, rowStart, rowStart + want));
+      }
+      if (!newBlocks.length) return; // not even the first piece fits — leave the frame as it is
+
+      // Whatever is left over rides along in ONE trailing block rather than being shrunk
+      // across the page or pushed onto another one. It carries the usual overflow bar, so
+      // Split can spill it to a new page when the user wants that.
+      if (i < pieces.length) {
+        const rest = pieces.slice(i);
+        while (ri < runs.length && runs[ri]!.len - used <= 0) { ri++; used = 0; } // find any rows still free
+        const run = runs[ri];
+        if (run) {
+          newBlocks.push(mk(fold(rest), run.start + used, run.start + run.len));
+        } else {
+          const last = newBlocks[newBlocks.length - 1]!; // page is full — fold it into the last block
+          last.content = fold([last.content, ...rest]);
+        }
+      }
       edit(sectionId, { ...sec.content, blocks: [...others, ...newBlocks] });
       set({ selectedBlockIds: newBlocks.map((b) => b.id), editingBlockId: null });
     },
@@ -438,7 +568,7 @@ export const useStore = create<Store>((set, get) => {
       const moving = new Set(ids);
       const shifted = from.content.blocks
         .filter((b) => moving.has(b.id))
-        .map((b) => ({ ...b, area: clampArea({ rowStart: b.area.rowStart + dRow, colStart: b.area.colStart + dCol, rowEnd: b.area.rowEnd + dRow, colEnd: b.area.colEnd + dCol }, BLOCKS[b.block].min) }));
+        .map((b) => ({ ...b, area: clampArea({ rowStart: b.area.rowStart + dRow, colStart: b.area.colStart + dCol, rowEnd: b.area.rowEnd + dRow, colEnd: b.area.colEnd + dCol }, minArea(b.block)) }));
       if (!shifted.length) return;
       edit(fromId, { ...from.content, blocks: from.content.blocks.filter((b) => !moving.has(b.id)) });
       edit(toId, { ...to.content, blocks: [...to.content.blocks, ...shifted] });
@@ -456,7 +586,11 @@ export const useStore = create<Store>((set, get) => {
         // page size comes from the document (e.g. a docx's page size); else A4.
         // If it's not a preset, remember it as customPage so it stays selectable.
         const page = doc.pageWidthMm && doc.pageHeightMm ? { w: doc.pageWidthMm, h: doc.pageHeightMm } : A4;
-        set({ documentId: id, title: doc.title || "Untitled", sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME, page, customPage: presetOf(page) ? null : page, pageNumbers: doc.pageNumbers ?? DEFAULT_PAGE_NUMBERS, design: doc.designTokens ?? EMPTY_DESIGN, sourceMeta: doc.sourceMeta ?? {}, docPlan: doc.docPlan ?? null });
+        // column choice is a per-document, per-browser pref (no backend column yet):
+        // honoured by the ?tpl= auto-apply below and by later template switches.
+        let columns: 1 | 2 = 2;
+        try { if (localStorage.getItem(`pc-columns:${id}`) === "1") columns = 1; } catch { /* ignore */ }
+        set({ documentId: id, title: doc.title || "Untitled", sections, activeId: sections[0]?.id ?? null, theme: doc.theme || DEFAULT_THEME, page, customPage: presetOf(page) ? null : page, pageNumbers: doc.pageNumbers ?? DEFAULT_PAGE_NUMBERS, design: doc.designTokens ?? EMPTY_DESIGN, sourceMeta: doc.sourceMeta ?? {}, docPlan: doc.docPlan ?? null, columns, appliedTemplate: null });
         // ?tpl=<catalog id>: a template chosen for this freshly-imported doc.
         const tpl = new URLSearchParams(location.search).get("tpl");
         const t = tpl ? parseTemplateId(tpl) : null;
@@ -512,11 +646,21 @@ export const useStore = create<Store>((set, get) => {
       if (t) clearTimeout(t);
       timers.set(id, setTimeout(() => { timers.delete(id); void flush(id); }, 800));
     },
+    // Add a new page (grid section) after the active page, or at the end if none is active.
     addPage: async () => {
-      const docId = get().documentId;
-      if (!docId) return;
-      const section = await addSection(docId);
-      set((st) => ({ sections: [...st.sections, section], activeId: section.id }));
+      const { documentId, sections, activeId } = get();
+      if (!documentId) return;
+      const afterId = sections.find((s) => s.id === activeId)?.id ?? sections[sections.length - 1]?.id ?? null;
+      const blank = assetsToCanonical(emptyGridSection() as SectionContent);
+      const { sections: inserted } = await insertSectionsAfter(documentId, afterId, [blank]);
+      const added = inserted.map((s) => ({ ...s, content: assetsToDisplay(s.content) }));
+      set((st) => {
+        const arr = [...st.sections];
+        const pos = afterId ? arr.findIndex((s) => s.id === afterId) : -1;
+        const at = pos >= 0 ? pos + 1 : arr.length; // after the active page, else append
+        arr.splice(at, 0, ...added);
+        return { sections: arr, activeId: added[0]?.id ?? st.activeId };
+      });
     },
     // Build (or refresh) the table of contents — ALWAYS page 1. Grid pages ARE pages,
     // so a heading's page number is its section index; no paged.js capture needed.
@@ -602,14 +746,17 @@ export const useStore = create<Store>((set, get) => {
             })),
           };
 
-      const spec = structureToLayoutSpec(STRUCTURES[t.structKey]);
+      const struct = STRUCTURES[t.structKey];
+      if (!struct) throw new Error(`unknown template "${t.structKey}"`);
+      set({ appliedTemplate: t }); // remember the target so a column switch can re-lay
+      const spec = withColumnCount(structureToLayoutSpec(struct), get().columns);
       const { sections: laid, report } = await runLayout(plan, spec, t.theme, page);
       if (report.length) console.info("layout report:", report);
 
       const { sections: fresh } = await convertDocument(documentId, laid.map((s) => assetsToCanonical(s as SectionContent)));
       set({ sections: fresh.map((s) => ({ ...s, content: assetsToDisplay(s.content) })), activeId: fresh[0]?.id ?? null });
 
-      const pn = STRUCTURES[t.structKey].pageNumbers;
+      const pn = struct.pageNumbers;
       if (pn) {
         set({ pageNumbers: pn });
         try { await updatePageNumbers(documentId, pn); } catch (e) { console.error("page numbers persist failed:", e); }

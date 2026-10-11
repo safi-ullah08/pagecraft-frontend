@@ -1,4 +1,4 @@
-import { COLS, ROWS, type BlockStyleTokens, type BlockType, type GridArea, type GridBlock, type GridSection } from "./types.ts";
+import { COLS, ROWS, type BlockStyleTokens, type BlockType, type FloatRect, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
 import { stackOrder } from "@pagecraft/model";
 
@@ -8,6 +8,15 @@ import { stackOrder } from "@pagecraft/model";
 // polish, not MVP. Clamp only keeps every block inside the 12×12 page.
 
 const id = () => Math.random().toString(36).slice(2, 10);
+
+// Hug type for  content (textFrame, tocList) to be set to min 1 row
+const HUG_CONTENT = new Set<BlockType>(["textFrame", "tocList"]);
+
+// The smallest area a block may be clamped to. Use this, never BLOCKS[type].min directly.
+export function minArea(block: BlockType): { cols: number; rows: number } {
+  const min = BLOCKS[block].min;
+  return HUG_CONTENT.has(block) ? { cols: min.cols, rows: 1 } : min;
+}
 
 // Keep an area inside the grid (1..COLS+1 / 1..ROWS+1) while preserving its size.
 export function clampArea(a: GridArea, min = { cols: 1, rows: 1 }): GridArea {
@@ -22,7 +31,7 @@ export function clampArea(a: GridArea, min = { cols: 1, rows: 1 }): GridArea {
 
 export function addBlock(section: GridSection, block: BlockType, at?: GridArea): { section: GridSection; id: string } {
   const bid = id();
-  const area = clampArea(at ?? BLOCKS[block].defaultArea, BLOCKS[block].min);
+  const area = clampArea(at ?? BLOCKS[block].defaultArea, minArea(block));
   const b: GridBlock = { id: bid, area, block, content: structuredClone(BLOCKS[block].defaultContent) as GridBlock["content"] };
   return { section: { ...section, blocks: [...section.blocks, b] }, id: bid };
 }
@@ -32,17 +41,70 @@ function patch(section: GridSection, blockId: string, fn: (b: GridBlock) => Grid
 }
 
 export function moveBlock(section: GridSection, blockId: string, area: GridArea): GridSection {
-  return patch(section, blockId, (b) => ({ ...b, area: clampArea(area, BLOCKS[b.block].min) }));
+  return patch(section, blockId, (b) => ({ ...b, area: clampArea(area, minArea(b.block)) }));
 }
 
 // Reclassify a block (e.g. heading → textFrame so Split/Break/fit apply). Content is
 // kept as-is; the area is re-clamped to the new type's minimum.
 export function setBlockType(section: GridSection, blockId: string, block: BlockType): GridSection {
-  return patch(section, blockId, (b) => ({ ...b, block, area: clampArea(b.area, BLOCKS[block].min) }));
+  return patch(section, blockId, (b) => ({ ...b, block, area: clampArea(b.area, minArea(block)) }));
 }
 
 export function resizeBlock(section: GridSection, blockId: string, area: GridArea): GridSection {
   return moveBlock(section, blockId, area); // same clamp path; resize just changes the end edges
+}
+
+// --- Free positioning (float) ---------------------------------------------
+// A floating block is lifted off the 12×12 grid into absolute positioning, so it can
+// be dragged anywhere and bleed off the page edges (Canva-style). Positions are kept
+// as FRACTIONS of the page content box; see FloatRect.
+
+const MIN_FLOAT = 0.02; // ~2% of the page — never let a block shrink/slide out of reach
+
+// Keep a float usable: a minimum size, and at least a sliver on the page so it can
+// always be grabbed again. x/y stay free otherwise (negative = bleed off an edge).
+function normalizeFloat(f: FloatRect): FloatRect {
+  const w = Math.max(MIN_FLOAT, f.w);
+  const h = Math.max(MIN_FLOAT, f.h);
+  const x = Math.min(Math.max(f.x, -w + MIN_FLOAT), 1 - MIN_FLOAT);
+  const y = Math.min(Math.max(f.y, -h + MIN_FLOAT), 1 - MIN_FLOAT);
+  return { x, y, w, h };
+}
+
+// Lift a grid block into free positioning, seeding the float rect from its current
+// cell area (fractions of the grid; the 4mm inter-cell gap is ignored — close
+// enough, and the user positions freely from here).
+export function toFloat(section: GridSection, blockId: string): GridSection {
+  return patch(section, blockId, (b) => {
+    if (b.float) return b;
+    const a = b.area;
+    const float = normalizeFloat({
+      x: (a.colStart - 1) / COLS,
+      y: (a.rowStart - 1) / ROWS,
+      w: (a.colEnd - a.colStart) / COLS,
+      h: (a.rowEnd - a.rowStart) / ROWS,
+    });
+    return { ...b, float };
+  });
+}
+
+// Drop a floating block back onto the grid, snapping its rect to the nearest cells.
+export function toGrid(section: GridSection, blockId: string): GridSection {
+  return patch(section, blockId, (b) => {
+    if (!b.float) return b;
+    const f = b.float;
+    const colStart = Math.round(f.x * COLS) + 1;
+    const rowStart = Math.round(f.y * ROWS) + 1;
+    const colEnd = colStart + Math.max(1, Math.round(f.w * COLS));
+    const rowEnd = rowStart + Math.max(1, Math.round(f.h * ROWS));
+    const { float: _drop, ...rest } = b;
+    return { ...rest, area: clampArea({ colStart, rowStart, colEnd, rowEnd }, minArea(b.block)) };
+  });
+}
+
+// Update a floating block's rect (no grid clamp — floats may bleed off any edge).
+export function setFloat(section: GridSection, blockId: string, float: FloatRect): GridSection {
+  return patch(section, blockId, (b) => ({ ...b, float: normalizeFloat(float) }));
 }
 
 // Snap a block's row span so the box wraps its content exactly (to the nearest
@@ -51,7 +113,7 @@ export function fitBlockRows(section: GridSection, blockId: string, rows: number
   return patch(section, blockId, (b) => clampBlockRows(b, rows));
 }
 function clampBlockRows(b: GridBlock, rows: number): GridBlock {
-  return { ...b, area: clampArea({ ...b.area, rowEnd: b.area.rowStart + rows }, BLOCKS[b.block].min) };
+  return { ...b, area: clampArea({ ...b.area, rowEnd: b.area.rowStart + rows }, minArea(b.block)) };
 }
 
 export function updateBlockContent(section: GridSection, blockId: string, content: unknown): GridSection {
@@ -154,7 +216,7 @@ export function moveBlocks(section: GridSection, ids: string[], dCol: number, dR
     ...section,
     blocks: section.blocks.map((b) =>
       set.has(b.id)
-        ? { ...b, area: clampArea({ rowStart: b.area.rowStart + dRow, colStart: b.area.colStart + dCol, rowEnd: b.area.rowEnd + dRow, colEnd: b.area.colEnd + dCol }, BLOCKS[b.block].min) }
+        ? { ...b, area: clampArea({ rowStart: b.area.rowStart + dRow, colStart: b.area.colStart + dCol, rowEnd: b.area.rowEnd + dRow, colEnd: b.area.colEnd + dCol }, minArea(b.block)) }
         : b,
     ),
   };
@@ -185,6 +247,6 @@ export function cloneBlocks(blocks: GridBlock[]): GridBlock[] {
   return blocks.map((b) => ({
     ...structuredClone(b),
     id: id(),
-    area: clampArea({ rowStart: b.area.rowStart + 1, colStart: b.area.colStart + 1, rowEnd: b.area.rowEnd + 1, colEnd: b.area.colEnd + 1 }, BLOCKS[b.block].min),
+    area: clampArea({ rowStart: b.area.rowStart + 1, colStart: b.area.colStart + 1, rowEnd: b.area.rowEnd + 1, colEnd: b.area.colEnd + 1 }, minArea(b.block)),
   }));
 }

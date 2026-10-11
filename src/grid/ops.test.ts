@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pushDownOverlaps, mergeInto } from "./ops.ts";
+import { pushDownOverlaps, mergeInto, toFloat, toGrid, setFloat } from "./ops.ts";
 import type { GridSection, GridBlock } from "./types.ts";
 
 // run: cd pagecraft-backend && node --import tsx --test ../pagecraft-frontend/src/grid/ops.test.ts
@@ -60,4 +60,68 @@ test("mergeInto is a no-op for a non-text source (e.g. image)", () => {
   const img: GridBlock = { id: "I", area: { rowStart: 1, colStart: 1, rowEnd: 3, colEnd: 7 }, block: "image", content: { src: "x" } };
   const out = mergeInto(sec(tblk("T", "one"), img), "I", "T");
   assert.equal(out.blocks.length, 2); // nothing merged, nothing removed
+});
+
+// --- minArea: blocks that Break splits must be allowed down to one row -----------
+import { minArea, moveBlock, resizeBlock, fitBlockRows, cloneBlocks } from "./ops.ts";
+
+const one = (block: GridBlock["block"]): GridSection =>
+  ({ type: "grid", blocks: [{ id: "a", area: { rowStart: 3, colStart: 1, rowEnd: 4, colEnd: 13 }, block, content: {} }] });
+const rowsOf = (s: GridSection) => s.blocks[0]!.area.rowEnd - s.blocks[0]!.area.rowStart;
+
+test("text frames and contents lists may be one row; the column floor is kept", () => {
+  assert.equal(minArea("textFrame").rows, 1);
+  assert.equal(minArea("tocList").rows, 1);
+  assert.equal(minArea("textFrame").cols, 2);
+  assert.equal(minArea("tocList").cols, 4);
+});
+
+test("a one-row text frame stays one row through move, resize, fit and paste", () => {
+  for (const type of ["textFrame", "tocList"] as const) {
+    const s = one(type);
+    assert.equal(rowsOf(moveBlock(s, "a", { rowStart: 5, colStart: 1, rowEnd: 6, colEnd: 13 })), 1, `${type} move`);
+    assert.equal(rowsOf(resizeBlock(s, "a", { rowStart: 3, colStart: 1, rowEnd: 4, colEnd: 13 })), 1, `${type} resize`);
+    assert.equal(rowsOf(fitBlockRows(s, "a", 1)), 1, `${type} fit`);
+    assert.equal(cloneBlocks(s.blocks)[0]!.area.rowEnd - cloneBlocks(s.blocks)[0]!.area.rowStart, 1, `${type} paste`);
+  }
+});
+
+test("other blocks keep their registry minimum", () => {
+  const s = one("list");
+  assert.ok(rowsOf(fitBlockRows(s, "a", 1)) >= 2, "a list is still clamped to its own floor");
+});
+
+// --- Free positioning (float) ---------------------------------------------
+
+test("toFloat lifts a grid block to the equivalent fractional rect", () => {
+  // cols 4..10 (start 4, width 6), rows 2..8 (start 2, height 6) on a 12×12 grid
+  const out = toFloat(sec(blk("a", 2, 4, 8, 10)), "a");
+  const f = out.blocks[0]!.float!;
+  assert.ok(f, "float is set");
+  assert.ok(Math.abs(f.x - 3 / 12) < 1e-9, `x ${f.x}`); // (colStart-1)/12
+  assert.ok(Math.abs(f.y - 1 / 12) < 1e-9, `y ${f.y}`); // (rowStart-1)/12
+  assert.ok(Math.abs(f.w - 6 / 12) < 1e-9, `w ${f.w}`);
+  assert.ok(Math.abs(f.h - 6 / 12) < 1e-9, `h ${f.h}`);
+});
+
+test("toGrid snaps a float back onto the nearest cells and drops float", () => {
+  const floated = toFloat(sec(blk("a", 2, 4, 8, 10)), "a");
+  const out = toGrid(floated, "a");
+  assert.equal(out.blocks[0]!.float, undefined);
+  assert.deepEqual(out.blocks[0]!.area, { rowStart: 2, colStart: 4, rowEnd: 8, colEnd: 10 });
+});
+
+test("setFloat allows negative x/y so a block bleeds off the edge", () => {
+  const floated = toFloat(sec(blk("a", 1, 1, 7, 7)), "a");
+  const out = setFloat(floated, "a", { x: -0.2, y: -0.1, w: 0.5, h: 0.5 });
+  const f = out.blocks[0]!.float!;
+  assert.ok(f.x < 0 && f.y < 0, "negative offsets are kept (bleed)");
+});
+
+test("setFloat keeps a sliver on the page and a minimum size", () => {
+  const floated = toFloat(sec(blk("a", 1, 1, 7, 7)), "a");
+  // way off to the left and zero-sized → clamped to stay grabbable
+  const f = setFloat(floated, "a", { x: -5, y: 0.2, w: 0, h: 0 }).blocks[0]!.float!;
+  assert.ok(f.w >= 0.02 && f.h >= 0.02, "minimum size enforced");
+  assert.ok(f.x + f.w >= 0.02 - 1e-9, "at least a sliver stays on the page");
 });

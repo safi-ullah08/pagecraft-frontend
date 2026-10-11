@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEditor, EditorContent, BubbleMenu, type Editor, type JSONContent } from "@tiptap/react";
-import { extensions, blockStyleProps, blockMargin, renderTypedBlock, scopeCustomCss, stackOrder, backgroundCss, type PageNumberConfig } from "@pagecraft/model";
-import { COLS, ROWS, type GridArea, type GridBlock, type GridSection } from "./types.ts";
+import { extensions, blockStyleProps, blockMargin, renderTypedBlock, scopeCustomCss, stackOrder, backgroundCss, pageNumberPosCss, type PageNumberConfig } from "@pagecraft/model";
+import { COLS, ROWS, type FloatRect, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
-import { moveBlock, moveBlocks, resizeBlock, fitBlockRows, pushDownOverlaps, updateBlockContent, removeBlock, setBlockType, reorderLayer, clampArea, type LayerMove } from "./ops.ts";
+import { minArea, moveBlock, moveBlocks, resizeBlock, fitBlockRows, pushDownOverlaps, updateBlockContent, removeBlock, setBlockType, reorderLayer, setFloat, clampArea, type LayerMove } from "./ops.ts";
 import { PAGE_MARGIN_MM, type PageDims } from "../pages.ts";
+import { useStore } from "../store.ts";
 import { promptDialog } from "../components/ConfirmModal.tsx";
 
 // Recreated grid designer with temp/src's interaction feel on OUR stack:
@@ -24,7 +25,11 @@ type Drag =
   // group != null → a multi-select drag: every selected block translates by (dx,dy)
   // live (no portal ghost); single drag floats the one block in the portal.
   | { id: string; kind: "move"; x: number; y: number; grabX: number; grabY: number; w: number; h: number; html: string; fp: Rect | null; group: string[] | null; dx: number; dy: number; mergeId: string | null; mergeLine: { left: number; right: number; top: number } | null }
-  | { id: string; kind: "resize"; area: GridArea };
+  | { id: string; kind: "resize"; area: GridArea }
+  // free-positioning drags for a floating (off-grid) block: move translates it live by
+  // (dx,dy) px; resize previews the new rect (fractions of the grid) in place.
+  | { id: string; kind: "float-move"; dx: number; dy: number }
+  | { id: string; kind: "float-resize"; x: number; y: number; w: number; h: number };
 
 // "color:red;font-weight:700" -> a React style object. Naive split (good enough for
 // simple page-number declarations); indexOf(":") keeps colons inside values (url()).
@@ -44,23 +49,22 @@ function cssTextToObject(css?: string): React.CSSProperties {
 // inline styles (the grid CSS classes aren't loaded on the editing surface). The
 // sheet is position:relative with PAGE_MARGIN_MM padding, so this sits in the band.
 // ponytail: parallel to pageNumberHtml — keep the two in sync if format/position grows.
-function PageNumber({ cfg, index, total }: { cfg?: PageNumberConfig | null; index: number; total: number }) {
+function PageNumber({ cfg, index, total, onEdit }: { cfg?: PageNumberConfig | null; index: number; total: number; onEdit?: () => void }) {
   if (!cfg?.enabled) return null;
   const n = (cfg.startAt ?? 1) + index;
   const text = (cfg.format || "{n}").replace(/\{n\}/g, String(n)).replace(/\{total\}/g, String(total));
-  const [vert, horiz] = cfg.position.split("-") as ["top" | "bottom", "left" | "center" | "right"];
   const style: React.CSSProperties = {
-    position: "absolute", fontSize: `${cfg.fontSize ?? 10}pt`, lineHeight: 1, color: "#000", pointerEvents: "none",
-    [vert]: `${PAGE_MARGIN_MM * 0.4}mm`,
-    ...(horiz === "center" ? { left: 0, right: 0, textAlign: "center" }
-      : horiz === "right" ? { right: `${PAGE_MARGIN_MM}mm`, textAlign: "right" }
-      : { left: `${PAGE_MARGIN_MM}mm` }),
+    position: "absolute", fontSize: `${cfg.fontSize ?? 10}pt`, lineHeight: 1, color: "#000",
+    pointerEvents: onEdit ? "auto" : "none", cursor: onEdit ? "pointer" : "default",
+    ...cssTextToObject(pageNumberPosCss(cfg)), // position (shared with the PDF) — honours offsetX/offsetY
     ...cssTextToObject(cfg.css), // user CSS overrides the defaults above
   };
-  return <div style={style}>{text}</div>;
+  // Click the number to jump straight to its controls — the design/position live in
+  // the right panel's Design tab, which is otherwise easy to miss.
+  return <div style={style} title="Edit page numbers" onPointerDown={(e) => { if (!onEdit) return; e.stopPropagation(); onEdit(); }}>{text}</div>;
 }
 
-export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveGroupAcross, selected, onSelect, editingId, onEdit, onReflow, onBreak, onMerge, page, pageNumbers, pageIndex, pageCount, showGrid }: {
+export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveGroupAcross, selected, onSelect, editingId, onEdit, onReflow, onBreak, onMerge, page, pageNumbers, onEditPageNumbers, pageIndex, pageCount, showGrid }: {
   section: GridSection;
   sectionId: string;
   onChange: (s: GridSection) => void;
@@ -68,6 +72,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
   onMoveGroupAcross: (ids: string[], toSectionId: string, dCol: number, dRow: number) => void;
   page: PageDims;
   pageNumbers?: PageNumberConfig | null; // document-level page numbering
+  onEditPageNumbers?: () => void; // click the on-page number → open its controls
   pageIndex: number; // this page's 0-based index (for the number)
   pageCount: number; // total pages (for {total})
   selected: string[]; // ids selected in this section (multi-select)
@@ -85,11 +90,70 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
   // editor. The ghost + footprint render into a body-level portal (above all pages).
   const [drag, setDrag] = useState<Drag | null>(null);
 
+  // Free-position (floating) move: no grid snap, no clamp, no cross-page — the block
+  // translates live by the pixel delta and commits as a new float rect (fractions of
+  // the grid box). A press with no movement is a plain select.
+  const startFloatMove = (e: React.PointerEvent, b: GridBlock) => {
+    if (editingId === b.id) return;
+    const grid = gridRef.current;
+    if (!grid || !b.float) return;
+    const gr = grid.getBoundingClientRect();
+    const f = b.float;
+    const shift = e.shiftKey;
+    const startX = e.clientX, startY = e.clientY;
+    let moved = false;
+    const onMove = (ev: PointerEvent) => {
+      if (!moved && Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) < DRAG_THRESHOLD) return;
+      moved = true;
+      ev.preventDefault();
+      setDrag({ id: b.id, kind: "float-move", dx: ev.clientX - startX, dy: ev.clientY - startY });
+    };
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      setDrag(null);
+      if (!moved) { onSelect(b.id, shift); return; } // click, not a drag
+      if (!selected.includes(b.id)) onSelect(b.id, false);
+      onChange(setFloat(section, b.id, { ...f, x: f.x + (ev.clientX - startX) / gr.width, y: f.y + (ev.clientY - startY) / gr.height }));
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  // Free-position resize from an edge/corner — pixel-free (no cell snap), in place.
+  const startFloatResize = (e: React.PointerEvent, b: GridBlock, side: "right" | "bottom" | "corner") => {
+    e.preventDefault();
+    e.stopPropagation();
+    const grid = gridRef.current;
+    if (!grid || !b.float) return;
+    const gr = grid.getBoundingClientRect();
+    const f = b.float;
+    const startX = e.clientX, startY = e.clientY;
+    let last = f;
+    const onMove = (ev: PointerEvent) => {
+      const dw = (ev.clientX - startX) / gr.width, dh = (ev.clientY - startY) / gr.height;
+      const next: FloatRect = { ...f };
+      if (side === "right" || side === "corner") next.w = f.w + dw;
+      if (side === "bottom" || side === "corner") next.h = f.h + dh;
+      last = next;
+      setDrag({ id: b.id, kind: "float-resize", x: next.x, y: next.y, w: next.w, h: next.h });
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      setDrag(null);
+      onChange(setFloat(section, b.id, last));
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
   // Whole-block move. A press with no movement is a plain select; past the threshold
   // it becomes a drag: the block floats in the portal and drops onto whatever page
   // grid is under the cursor (same page → moveBlock, other page → moveBlockToPage).
   const startMove = (e: React.PointerEvent, b: GridBlock) => {
     if (editingId === b.id) return; // editing → let Tiptap handle the pointer
+    if (b.float) { startFloatMove(e, b); return; } // off-grid block: free move
     const shift = e.shiftKey;
     const group = selected.includes(b.id) && selected.length > 1; // drag moves the whole selection
     const blockEl = e.currentTarget as HTMLElement;
@@ -98,7 +162,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     const w = rect.width, h = rect.height;
     const html = (blockEl.firstElementChild as HTMLElement | null)?.outerHTML ?? ""; // snapshot the content box
     const scrollEl = blockEl.closest("[data-scroll]") as HTMLElement | null;
-    const orig = b.area, min = BLOCKS[b.block].min;
+    const orig = b.area, min = minArea(b.block);
     const canMerge = BLOCKS[b.block].text && !group; // a text block dropped onto a text frame concatenates
     const startX = e.clientX, startY = e.clientY;
     let moved = false, lastX = startX, lastY = startY, raf = 0, scrollDir = 0;
@@ -199,7 +263,8 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     const gap = parseFloat(getComputedStyle(grid).rowGap) || 0;
     const gridH = grid.getBoundingClientRect().height;
     const rowUnit = (gridH - (ROWS - 1) * gap) / ROWS;
-    const rows = Math.max(1, Math.ceil((naturalPx + gap) / (rowUnit + gap)));
+    // reduce a naturalPx of 1px to 0 rows (so a single-line block can shrink to 1 row, not 2)
+    const rows = Math.max(1, Math.ceil((naturalPx - 1 + gap) / (rowUnit + gap)));
     // grow/shrink to fit, then push any blocks the new size overlaps downward
     onChange(pushDownOverlaps(fitBlockRows(section, id, rows), id));
   };
@@ -212,7 +277,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     if (!grid) return;
     const gr = grid.getBoundingClientRect();
     const cellW = gr.width / COLS, cellH = gr.height / ROWS;
-    const startX = e.clientX, startY = e.clientY, orig = b.area, min = BLOCKS[b.block].min;
+    const startX = e.clientX, startY = e.clientY, orig = b.area, min = minArea(b.block);
     let last = orig;
     const onMove = (ev: PointerEvent) => {
       const dc = Math.round((ev.clientX - startX) / cellW), dr = Math.round((ev.clientY - startY) / cellH);
@@ -243,6 +308,9 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
   const sheet: React.CSSProperties = {
     width: `${dim.w}mm`, height: `${dim.h}mm`, boxSizing: "border-box",
     padding: `${PAGE_MARGIN_MM}mm`, position: "relative", margin: "0 auto",
+    // Match the PDF's :root token so a block's bleed (margin: calc(-1 *
+    // var(--pc-margin))) reaches the page edge identically on canvas and in print.
+    ["--pc-margin" as string]: `${PAGE_MARGIN_MM}mm`,
     // Default page bg = the THEME's --pc-bg (set on .editor-surface by the scoped
     // skin), matching the PDF where .page inherits the skin's body background —
     // a hardcoded #fff here made e.g. luxe-dark pages white in the editor only.
@@ -255,7 +323,7 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     <div style={{ marginBottom: 24 }}>
       {/* palette lives in the right bar (ControlsPanel › Blocks) */}
       <div className="editor-surface" style={sheet} onPointerDown={() => { onSelect(null); onEdit(null); }}>
-        <div ref={gridRef} data-sec={sectionId} style={{ height: "100%", display: "grid",
+        <div ref={gridRef} data-sec={sectionId} style={{ height: "100%", display: "grid", position: "relative",
           gridTemplateColumns: `repeat(${COLS}, 1fr)`, gridTemplateRows: `repeat(${ROWS}, 1fr)`, gap: "4mm" }}>
           {showGrid && <div style={{ gridArea: `1 / 1 / ${ROWS + 1} / ${COLS + 1}`, pointerEvents: "none",
             background: "repeating-linear-gradient(to right, transparent 0, transparent calc(100%/12 - 1px), rgba(0,0,0,.05) calc(100%/12 - 1px), rgba(0,0,0,.05) calc(100%/12))" }} />}
@@ -265,11 +333,15 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
             const area = d?.kind === "resize" ? d.area : b.area;
             // group members translate live; single-drag grabbed block ghosts + floats in the portal.
             const offset = dm?.group?.includes(b.id) ? { x: dm.dx, y: dm.dy } : null;
+            // floating block: live rect during a float-resize, live px translate during a float-move.
+            const floatRect = b.float ? (d?.kind === "float-resize" ? { x: d.x, y: d.y, w: d.w, h: d.h } : b.float) : null;
+            const floatOffset = d?.kind === "float-move" ? { x: d.dx, y: d.dy } : null;
             return (
               <BlockView key={b.id} b={{ ...b, area }} ghosting={d?.kind === "move" && !dm?.group} offset={offset}
+                floatRect={floatRect} floatOffset={floatOffset}
                 mergeTarget={dm?.mergeId === b.id} selected={selected.includes(b.id)} editing={editingId === b.id}
                 onStartMove={(e) => startMove(e, b)}
-                onStartResize={(e, side) => startResize(e, b, side)}
+                onStartResize={(e, side) => (b.float ? startFloatResize : startResize)(e, b, side)}
                 onSelect={(additive) => onSelect(b.id, additive)}
                 onEdit={() => onEdit(b.id)}
                 onReflow={() => onReflow(b.id)}
@@ -283,7 +355,8 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
             );
           })}
         </div>
-        <PageNumber cfg={pageNumbers} index={pageIndex} total={pageCount} />
+        <PageNumber cfg={pageNumbers} index={pageIndex} total={pageCount}
+          onEdit={onEditPageNumbers ? () => { onSelect(null); onEditPageNumbers(); } : undefined} />
       </div>
       {/* floating drag layer: the block travels above every page; footprint shows
           where it will land on the page under the cursor */}
@@ -309,10 +382,12 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
   );
 }
 
-function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ, onStartMove, onStartResize, onSelect, onEdit, onReflow, onBreak, onFit, onConvert, onLayer, onContent, onDelete }: {
+function BlockView({ b, ghosting, offset, floatRect, floatOffset, mergeTarget, selected, editing, stackZ, onStartMove, onStartResize, onSelect, onEdit, onReflow, onBreak, onFit, onConvert, onLayer, onContent, onDelete }: {
   b: GridBlock;
   ghosting: boolean;
   offset: { x: number; y: number } | null; // live px translate during a group drag
+  floatRect: FloatRect | null; // when set, the block is off-grid (absolute, this rect)
+  floatOffset: { x: number; y: number } | null; // live px translate during a float move
   mergeTarget: boolean; // a text block is being dragged onto this frame (highlight it)
   selected: boolean;
   editing: boolean;
@@ -330,6 +405,7 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ
   onDelete: () => void;
 }) {
   const { rowStart, colStart, rowEnd, colEnd } = b.area;
+  const floating = !!floatRect; // off-grid, absolutely positioned
   const reg = BLOCKS[b.block];
   // Depth: once the page uses layering, the explicit stack position wins (stackZ,
   // computed from the model's shared stackOrder so canvas == PDF). Until then, the
@@ -365,10 +441,20 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ
   const fill = !reg.text || !!b.style?.backgroundColor;
   // Snap the box to wrap content exactly: on demand (Fit button) and automatically
   // when a text block leaves edit mode (content just settled).
-  const fit = () => { if (contentRef.current) onFit(contentRef.current.scrollHeight); };
+  const fit = () => {
+    const el = contentRef.current;
+    if (!el) return;
+    // set the height to fit the content to it's natural height, then call onFit with the new height
+    const pinned = el.style.height;
+    el.style.height = "auto";
+    const natural = el.scrollHeight;
+    el.style.height = pinned;
+    onFit(natural);
+  };
+
   const wasEditing = useRef(editing);
   useEffect(() => {
-    if (wasEditing.current && !editing) fit();
+    if (wasEditing.current && !editing && !floating) fit(); // grid-row fit is N/A off-grid
     wasEditing.current = editing;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
@@ -384,20 +470,32 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ
       onDoubleClick={(e) => { e.stopPropagation(); onSelect(false); if (reg.text) { setCaret({ x: e.clientX, y: e.clientY }); onEdit(); } }}
       onDragStart={(e) => e.preventDefault()} // kill native drag (images etc.) so our pointer drag wins
       style={{
-        gridArea: `${rowStart} / ${colStart} / ${rowEnd} / ${colEnd}`, position: "relative",
+        // Off-grid (floating) → absolute, positioned by its fractional rect (x/y may
+        // be negative so it bleeds past the page edge). On-grid → the cell area.
+        ...(floating
+          ? { position: "absolute", left: `${floatRect!.x * 100}%`, top: `${floatRect!.y * 100}%`, width: `${floatRect!.w * 100}%`, height: `${floatRect!.h * 100}%` }
+          : {
+              gridArea: `${rowStart} / ${colStart} / ${rowEnd} / ${colEnd}`, position: "relative",
+              // `1fr` tracks are minmax(auto, 1fr), so an item taller/wider than its share
+              // STRETCHES the track and blows the fixed-height page out. Pinning the
+              // automatic minimum to 0 keeps the track at its share and lets the inner
+              // box clip instead. (Editing still expands on purpose, so leave it alone.)
+              minHeight: editing ? undefined : 0, minWidth: editing ? undefined : 0,
+              margin: blockMargin(b.style), // space between blocks/cols (per-side)
+            }),
         cursor: editing ? "text" : "grab",
-        margin: blockMargin(b.style), // space between blocks/cols (per-side)
         // selected ring is a content-hugging overlay (below); the wrapper only shows
         // the merge-target highlight now.
         outline: mergeTarget ? `3px solid ${ACCENT}` : "none",
         outlineOffset: 1, boxShadow: mergeTarget ? `inset 0 0 0 100vmax ${ACCENT}18` : undefined,
-        opacity: ghosting ? 0.3 : offset ? 0.7 : 1,
-        transform: offset ? `translate(${offset.x}px, ${offset.y}px)` : undefined,
+        opacity: ghosting ? 0.3 : (offset || floatOffset) ? 0.7 : 1,
+        transform: floatOffset ? `translate(${floatOffset.x}px, ${floatOffset.y}px)`
+          : offset ? `translate(${offset.x}px, ${offset.y}px)` : undefined,
         // during a group drag the drag is driven by window listeners, so make the
         // floating copies pointer-transparent — else they'd block elementFromPoint
         // from seeing the target page grid under the cursor (cross-page detection).
         pointerEvents: offset ? "none" : undefined,
-        zIndex: editing ? 1000 : offset ? 900 : zBase,
+        zIndex: editing ? 1000 : (offset || floatOffset) ? 900 : zBase,
         userSelect: editing ? "auto" : "none", WebkitUserSelect: editing ? "auto" : "none",
       }}
     >
@@ -429,7 +527,7 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ
           outline: `2px solid ${ACCENT}`, outlineOffset: 1, borderRadius: 2,
           pointerEvents: "none", zIndex: 6 }} />
       )}
-      {overflow && !ghosting && (
+      {overflow && !ghosting && !floating && (
         <div onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); fit(); }}
           title="content overflows — click to grow the box to fit"
           style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 20, cursor: "pointer",
@@ -448,16 +546,22 @@ function BlockView({ b, ghosting, offset, mergeTarget, selected, editing, stackZ
             <span onPointerDown={onStartMove} title="Drag to move"
               style={{ cursor: "grab", color: "#fff", fontSize: 12, lineHeight: 1, padding: "2px 3px" }}>✥</span>
             <span style={{ color: "#fff", fontSize: 10, opacity: 0.85, padding: "0 2px", textTransform: "capitalize" }}>{b.block}</span>
+            {floating && <span title="Free-positioned (off-grid)" style={{ color: "#fff", fontSize: 11, opacity: 0.9, padding: "0 2px" }}>📌</span>}
+            {!floating && (
             <button onClick={(e) => { e.stopPropagation(); fit(); }} title="Fit box to content"
               style={{ width: 18, height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 11, lineHeight: 1, cursor: "pointer" }}>⤢</button>
+            )}
             {/* Split: spill overflow onto the next page (only when it overflows a page) */}
-            {overflow && b.block === "textFrame" && (
+            {!floating && overflow && b.block === "textFrame" && (
               <button onClick={(e) => { e.stopPropagation(); onReflow(); }} title="Split: keep what fits, flow the rest onto the next page"
                 style={{ height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer", padding: "0 5px" }}>Split ⤵</button>
             )}
-            {/* Break: decompose into separate paragraph/sentence blocks on THIS page (no page-push) */}
-            {b.block === "textFrame" && (((b.content as { content?: unknown[] })?.content?.length ?? 0) >= 1) && (
-              <button onClick={(e) => { e.stopPropagation(); onBreak(); }} title="Break into separate paragraph blocks on this page"
+            {/* Break: decompose into separate paragraph/sentence (or contents-entry)
+                blocks on THIS page (no page-push) */}
+            {!floating && ((b.block === "textFrame" && (((b.content as { content?: unknown[] })?.content?.length ?? 0) >= 1))
+              || (b.block === "tocList" && (((b.content as { entries?: unknown[] })?.entries?.length ?? 0) >= 2))) && (
+              <button onClick={(e) => { e.stopPropagation(); onBreak(); }}
+                title={b.block === "tocList" ? "Break into separate contents blocks on this page" : "Break into separate paragraph blocks on this page"}
                 style={{ height: 18, borderRadius: 3, background: "rgba(255,255,255,.18)", color: "#fff", border: "none", fontSize: 10, lineHeight: 1, cursor: "pointer", padding: "0 5px" }}>Break ⑃</button>
             )}
             {/* Layering: raise/lower this block in the page's stacking order */}
@@ -499,19 +603,28 @@ function BlockBody({ b, editing, caret, onContent }: { b: GridBlock; editing: bo
   if (b.block === "divider") return <hr style={{ margin: "auto 0" }} />;
   if (b.block === "spacer") return null;
   const html = renderTypedBlock(b.block, b.content);
-  return html != null ? <div style={{ height: "100%", overflow: "hidden" }} dangerouslySetInnerHTML={{ __html: html }} /> : null;
+  // remove overflow:hidden here — the wrapper above already clips. 
+  return html != null ? <div style={{ height: "100%" }} dangerouslySetInnerHTML={{ __html: html }} /> : null;
 }
 
 // Per-block Tiptap. Interactive ONLY while editing — otherwise pointer-events:none
 // so clicks fall through to the block wrapper (select/drag), matching temp's
 // select-vs-edit split. Focuses on entering edit mode.
 function BlockText({ content, editable, caret, onContent }: { content: JSONContent; editable: boolean; caret: { x: number; y: number } | null; onContent: (c: unknown) => void }) {
+  const setActiveEditor = useStore((s) => s.setActiveEditor);
+  const bumpSel = useStore((s) => s.bumpSel);
   const editor = useEditor({
     extensions,
     content,
     editable,
-    onUpdate: ({ editor }) => onContent(editor.getJSON()),
+    onUpdate: ({ editor }) => { onContent(editor.getJSON()); bumpSel(); },
+    onFocus: ({ editor }) => setActiveEditor(editor), // top-bar font size targets this block
+    onSelectionUpdate: () => bumpSel(),
   });
+  // Release the top bar's reference when this block unmounts (edit ends / reflow).
+  useEffect(() => () => {
+    if (useStore.getState().activeEditor === editor) setActiveEditor(null);
+  }, [editor, setActiveEditor]);
   useEffect(() => {
     if (!editor) return;
     editor.setEditable(editable);

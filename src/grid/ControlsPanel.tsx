@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BLOCKS, BLOCK_ORDER, PAGE_NUMBER_POSITIONS, PAGE_BACKGROUND_FITS, type BlockCategory, type BlockType, type PageBackground, type PageBackgroundFit } from "@pagecraft/model";
 import { useStore } from "../store.ts";
 import { uploadAsset } from "../api.ts";
@@ -6,7 +6,6 @@ import { themeNames } from "../themes.ts";
 import { PAGE_SIZES, presetOf, type PageSize } from "../pages.ts";
 import { COLS, ROWS, isGridSection } from "./types.ts";
 import { stackOrder, reorderLayer, type LayerMove } from "./ops.ts";
-import { isTocSection } from "./toc.ts";
 import { frontCovers, backCovers, isCoverSection, isBackCoverSection, type CoverTemplate } from "./covers.ts";
 import { Inspector } from "./Inspector.tsx";
 import { Section, Field, Select, Slider, ColorPicker, inputStyle, PALETTE } from "./controls.tsx";
@@ -21,6 +20,9 @@ type Panel = "design" | "blocks" | "layers" | "templates";
 
 export function ControlsPanel() {
   const [panel, setPanel] = useState<Panel>("blocks");
+  // Jump to a tab when something asks (e.g. clicking the on-page number → Design).
+  const panelRequest = useStore((s) => s.panelRequest);
+  useEffect(() => { if (panelRequest) setPanel(panelRequest.tab); }, [panelRequest]);
   return (
     <div style={{ width: 264, flexShrink: 0, background: "var(--ui-panel)", borderLeft: `1px solid ${PALETTE.BORDER}`, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", borderBottom: `1px solid ${PALETTE.BORDER}` }}>
@@ -256,6 +258,9 @@ function PageNumberControls() {
         {!known && <Field label="Custom"><input value={cfg.format} onChange={(e) => set({ format: e.target.value })} placeholder="{n} of {total}" style={inputStyle} /></Field>}
         <Field label="Start at"><input type="number" min={0} value={cfg.startAt ?? 1} onChange={(e) => set({ startAt: Number(e.target.value) })} style={inputStyle} /></Field>
         <Field label="Size (pt)"><input type="number" min={6} max={72} value={cfg.fontSize ?? 10} onChange={(e) => set({ fontSize: Number(e.target.value) })} style={inputStyle} /></Field>
+        <Field label="Distance from top/bottom (mm)"><input type="number" value={cfg.offsetY ?? ""} placeholder="auto" onChange={(e) => set({ offsetY: e.target.value === "" ? undefined : Number(e.target.value) })} style={inputStyle} /></Field>
+        <Field label="Distance from side (mm)"><input type="number" value={cfg.offsetX ?? ""} placeholder="auto" disabled={cfg.position.endsWith("center")} onChange={(e) => set({ offsetX: e.target.value === "" ? undefined : Number(e.target.value) })} style={inputStyle} /></Field>
+        <div style={{ fontSize: 10, color: PALETTE.MUTED }}>Distances: <b>0</b> = flush to the page edge, blank = default margin. Use these to move the number into the very top/corner.</div>
         <Field label="Custom CSS"><textarea value={cfg.css ?? ""} onChange={(e) => set({ css: e.target.value })} rows={3} placeholder="color: #888; font-style: italic; letter-spacing: 1px" style={{ ...inputStyle, resize: "vertical", fontFamily: "monospace", fontSize: 11 }} /></Field>
         <div style={{ fontSize: 10, color: PALETTE.MUTED }}>{"{n}"} = page number · {"{total}"} = total pages</div>
       </>}
@@ -410,10 +415,8 @@ function SwitchTemplate() {
 // Templates = the page actions we have today; presets/templates land later.
 function TemplatesPanel() {
   const addPage = useStore((s) => s.addPage);
-  const generateToc = useStore((s) => s.generateToc);
   const addCover = useStore((s) => s.addCover);
   const sections = useStore((s) => s.sections);
-  const hasToc = sections.some((s) => isTocSection(s.content));
   const hasCover = sections.some((s) => isCoverSection(s.content));
   const hasBackCover = sections.some((s) => isBackCoverSection(s.content));
   return (
@@ -430,18 +433,7 @@ function TemplatesPanel() {
       <CoverPicker title="Back cover" templates={backCovers()} taken={hasBackCover}
         takenNote="The last page is your back cover. Delete it to pick another design."
         note="Added as the last page. Neither cover is numbered." onPick={addCover} />
-      <Section title="Contents">
-        <button onClick={() => void generateToc()}
-          title={hasToc ? "Rebuild the contents page from the current headings" : "Scan every page's headings and add a contents page as page 1"}
-          style={{ background: PALETTE.SURFACE, border: `1px solid ${PALETTE.BORDER_STRONG}`, color: PALETTE.TEXT, padding: "8px 10px", borderRadius: 4, fontSize: 12, cursor: "pointer" }}>
-          {hasToc ? "⟳ Refresh table of contents" : "+ Generate table of contents"}
-        </button>
-        <div style={{ fontSize: 10, color: PALETTE.MUTED }}>
-          {hasToc
-            ? "Rebuilt in place from every heading — page numbers stay correct."
-            : "Added as page 1, shifting the rest down. Re-run it after editing to refresh."}
-        </div>
-      </Section>
+      {/* Generate / refresh contents lives in the top bar now (App header). */}
       <SwitchTemplate />
     </div>
   );

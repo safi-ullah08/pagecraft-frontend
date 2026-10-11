@@ -1,11 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { layout, type LayoutPlan } from "@pagecraft/model";
-import { STRUCTURES, interpret, assertAreasValid, listTemplates, templateSections, parseTemplateId, structureToLayoutSpec, foldChapters, docPlanToLayout } from "./templates.ts";
+import { interpret, assertAreasValid, listTemplates, templateSections, parseTemplateId, structureToLayoutSpec, foldChapters, docPlanToLayout, setStructures } from "./templates.ts";
+import { BUILTIN_STRUCTURES as STRUCTURES, BUILTIN_ORDER } from "./builtinStructures.ts";
 import { isCoverSection } from "./covers.ts";
 import { isTocSection, collectToc } from "./toc.ts";
 
 // run: cd pagecraft-backend && node --import tsx --test ../pagecraft-frontend/src/grid/templates.test.ts
+
+// The app fills the registry from GET /api/templates; the tests fill it with the
+// built-ins those system rows are seeded from.
+setStructures(BUILTIN_ORDER.map((k) => STRUCTURES[k]));
 
 test("every structure interprets to the expected page count", () => {
   assert.equal(interpret(STRUCTURES.leadMagnet).length, 3);
@@ -13,6 +18,11 @@ test("every structure interprets to the expected page count", () => {
   assert.equal(interpret(STRUCTURES.guidebook).length, 8);
   assert.equal(interpret(STRUCTURES.wellness).length, 8);
   assert.equal(interpret(STRUCTURES.report).length, 4);
+  assert.equal(interpret(STRUCTURES.mediaKit).length, 9);
+  assert.equal(interpret(STRUCTURES.emailAutomation).length, 6);
+  assert.equal(interpret(STRUCTURES.remoteReport).length, 8);
+  assert.equal(interpret(STRUCTURES.mindful).length, 9);
+  assert.equal(interpret(STRUCTURES.freelancer).length, 9);
 });
 
 test("all placed blocks fit the 12×12 grid", () => {
@@ -33,11 +43,20 @@ test("cover / toc pages keep their flags so they're excluded from numbering + co
   assert.ok(isTocSection(wl[1]), "wellness page 2 is a toc");
 });
 
-test("catalog is the themes × structures cross-product with unique, resolvable ids", () => {
-  const themes = ["editorial-classic", "botanical", "luxe-dark", "modern-minimal", "tech-manual"];
+test("catalog: open structures cross-product; locked Canva designs ship one card each", () => {
+  const themes = ["editorial-classic", "botanical", "luxe-dark", "modern-minimal", "tech-manual", "canva-media-kit"];
   const all = listTemplates(themes);
-  assert.equal(all.length, themes.length * 5); // 5 structures per theme
+  const open = 3;   // leadMagnet, ebook, report
+  const locked = 7; // guidebook, wellness + the 5 canva sets
+  // canva-* themes never enter the cross-product; locked structures appear once
+  assert.equal(all.length, (themes.length - 1) * open + locked);
   assert.equal(new Set(all.map((t) => t.id)).size, all.length, "ids are unique");
+  assert.ok(!all.some((t) => t.theme.startsWith("canva-") && !STRUCTURES[t.structKey as keyof typeof STRUCTURES].lockedTheme), "no open structure wears a canva skin");
+  for (const key of ["guidebook", "wellness", "mediaKit", "emailAutomation", "remoteReport", "mindful", "freelancer"] as const) {
+    const cards = all.filter((t) => t.structKey === key);
+    assert.equal(cards.length, 1, `${key} ships exactly one card`);
+    assert.equal(cards[0]!.theme, STRUCTURES[key].lockedTheme, `${key} is bound to its own skin`);
+  }
   // every catalog entry resolves back to real sections
   for (const t of all) assert.ok(templateSections(t).length >= 3, `${t.id} resolves`);
 });
