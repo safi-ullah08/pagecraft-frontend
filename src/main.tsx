@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { ClerkProvider, SignedIn, SignedOut, SignIn, useAuth } from "@clerk/clerk-react";
 import { App } from "./App.tsx";
 import { Dashboard } from "./components/Dashboard.tsx";
+import { ConfirmModal } from "./components/ConfirmModal.tsx";
 import { setTokenGetter } from "./api.ts";
 import "./ui-theme.css";
 import "./styles.css";
@@ -27,6 +28,7 @@ const root = clerkKey ? (
     <SignedIn>
       <AuthBridge />
       <View />
+      <ConfirmModal/>
     </SignedIn>
     <SignedOut>
       <div style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
@@ -35,7 +37,10 @@ const root = clerkKey ? (
     </SignedOut>
   </ClerkProvider>
 ) : (
-  <View />
+  <>
+    <View />
+    <ConfirmModal/>
+  </>
 );
 
 createRoot(document.getElementById("root")!).render(<StrictMode>{root}</StrictMode>);
