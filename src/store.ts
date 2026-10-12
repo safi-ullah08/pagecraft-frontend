@@ -11,6 +11,7 @@ import { parseBlocks } from "./grid/parseBlocks.ts";
 import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries, type TocEntry } from "./grid/toc.ts";
 import { buildCover, isCoverSection, isBackCoverSection } from "./grid/covers.ts";
 import { insertSectionsAfter, updatePageNumbers, updateDesign, updateTheme, renameDocument } from "./api.ts";
+import { signalLoad } from "./loadSignal.ts";
 import { parseTemplateId, structureToLayoutSpec, foldChapters, docPlanToLayout, STRUCTURES, IMPORT_COVER, type Template } from "./grid/templates.ts";
 import { withColumnCount } from "./grid/columns.ts";
 import { runLayout } from "./grid/layoutDoc.ts";
@@ -226,6 +227,17 @@ export const useStore = create<Store>((set, get) => {
       // retry/backoff + a conflict UI is a later phase.
       console.error("autosave failed (will retry on next edit):", e);
     }
+  }
+
+  // Save every section with a pending debounced edit now. Load-time edits (the
+  // template's contents page filled by generateToc) would otherwise sit in an
+  // 800ms timer — a headless caller reading the database right after load
+  // (window.__pcLoad) would see the unfilled page.
+  async function flushPending() {
+    const ids = [...timers.keys()];
+    for (const id of ids) clearTimeout(timers.get(id)!);
+    timers.clear();
+    await Promise.all(ids.map((id) => flush(id)));
   }
 
   // --- Undo/redo history. Snapshots section CONTENT (keyed by id) before an edit,
@@ -594,6 +606,7 @@ export const useStore = create<Store>((set, get) => {
     load: async () => {
       if (loadStarted) return;
       loadStarted = true;
+      signalLoad({ state: "loading", report: [] });
       try {
       const id = new URLSearchParams(location.search).get("doc");
       if (id) {
@@ -611,6 +624,7 @@ export const useStore = create<Store>((set, get) => {
         // ?tpl=<catalog id>: a template chosen for this freshly-imported doc.
         const tpl = new URLSearchParams(location.search).get("tpl");
         const t = tpl ? parseTemplateId(tpl) : null;
+        if (tpl && !t) signalLoad({ state: "error", error: `unknown template "${tpl}"` });
         // import path: flow is only a landing format. WITH a template, the layout
         // ENGINE lays the flow chapters into the template's designed pages; without
         // one, auto-paginate into plain grid. Either way it's grid forever after.
@@ -624,6 +638,7 @@ export const useStore = create<Store>((set, get) => {
             }
           } catch (e) {
             console.error("auto flow→grid failed (staying flow):", e);
+            signalLoad({ state: "error", error: `auto flow→grid failed: ${String(e)}` });
           }
         } else if (t) {
           // already grid: with a stored plan this is a template SWITCH — re-lay
@@ -631,7 +646,7 @@ export const useStore = create<Store>((set, get) => {
           try {
             if (get().docPlan) await get().applyTemplateLayout(t, doc.sourceMeta ?? {});
             else await get().applyImportedTemplate(t);
-          } catch (e) { console.error("apply template failed:", e); }
+          } catch (e) { console.error("apply template failed:", e); signalLoad({ state: "error", error: `apply template failed: ${String(e)}` }); }
         }
         if (tpl) {
           const u = new URL(location.href);
@@ -644,8 +659,11 @@ export const useStore = create<Store>((set, get) => {
         return;
       }
       set({ loading: false });
+      await flushPending();
+      signalLoad({ state: "done" });
       } catch (e) {
         console.error("document load failed:", e);
+        signalLoad({ state: "error", error: `document load failed: ${String(e)}` });
         loadStarted = false; // allow a retry (e.g. after auth settles)
         set({ loading: false });
       }
@@ -750,10 +768,14 @@ export const useStore = create<Store>((set, get) => {
       // lists every subsection.
       const textOf = (n: JSONContent): string => n.text ?? (n.content ?? []).map(textOf).join("");
       const stored = get().docPlan;
+      // The cover's title slot binds meta.title, but sourceMeta never carries the
+      // title (it travels as the document title) — without this, every template
+      // cover laid from an import came out with an empty title.
+      const withTitle = { ...meta, title: (meta as { title?: string }).title || get().title };
       const plan = stored
-        ? docPlanToLayout(stored, meta)
+        ? docPlanToLayout(stored, withTitle)
         : {
-            meta,
+            meta: withTitle,
             chapters: foldChapters(sections.map((s) => {
               const nodes = (s.content as JSONContent).content ?? [];
               const h = nodes[0]?.type === "heading" ? nodes[0] : undefined;
@@ -769,6 +791,7 @@ export const useStore = create<Store>((set, get) => {
       const spec = withColumnCount(structureToLayoutSpec(struct), get().columns);
       const { sections: laid, report } = await runLayout(plan, spec, t.theme, page);
       if (report.length) console.info("layout report:", report);
+      signalLoad({ report });
 
       const { sections: fresh } = await convertDocument(documentId, laid.map((s) => assetsToCanonical(s as SectionContent)));
       set({ sections: fresh.map((s) => ({ ...s, content: assetsToDisplay(s.content) })), activeId: fresh[0]?.id ?? null });
