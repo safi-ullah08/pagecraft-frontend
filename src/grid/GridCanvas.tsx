@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useEditor, EditorContent, BubbleMenu, type Editor, type JSONContent } from "@tiptap/react";
-import { extensions, blockStyleProps, blockMargin, renderTypedBlock, scopeCustomCss, stackOrder, backgroundCss, pageNumberPosCss, type PageNumberConfig } from "@pagecraft/model";
+import { extensions, blockStyleProps, blockMargin, renderTypedBlock, scopeCustomCss, stackOrder, backgroundCss, pageNumberPosCss, type PageMargin, type PageNumberConfig } from "@pagecraft/model";
 import { COLS, ROWS, type FloatRect, type GridArea, type GridBlock, type GridSection } from "./types.ts";
 import { BLOCKS } from "./blocks.ts";
 import { minArea, moveBlock, moveBlocks, resizeBlock, fitBlockRows, pushDownOverlaps, updateBlockContent, removeBlock, setBlockType, reorderLayer, setFloat, clampArea, type LayerMove } from "./ops.ts";
-import { PAGE_MARGIN_MM, type PageDims } from "../pages.ts";
+import { type PageDims } from "../pages.ts";
 import { useStore } from "../store.ts";
 import { promptDialog } from "../components/ConfirmModal.tsx";
 
@@ -47,7 +47,7 @@ function cssTextToObject(css?: string): React.CSSProperties {
 
 // Live-canvas page number. Mirrors the model's pageNumberHtml/.pc-pageno CSS with
 // inline styles (the grid CSS classes aren't loaded on the editing surface). The
-// sheet is position:relative with PAGE_MARGIN_MM padding, so this sits in the band.
+// sheet is position:relative with the theme's margin as padding, so this sits in the band.
 // ponytail: parallel to pageNumberHtml — keep the two in sync if format/position grows.
 function PageNumber({ cfg, index, total, onEdit }: { cfg?: PageNumberConfig | null; index: number; total: number; onEdit?: () => void }) {
   if (!cfg?.enabled) return null;
@@ -64,13 +64,14 @@ function PageNumber({ cfg, index, total, onEdit }: { cfg?: PageNumberConfig | nu
   return <div style={style} title="Edit page numbers" onPointerDown={(e) => { if (!onEdit) return; e.stopPropagation(); onEdit(); }}>{text}</div>;
 }
 
-export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveGroupAcross, selected, onSelect, editingId, onEdit, onReflow, onBreak, onMerge, page, pageNumbers, onEditPageNumbers, pageIndex, pageCount, showGrid }: {
+export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveGroupAcross, selected, onSelect, editingId, onEdit, onReflow, onBreak, onMerge, page, pageMargin, pageNumbers, onEditPageNumbers, pageIndex, pageCount, showGrid }: {
   section: GridSection;
   sectionId: string;
   onChange: (s: GridSection) => void;
   onMoveAcross: (blockId: string, toSectionId: string, area: GridArea) => void;
   onMoveGroupAcross: (ids: string[], toSectionId: string, dCol: number, dRow: number) => void;
   page: PageDims;
+  pageMargin: PageMargin; // the THEME's page margin (its @page), in mm — per side
   pageNumbers?: PageNumberConfig | null; // document-level page numbering
   onEditPageNumbers?: () => void; // click the on-page number → open its controls
   pageIndex: number; // this page's 0-based index (for the number)
@@ -305,12 +306,18 @@ export function GridCanvas({ section, sectionId, onChange, onMoveAcross, onMoveG
     return new Map(layered ? stackOrder(section.blocks).map((b, i) => [b.id, i] as const) : []);
   }, [section.blocks]);
 
+  const pm = pageMargin;
   const sheet: React.CSSProperties = {
     width: `${dim.w}mm`, height: `${dim.h}mm`, boxSizing: "border-box",
-    padding: `${PAGE_MARGIN_MM}mm`, position: "relative", margin: "0 auto",
-    // Match the PDF's :root token so a block's bleed (margin: calc(-1 *
-    // var(--pc-margin))) reaches the page edge identically on canvas and in print.
-    ["--pc-margin" as string]: `${PAGE_MARGIN_MM}mm`,
+    padding: `${pm.top}mm ${pm.right}mm ${pm.bottom}mm ${pm.left}mm`,
+    position: "relative", margin: "0 auto",
+    // Match the PDF's per-side tokens so a block's bleed (margin: calc(-1 *
+    // var(--pc-margin-<side>))) reaches the page edge identically on canvas and in
+    // print, and so PageNumber's shared pageNumberPosCss resolves to the same band.
+    ["--pc-margin-top" as string]: `${pm.top}mm`,
+    ["--pc-margin-right" as string]: `${pm.right}mm`,
+    ["--pc-margin-bottom" as string]: `${pm.bottom}mm`,
+    ["--pc-margin-left" as string]: `${pm.left}mm`,
     // Default page bg = the THEME's --pc-bg (set on .editor-surface by the scoped
     // skin), matching the PDF where .page inherits the skin's body background —
     // a hardcoded #fff here made e.g. luxe-dark pages white in the editor only.

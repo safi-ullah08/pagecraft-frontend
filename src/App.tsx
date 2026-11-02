@@ -9,10 +9,10 @@ import { ImportHub } from "./components/ImportHub.tsx";
 import { confirmDialog } from "./components/ConfirmModal.tsx";
 import { useStore } from "./store.ts";
 import { amIStaff } from "./api.ts";
-import { themeSkinCss, typedBlockCss } from "./themes.ts";
+import { themeMargin, themeSkinCss, typedBlockCss } from "./themes.ts";
 import { designCss } from "@pagecraft/model";
 import { scopeThemeCss } from "./scope-css.ts";
-import { PAGE_MARGIN_MM } from "./pages.ts";
+
 import { isGridSection, emptyGridSection } from "./grid/types.ts";
 import { GridCanvas } from "./grid/GridCanvas.tsx";
 import { isAnyCover } from "./grid/covers.ts";
@@ -166,7 +166,11 @@ export function App() {
 
   // The page size is document data, not styling: hand it to App.css's .page-sheet
   // rules as custom properties instead of generating CSS text.
-  const sheetVars = { "--sheet-w": `${page.w}mm`, "--sheet-h": `${page.h}mm`, "--sheet-margin": `${PAGE_MARGIN_MM}mm` } as React.CSSProperties;
+  // The margin is the THEME's (its @page), so the on-screen sheet is inset exactly
+  // like the printed page — including the asymmetric margins the Canva skins use.
+  const pm = themeMargin(theme);
+  const sheetVars = { "--sheet-w": `${page.w}mm`, "--sheet-h": `${page.h}mm`,
+    "--sheet-margin": `${pm.top}mm ${pm.right}mm ${pm.bottom}mm ${pm.left}mm` } as React.CSSProperties;
 
   const active = sections.find((s) => s.id === activeId) ?? null;
   const toggleLayout = async () => {
@@ -266,6 +270,7 @@ export function App() {
                       onMoveAcross={(blockId, toId, area) => moveBlockToPage(s.id, blockId, toId, area)}
                       onMoveGroupAcross={(ids, toId, dCol, dRow) => moveBlocksToPage(s.id, ids, toId, dCol, dRow)}
                       page={page}
+                      pageMargin={pm}
                       pageNumbers={isAnyCover(s.content) ? null : pageNumbers} /* a cover is never numbered — same rule as the worker */
                       onEditPageNumbers={openPageNumbers}
                       pageIndex={i}

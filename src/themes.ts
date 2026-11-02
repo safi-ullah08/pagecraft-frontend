@@ -5,7 +5,7 @@
 // this produce byte-identical CSS, preserving the 1-to-1 WYSIWYG guarantee.
 // ponytail: exists ONLY because fs can't run in the browser; delete if the model
 // ever ships a bundler-safe skin loader.
-import { baseCss, gridBaseCss, VERBATIM_SKIN, type LayoutMode, type ThemeName } from "@pagecraft/model";
+import { baseCss, gridBaseCss, VERBATIM_SKIN, pageMargin, pageMarginCss, type LayoutMode, type PageMargin, type ThemeName } from "@pagecraft/model";
 
 export { DEFAULT_THEME } from "@pagecraft/model";
 
@@ -26,6 +26,17 @@ for (const [file, css] of Object.entries(
 // backend that hasn't been seeded yet.
 export function registerThemes(list: Array<{ slug: string; css: string }>): void {
   for (const t of list) skins[t.slug] = t.css;
+  margins.clear(); // a re-registered skin may declare a different @page margin
+}
+
+// The theme's page margin, from its own `@page { margin: … }` — the SAME parse the
+// worker's documentCss uses, so the editor's page box matches the PDF's. Memoized:
+// fit/split measurement asks for it in loops.
+const margins = new Map<string, PageMargin>();
+export function themeMargin(theme: ThemeName): PageMargin {
+  let m = margins.get(theme);
+  if (!m) margins.set(theme, (m = pageMargin(themeSkinCss(theme))));
+  return m;
 }
 
 export function themeNames(): ThemeName[] {
@@ -38,8 +49,10 @@ export function documentCss(theme: ThemeName, layoutMode: LayoutMode = "flow"): 
   // TOKEN_BRIDGE: the typed .pc-* blocks (stat/cta/chapter/author/verse…) still read
   // the legacy --accent/--ink names; the skins only declare --pc-*. Alias them on
   // .page so those blocks re-skin instead of falling back to hardcoded coral.
+  // gridBaseCss zeroes @page, so the skin's designed margins are re-published as
+  // the per-side --pc-margin-* tokens LAST (see the model's styles/pageMargin.ts).
   return layoutMode === "grid"
-    ? `${themeSkinCss(theme)}\n${gridBaseCss}\n${TOKEN_BRIDGE}`
+    ? `${themeSkinCss(theme)}\n${gridBaseCss}\n${TOKEN_BRIDGE}\n${pageMarginCss(themeMargin(theme))}`
     : `${baseCss}\n${themeSkinCss(theme)}`;
 }
 

@@ -16,6 +16,7 @@ import { withColumnCount } from "./grid/columns.ts";
 import { runLayout } from "./grid/layoutDoc.ts";
 import type { SourceMeta, StoredDocPlan } from "./api.ts";
 import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
+import { themeMargin } from "./themes.ts";
 import { splitParagraphSentences } from "./grid/split-inline.ts";
 
 export type Section = { id: string; content: SectionContent; version: number };
@@ -434,8 +435,9 @@ export const useStore = create<Store>((set, get) => {
       // by vertical padding + margin.
       const padX = sidesX(block.style?.padding), padY = sidesY(block.style?.padding);
       const marX = sidesX(block.style?.margin), marY = sidesY(block.style?.margin);
-      const h = measureHtmlHeight(html, blockWidthPx(cols, page) - marX - padX, theme) + padY + marY;
-      const rows = heightToRows(h, page);
+      const pm = themeMargin(theme);
+      const h = measureHtmlHeight(html, blockWidthPx(cols, page, pm) - marX - padX, theme) + padY + marY;
+      const rows = heightToRows(h, page, pm);
       const min = minArea(block.block).rows;
       const rowStart = block.area.rowStart;
       const rowEnd = rowStart + Math.max(min, Math.min(rows, ROWS - rowStart + 1));
@@ -457,12 +459,13 @@ export const useStore = create<Store>((set, get) => {
       const nodes = doc.content ?? [];
       if (nodes.length < 1) return;
       const cols = block.area.colEnd - block.area.colStart;
-      const widthPx = blockWidthPx(cols, page) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
+      const pm = themeMargin(theme);
+      const widthPx = blockWidthPx(cols, page, pm) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
       // Room from the block's TOP to the page's bottom edge (not the box height).
       const rowsToEdge = ROWS - block.area.rowStart + 1;
       // ponytail: ~⅓-row cushion so content hugging the edge breaks over too; raise if edge-hug persists.
-      const cushion = blockHeightPx(1, page) / 3;
-      const maxHpx = blockHeightPx(rowsToEdge, page) - sidesY(block.style?.padding) - sidesY(block.style?.margin) - cushion;
+      const cushion = blockHeightPx(1, page, pm) / 3;
+      const maxHpx = blockHeightPx(rowsToEdge, page, pm) - sidesY(block.style?.padding) - sidesY(block.style?.margin) - cushion;
       // splits between paragraphs, or WITHIN a paragraph (word boundary) when a
       // single long paragraph overflows — so any overflowing text frame can spill.
       const [docA, docB] = splitTextFrameAt(doc, widthPx, maxHpx, theme);
@@ -504,7 +507,8 @@ export const useStore = create<Store>((set, get) => {
       const isToc = block.block === "tocList";
       const cols = block.area.colEnd - block.area.colStart;
       const rows = block.area.rowEnd - block.area.rowStart;
-      const widthPx = blockWidthPx(cols, page) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
+      const pm = themeMargin(theme);
+      const widthPx = blockWidthPx(cols, page, pm) - sidesX(block.style?.padding) - sidesX(block.style?.margin);
       const padY = sidesY(block.style?.padding) + sidesY(block.style?.margin);
 
       // 1. Split the content into pieces.
@@ -514,14 +518,14 @@ export const useStore = create<Store>((set, get) => {
         pieces = splitTocEntries(contents.entries ?? [], tocMaxLevel(contents))
           .map((entries) => ({ ...contents, entries }) as GridBlock["content"]);
       } else {
-        const boxHeightPx = blockHeightPx(rows, page) - padY;
+        const boxHeightPx = blockHeightPx(rows, page, pm) - padY;
         pieces = splitProse(block.content as JSONContent, (doc) => splitTextFrameAt(doc, widthPx, boxHeightPx, theme));
       }
       if (pieces.length < 2) return;
 
       // 2. Measure how many rows each piece needs, rendered exactly as the block renders.
       const heights = pieces.map((piece) =>
-        Math.max(1, heightToRows(measureHtmlHeight(blockHtml({ ...block, content: piece }) ?? "", widthPx, theme) + padY, page)));
+        Math.max(1, heightToRows(measureHtmlHeight(blockHtml({ ...block, content: piece }) ?? "", widthPx, theme) + padY, page, pm)));
 
       // 3. Place the pieces in the page's free rows.
       const others = sec.content.blocks.filter((b) => b.id !== blockId);

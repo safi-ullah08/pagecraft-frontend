@@ -1,8 +1,8 @@
 import { layout, serialize, type LayoutPlan, type LayoutSpec, type LayoutResult } from "@pagecraft/model";
 import type { JSONContent } from "@tiptap/react";
-import { themeSkinCss } from "../themes.ts";
+import { themeMargin, themeSkinCss } from "../themes.ts";
 import { scopeThemeCss } from "../scope-css.ts";
-import { PAGE_MARGIN_MM, type PageDims } from "../pages.ts";
+import { contentBoxMm, type PageDims } from "../pages.ts";
 import { COLS, ROWS } from "./types.ts";
 import { collectImageSrcs, preloadDims } from "./parseBlocks.ts";
 
@@ -14,8 +14,9 @@ const IMAGE_FALLBACK_ROWS = 5;
 
 export async function runLayout(plan: LayoutPlan, spec: LayoutSpec, theme: string, dim: PageDims): Promise<LayoutResult> {
   const gap = 4 * MM; // must match GridCanvas grid gap / gridBaseCss --pc-gap
-  const contentW = (dim.w - 2 * PAGE_MARGIN_MM) * MM;
-  const contentH = (dim.h - 2 * PAGE_MARGIN_MM) * MM;
+  const box = contentBoxMm(dim, themeMargin(theme));
+  const contentW = box.w * MM;
+  const contentH = box.h * MM;
   const rowPx = (contentH - (ROWS - 1) * gap) / ROWS;
   const colPx = (contentW - (COLS - 1) * gap) / COLS;
 
