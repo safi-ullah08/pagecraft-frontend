@@ -48,6 +48,17 @@ export async function updatePageNumbers(documentId: string, pageNumbers: PageNum
   if (!res.ok) throw new Error(`save page numbers failed: ${res.status}`);
 }
 
+// Persist the page size on the document — the editor sheet AND the PDF @page read
+// it back from here, so a template drawn on a non-A4 sheet has to write it.
+export async function updatePageSize(documentId: string, p: { w: number; h: number }) {
+  const res = await authedFetch(`/api/documents/${documentId}`, {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ pageWidthMm: p.w, pageHeightMm: p.h }),
+  });
+  if (!res.ok) throw new Error(`save page size failed: ${res.status}`);
+}
+
 export async function createDocument(title = "Untitled", theme?: string) {
   const res = await authedFetch("/api/documents", {
     method: "POST",
@@ -69,6 +80,9 @@ export async function createFromTemplate(t: Template): Promise<string> {
   // corner tab) set it on the new doc; others keep the default bottom-centre.
   const pn = STRUCTURES[t.structKey]?.pageNumbers;
   if (pn) await updatePageNumbers(document.id, pn);
+  // …and ones drawn on another sheet (guidebook is US Letter) set that too.
+  const sheet = STRUCTURES[t.structKey]?.page;
+  if (sheet) await updatePageSize(document.id, sheet);
   return document.id;
 }
 

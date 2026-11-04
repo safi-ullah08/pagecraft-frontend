@@ -4,6 +4,7 @@ import { layout, type LayoutPlan } from "@pagecraft/model";
 import { interpret, assertAreasValid, listTemplates, templateSections, parseTemplateId, structureToLayoutSpec, foldChapters, docPlanToLayout, setStructures } from "./templates.ts";
 import { BUILTIN_STRUCTURES as STRUCTURES, BUILTIN_ORDER } from "./builtinStructures.ts";
 import { isCoverSection } from "./covers.ts";
+import { art, type StructureSpec } from "./spec.ts";
 import { isTocSection, collectToc } from "./toc.ts";
 
 // run: cd pagecraft-backend && node --import tsx --test ../pagecraft-frontend/src/grid/templates.test.ts
@@ -15,7 +16,7 @@ setStructures(BUILTIN_ORDER.map((k) => STRUCTURES[k]));
 test("every structure interprets to the expected page count", () => {
   assert.equal(interpret(STRUCTURES.leadMagnet).length, 3);
   assert.equal(interpret(STRUCTURES.ebook).length, 6);
-  assert.equal(interpret(STRUCTURES.guidebook).length, 8);
+  assert.equal(interpret(STRUCTURES.guidebook).length, 9); // two flow pages: plain + illustrated
   assert.equal(interpret(STRUCTURES.wellness).length, 8);
   assert.equal(interpret(STRUCTURES.report).length, 4);
   assert.equal(interpret(STRUCTURES.mediaKit).length, 9);
@@ -36,7 +37,7 @@ test("cover / toc pages keep their flags so they're excluded from numbering + co
   assert.ok(isCoverSection(eb[0]), "ebook page 1 is a cover");
   assert.ok(isTocSection(eb[2]), "ebook page 3 is a toc");
   const gb = interpret(STRUCTURES.guidebook);
-  assert.ok(isCoverSection(gb[0]) && isCoverSection(gb[7]), "guidebook front + back are covers");
+  assert.ok(isCoverSection(gb[0]) && isCoverSection(gb[8]), "guidebook front + back are covers"); // 8: the illustrated flow page pushed it along
   assert.ok(isTocSection(gb[2]), "guidebook page 3 is a toc");
   const wl = interpret(STRUCTURES.wellness);
   assert.ok(isCoverSection(wl[0]) && isCoverSection(wl[7]), "wellness front + back are covers");
@@ -135,7 +136,10 @@ test("guidebook spec: imported content lands in the designed layout, placeholder
       assert.ok(a.rowStart >= 1 && a.colStart >= 1 && a.rowEnd <= 13 && a.colEnd <= 13 && a.rowStart < a.rowEnd && a.colStart < a.colEnd, `bad area ${JSON.stringify(a)}`);
     }
   }
-  assert.deepEqual(report, []); // every slot bound — nothing hidden
+  // The illustrated flow page's image slot carries no fallback, so a fixture with
+  // no pictures leaves that corner empty and says so. Nothing ELSE may be hidden.
+  assert.deepEqual(report.filter((r) => !r.startsWith("hidden image slot")), []);
+  assert.ok(report.every((r) => r === "hidden image slot (chapter has no image)"));
 });
 
 test("foldChapters: h1 opens a chapter, h2 folds in (heading kept); Notes stays apart", () => {
@@ -233,4 +237,21 @@ test("blocks reference theme tokens, never hardcoded colour (so they re-skin)", 
     const json = JSON.stringify(interpret(spec));
     assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(json), `no hex colours in ${spec.key}`);
   }
+});
+
+test("template-owned art survives interpret() and the apply path, in display form", () => {
+  const spec: StructureSpec = {
+    key: "art-fixture", docType: "ebook", name: "Art fixture",
+    pages: [{ kind: "blocks", blocks: [art([1, 1, 4, 5], "lotus.svg", "Lotus")] }],
+  };
+  const display = "/api/assets/resolve?key=" + encodeURIComponent("assets/_system/lotus.svg");
+
+  const [page] = interpret(spec);
+  assert.deepEqual(page!.blocks[0]!.content, { src: display, alt: "Lotus" });
+  assert.equal(page!.blocks[0]!.block, "image");
+
+  // the apply path keeps it too — art is not a slot, so nothing can empty it
+  const lp = structureToLayoutSpec(spec).pages[0]!;
+  assert.equal(lp.blocks[0]!.slot, undefined);
+  assert.deepEqual(lp.blocks[0]!.content, { src: display, alt: "Lotus" });
 });

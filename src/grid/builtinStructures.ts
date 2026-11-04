@@ -12,6 +12,7 @@ import {
   type BlockSpec, type StructureSpec,
 } from "./spec.ts";
 import { CANVA_STRUCTURES } from "./canvaStructures.ts";
+import { PAGE_SIZES } from "../pages.ts";
 
 // ---- the 3 structures ---------------------------------------------------
 const leadMagnet: StructureSpec = {
@@ -32,7 +33,9 @@ const leadMagnet: StructureSpec = {
     ] },
     { kind: "blocks", background: { kind: "solid", color: ACCENT }, blocks: [
       { at: [3, 2, 4, 11], furniture: true, nodes: [para("Ready when you are")], style: { ...KICKER, textAlign: "center", textColor: ON_ACCENT } },
-      { at: [4, 2, 7, 12], furniture: true, nodes: [heading("Start today")], style: { ...TITLE, textAlign: "center", textColor: ON_ACCENT } },
+      // h1 override: a skin colours headings directly, which beats the block's
+      // own textColor — without it this title is the accent ON the accent page.
+      { at: [4, 2, 7, 12], furniture: true, nodes: [heading("Start today")], style: { ...TITLE, textAlign: "center", textColor: ON_ACCENT, customCss: "h1{color:inherit}" } },
       { at: [7, 3, 9, 11], furniture: true, nodes: [para("Grab the full toolkit and take the first step in the next ten minutes.")], style: { textAlign: "center", fontSize: 17, textColor: ON_ACCENT, fontFamily: BODY } },
       { at: [9, 5, 10, 9], furniture: true, nodes: [para("yourname.com/start")], style: { textAlign: "center", fontSize: 14, fontWeight: 700, textColor: ON_ACCENT, fontFamily: BODY, customCss: "border:2px solid var(--pc-on-accent);border-radius:999px;padding:9px 4px" } },
     ] },
@@ -132,13 +135,22 @@ const report: StructureSpec = {
 // contents, banner chapter opener, two-column body, numbered-list panel,
 // thank-you and back cover. Locked to its source skin (indigo-press) as one of
 // the isolated Canva templates. Placeholder copy — the user types over it.
+// The source uses two blues — a greyer navy for the full-page cover fields and a
+// brighter one for bands, titles and rules — plus a gold corner square. The skin
+// owns the values; the fallbacks keep the page sane if a guidebook document is
+// switched to a theme that only declares the D7 accent.
+const FIELD = "var(--pc-field, var(--pc-accent))";
+const GOLD = "var(--pc-gold, var(--pc-accent))";
+
 const guidebook: StructureSpec = {
   key: "guidebook", docType: "ebook", name: "Entrepreneur guidebook", lockedTheme: "indigo-press",
+  // The source pages are 1545x1999 px — US Letter, not A4.
+  page: PAGE_SIZES.Letter,
   pages: [
     // 1 — cover: full-bleed accent, inset panel, serif title, author strip.
     // Meta slots (fallback keep): an applied template binds the imported doc's
     // title/subtitle/author here; the placeholder text survives otherwise.
-    { kind: "blocks", cover: true, background: { kind: "solid", color: ACCENT }, blocks: [
+    { kind: "blocks", cover: true, background: { kind: "solid", color: FIELD }, blocks: [
       panel([2, 2, 9, 12], BG),
       { at: [3, 3, 7, 11], slot: "title", fallback: "empty", nodes: [heading("How to Become an Entrepreneur")], style: { textAlign: "center", fontSize: 40, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY, customCss: "line-height:1.15" } },
       { at: [7, 3, 8, 11], slot: "subtitle", fallback: "empty", nodes: [para("A step-by-step guide to level up your skills")], style: { textAlign: "center", fontSize: 15, textColor: ACCENT, fontFamily: BODY } },
@@ -149,7 +161,7 @@ const guidebook: StructureSpec = {
     ] },
     // 2 — welcome / colophon: lavender panel, accent corner square, photo slot
     { kind: "blocks", blocks: [
-      panel([1, 11, 2, 12], ACCENT),
+      panel([1, 11, 2, 12], GOLD),
       panel([2, 1, 10, 9], SURFACE),
       { at: [4, 2, 6, 8], furniture: true, nodes: [para("Hello and welcome!")], style: { fontSize: 32, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY } },
       { at: [6, 2, 9, 8], nodes: [para("Title of the book"), para("Author name"), para("Edition / Year"), para("All rights reserved")], style: { fontSize: 13, textColor: INK, fontFamily: BODY, customCss: "p:first-child{font-weight:700}p+p{margin-top:5px}" } },
@@ -157,13 +169,17 @@ const guidebook: StructureSpec = {
 
       { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT },
     ] },
-    // 3 — contents: lavender band, serif title, dotted leaders (source design).
+    // 3 — contents: navy band, white sans title, then the skin's two-level
+    // contents design (numbered chapters over dotted-leader sub-entries).
     // A slot:"toc" page — the store fills entries; the design survives refreshes.
+    // The region starts directly under the band because the source fits five
+    // chapter groups on the page and a row of kicker would cost one of them.
+    // ponytail: the source's own title reads "Table of content"; shipping the
+    // typo into every document it makes is a worse bargain than the fidelity.
     { kind: "blocks", blocks: [
-      panel([1, 1, 4, 13], SURFACE),
-      { at: [2, 2, 3, 8], furniture: true, nodes: [para("What's inside")], style: KICKER },
-      { at: [3, 2, 5, 10], furniture: true, nodes: [heading("Contents")], style: { fontSize: 32, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY } },
-      { at: [5, 2, 12, 12], slot: "toc" },
+      panel([1, 1, 4, 13], ACCENT),
+      { at: [2, 2, 3, 12], furniture: true, nodes: [para("Table of contents")], style: { fontSize: 28, fontWeight: 700, textColor: ON_ACCENT, fontFamily: BODY } },
+      { at: [4, 2, 12, 12], slot: "toc" },
       { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT },
     ] },
     // 4 — chapter opener (perChapter): accent banner, photo column + intro.
@@ -172,9 +188,13 @@ const guidebook: StructureSpec = {
     { kind: "blocks", role: "perChapter", blocks: [
       panel([1, 1, 5, 13], ACCENT),
       { at: [2, 2, 3, 8], slot: "kicker", nodes: [para("Chapter 01")], style: { ...KICKER, textColor: ON_ACCENT, letterSpacing: 0.2 } },
-      { at: [3, 2, 5, 12], slot: "chapterTitle", nodes: [heading("Introduction")], style: { fontSize: 32, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.08em" } },
+      // h1 override: the skin colours every heading, which beats the container's
+      // textColor — without it the title is navy ON the navy band (see the
+      // freelancer opener, which already carries the same line).
+      { at: [3, 2, 5, 12], slot: "chapterTitle", nodes: [heading("Introduction")], style: { fontSize: 32, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.08em;h1{color:var(--pc-on-accent)}" } },
       { ...img([5, 2, 12, 5]), slot: "image", fallback: "empty" },
       { at: [5, 5, 13, 12], slot: "intro", nodes: [
+        heading("Open with a subheading", 3), // the skin's h3 IS the source's burnt-orange subhead
         para("Open the chapter with the idea the reader came for. Keep the first paragraph short — it sets the pace for everything that follows."),
         para("Then widen out: give the background, the stakes, and the one thing the reader should hold onto as they move through the pages ahead."),
         para("Close the opener by pointing at what comes next, so turning the page feels like the obvious move."),
@@ -194,6 +214,23 @@ const guidebook: StructureSpec = {
       ], style: BODY_S },
       { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT, z: 20 },
     ] },
+    // 5b — body with an illustration (flow, alternates with 5): the same left
+    // column, the right one shortened to give its lower half to a portrait
+    // image. The source alternates a plain spread with an illustrated one, so
+    // the two flow pages cycle. No fallback: a document with no pictures leaves
+    // the corner empty rather than printing a box nothing will ever fill.
+    { kind: "blocks", role: "flow", blocks: [
+      { at: [1, 2, 12, 7], slot: "body", nodes: [
+        heading("The illustrated spread", 3),
+        para("The left column reads exactly as it does on the plain spread — the alternation is in the right-hand column, not here."),
+        para("Keeping one column full-height means a long passage still has somewhere to go when the picture takes the other."),
+      ], style: BODY_S },
+      { at: [1, 7, 7, 12], slot: "body", nodes: [
+        para("The right column runs half the page and then hands over to the illustration below it."),
+      ], style: BODY_S },
+      { ...img([7, 7, 12, 12]), slot: "image" },
+      { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT, z: 20 },
+    ] },
     // 6 — numbered list on a lavender panel, landscape photo below
     { kind: "blocks", blocks: [
       panel([1, 1, 9, 13], SURFACE),
@@ -207,7 +244,7 @@ const guidebook: StructureSpec = {
     ] },
     // 7 — thank you: italic serif accent title, body left, photo right
     { kind: "blocks", blocks: [
-      { at: [1, 2, 3, 8], furniture: true, nodes: [para("Thank you!")], style: { fontSize: 36, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY, customCss: "font-style:italic" } },
+      { at: [1, 2, 3, 8], furniture: true, nodes: [heading("Thank you!", 3)], style: { fontSize: 36, fontWeight: 700, fontFamily: DISPLAY, customCss: "font-style:italic" } }, // no textColor: inherits h3, the skin's burnt-orange subhead role
       { at: [3, 2, 11, 7], nodes: [
         para("Sign off in your own voice. Thank the reader for their time, and tell them the one thing to do next — visit a site, try the first step, reply with a question."),
         para("A short closing note beats a long one; this page is a handshake, not another chapter."),
@@ -216,7 +253,7 @@ const guidebook: StructureSpec = {
       { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT },
     ] },
     // 8 — back cover: accent page, centred blurb, colophon strip
-    { kind: "blocks", cover: true, background: { kind: "solid", color: ACCENT }, blocks: [
+    { kind: "blocks", cover: true, background: { kind: "solid", color: FIELD }, blocks: [
       { at: [4, 3, 8, 11], nodes: [para("“This book is for anyone who's ever thought ‘I should start something' and didn't know where to begin.”")], style: { textAlign: "center", fontSize: 17, textColor: ON_ACCENT, fontFamily: BODY, customCss: "line-height:1.75" } },
       { at: [8, 4, 9, 10], nodes: [para("Author name")], style: { textAlign: "center", fontSize: 14, textColor: ON_ACCENT, fontFamily: BODY } },
       { at: [10, 3, 11, 11], nodes: [emptyP], style: HAIR_ON_ACCENT },

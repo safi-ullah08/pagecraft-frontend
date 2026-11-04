@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries } from "./toc.ts";
+import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries, paginateToc, withFreshIds, type TocEntry } from "./toc.ts";
 import { buildCover } from "./covers.ts";
 
 // run: cd pagecraft-backend && node --import tsx --test ../pagecraft-frontend/src/grid/toc.test.ts
@@ -105,4 +105,46 @@ test("a back cover is not indexed either, but still occupies the last page", () 
   const pages = [page(blk(heading("Chapter"))), buildCover("blurb")];
   const entries = collectToc(pages);
   assert.deepEqual(entries.map((e) => e.text), ["Chapter"]);
+});
+
+// ---- contents pagination --------------------------------------------------
+// Nine chapters of three sections each — the source design's shape, 36 entries.
+const nine: TocEntry[] = Array.from({ length: 9 }, (_, c) => [
+  { text: `Chapter ${c + 1}`, level: 1, page: 3 + c * 4 },
+  ...Array.from({ length: 3 }, (_, k) => ({ text: `Section ${k + 1}`, level: 2, page: 4 + c * 4 + k })),
+]).flat();
+
+test("paginateToc splits the entries across pages and loses none", () => {
+  const pages = paginateToc(nine, () => 19); // what indigo-press measures on a Letter page
+  assert.equal(pages.length, 2); // 19 + 17
+  assert.deepEqual(pages.flat(), nine);
+  assert.ok(pages.every((p) => p.length <= 19));
+  assert.deepEqual(paginateToc(nine, () => 13).map((p) => p.length), [12, 12, 12]);
+});
+
+test("a chapter heading is never left alone at the foot of a page", () => {
+  // 21 entries would end ON the "Chapter 6" row — it goes over with its sections
+  const pages = paginateToc(nine, () => 21);
+  assert.equal(pages[0]!.length, 20);
+  assert.equal(pages[0]![19]!.text, "Section 3");
+  assert.equal(pages[1]![0]!.text, "Chapter 6");
+});
+
+test("everything fitting is one page, and no headings is still one page", () => {
+  assert.deepEqual(paginateToc(nine, () => 99), [nine]);
+  assert.deepEqual(paginateToc([], () => 19), [[]]);
+});
+
+test("a page always takes an entry, even one taller than the region", () => {
+  const pages = paginateToc(nine, () => 0); // nothing fits: clip, don't hang
+  assert.equal(pages.length, 36);
+  assert.deepEqual(pages.flat(), nine);
+});
+
+test("a continuation page resumes the chapter numbering and carries fresh ids", () => {
+  const design = buildTocSection([]);
+  const second = withFreshIds(fillTocEntries(design, nine.slice(19), 5));
+  const list = second.blocks.find((b) => b.block === "tocList")!;
+  assert.equal((list.content as { startIndex: number }).startIndex, 5);
+  assert.notEqual(list.id, design.blocks.find((b) => b.block === "tocList")!.id);
 });

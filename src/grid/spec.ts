@@ -4,6 +4,7 @@
 // (templates.ts imports the structures; the structures import only this).
 import type { JSONContent } from "@tiptap/react";
 import type { PageNumberConfig, SlotKind, PageRole } from "@pagecraft/model";
+import type { PageDims } from "../pages.ts";
 import type { BlockStyleTokens, BlockType, PageBackground } from "./types.ts";
 
 // A placed block: [rowStart, colStart, rowEnd, colEnd] on the 12×12 grid.
@@ -35,6 +36,10 @@ export type StructKey = string;
 export type StructureSpec = {
   key: StructKey; docType: DocType; name: string; pages: PageSpec[];
   pageNumbers?: PageNumberConfig; // set on the new doc when the structure wants a specific look (e.g. wellness's corner tab)
+  // The sheet this design was drawn on, in mm — set on the new doc (and measured
+  // against) when it isn't the A4 default. ponytail: builtins only. A custom
+  // template's saved spec doesn't carry it, since nothing authors one off-A4 yet.
+  page?: PageDims;
   // A matched design: this structure ships as ONE catalog card bound to this
   // theme, outside the themes × structures cross-product (the Canva templates).
   // Theme/template switching on a DOCUMENT is unaffected — this only shapes the
@@ -58,7 +63,10 @@ export const UPPER = "text-transform: uppercase";
 // support color-mix, which covers the editor and Gotenberg's Chromium).
 // ponytail: color-mix instead of adding 3 tokens to all skins + the coverage test.
 export const MUTED = "color-mix(in srgb, var(--pc-ink) 42%, var(--pc-bg))";
-export const SURFACE = "color-mix(in srgb, var(--pc-accent) 8%, var(--pc-bg))";
+// A skin whose panel colour isn't an 8% tint of its accent (indigo-press's
+// lavender, measured from the source design) declares --pc-surface and wins; the
+// mix stays the default for every other theme.
+export const SURFACE = "var(--pc-surface, color-mix(in srgb, var(--pc-accent) 8%, var(--pc-bg)))";
 export const BORDER = "color-mix(in srgb, var(--pc-ink) 16%, var(--pc-bg))";
 export const emptyP: JSONContent = { type: "paragraph" };
 
@@ -82,6 +90,15 @@ export const DROPCAP: BlockStyleTokens = { fontSize: 15, textColor: INK, fontFam
 export const kicker = (text: string, at: [number, number, number, number]): BlockSpec => ({ at, nodes: [para(text)], style: KICKER });
 // An empty image slot the user fills with their own photo.
 export const img = (at: [number, number, number, number], z?: number): BlockSpec => ({ at, image: true, ...(z !== undefined ? { z } : {}) });
+// Art the TEMPLATE owns — a design's illustrations, not the user's pictures. The
+// file lives in pagecraft-backend/seed/art/ and `npm run db:seed` uploads it to
+// the shared system prefix, so the ref resolves for every workspace and the
+// render worker bundles it like any other asset. Unlike img(), it is never a
+// slot: nothing binds to it and it never renders as an empty box — which is what
+// makes a design that LEANS on its illustrations survive being applied to an
+// import that has none.
+export const art = (at: [number, number, number, number], file: string, alt = "", z?: number): BlockSpec =>
+  ({ at, block: "image", content: { src: `asset://assets/_system/${file}`, alt }, ...(z !== undefined ? { z } : {}) });
 // A coloured background panel (z:0 so content stacks above it).
 export const panel = (at: [number, number, number, number], color: string): BlockSpec => ({ at, nodes: [emptyP], style: { backgroundColor: color }, z: 0 });
 // A numbered list (the guidebook's 1/2/3 page).
