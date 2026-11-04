@@ -18,6 +18,7 @@ import {
   type BlockSpec, type StructureSpec,
 } from "./spec.ts";
 import type { BlockStyleTokens } from "./types.ts";
+import { PAGE_SIZES } from "../pages.ts";
 
 type At = [number, number, number, number];
 
@@ -138,12 +139,23 @@ const mediaKit: StructureSpec = {
 // ---- emailAutomation — pp. 35-41 -------------------------------------------
 // The set's amber disc motifs (full, quarter and half circles off the page edge).
 const disc = (at: At): BlockSpec => ({ at, nodes: [emptyP], style: { customCss: "border-radius:999px;background:var(--pc-accent)" }, z: 0 });
-const TIGHT = (size: number): BlockStyleTokens => ({ fontSize: size, fontWeight: 800, textColor: INK, fontFamily: DISPLAY, customCss: "letter-spacing:-.04em;line-height:.98" });
+// Display weight, measured off the source pages: median stroke run over band
+// height, calibrated by rendering THE SAME STRING at each weight on Inter's own
+// axis (the band of an all-caps line is shorter than one with a descender, so
+// ratios only compare like for like). Titles land on 400, the two circle labels
+// on 300, and the cover's product name and the 320% on 600 — the design has one
+// bold and uses it twice. Nothing here is 800.
+// A skin weights h1..h6 directly and that beats what a block sets on its
+// container (the same trap as textColor), so headings inherit.
+const TIGHT_CSS = "letter-spacing:-.04em;line-height:.98;h1,h2,h3,h4,h5,h6{font-weight:inherit}";
+const TIGHT = (size: number, weight = 400): BlockStyleTokens => ({ fontSize: size, fontWeight: weight, textColor: INK, fontFamily: DISPLAY, customCss: TIGHT_CSS });
 const TRACKED: BlockStyleTokens = { fontSize: 10, fontWeight: 700, textColor: INK, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.2em" };
 const JUST: BlockStyleTokens = { fontSize: 12, textColor: INK, fontFamily: BODY, customCss: "text-align:justify" };
 
 const emailAutomation: StructureSpec = {
   key: "emailAutomation", docType: "ebook", name: "Email automation guide", lockedTheme: "canva-amber-mono",
+  // The source pages are 1545x1999 px — US Letter, not A4.
+  page: PAGE_SIZES.Letter,
   pages: [
     // p35 — cover: tracked header row, amber disc off the left edge, tight
     // grotesk title stack, thin strapline, arrowed footer taglines.
@@ -151,7 +163,7 @@ const emailAutomation: StructureSpec = {
       { at: [1, 2, 2, 12], slot: "author", fallback: "empty", nodes: [para("Author name · reallygreatsite.com · @reallygreatsite")], style: { ...TRACKED, textAlign: "center", fontSize: 9 } },
       disc([4, 1, 10, 4]),
       { at: [5, 4, 6, 11], furniture: true, nodes: [para("Beginner's Guide")], style: TIGHT(32) },
-      { at: [6, 4, 9, 12], slot: "title", fallback: "empty", nodes: [heading("Email Automation")], style: TIGHT(48) },
+      { at: [6, 4, 9, 12], slot: "title", fallback: "empty", nodes: [heading("Email Automation")], style: TIGHT(48, 600) },
       { at: [9, 4, 10, 12], slot: "subtitle", fallback: "empty", nodes: [para("A practical guide to turning your ideas into a digital business")], style: { fontSize: 12, textColor: INK, fontFamily: BODY } },
       { at: [12, 2, 13, 7], nodes: [para("↘ Find out where to begin and how to achieve success.")], style: { fontSize: 10, textColor: INK, fontFamily: BODY } },
       { at: [12, 7, 13, 12], nodes: [para("↘ A clear path from idea to action. No shortcuts. No hype.")], style: { fontSize: 10, textColor: INK, fontFamily: BODY } },
@@ -162,7 +174,7 @@ const emailAutomation: StructureSpec = {
       { at: [1, 2, 2, 6], furniture: true, nodes: [para("Introduction")], style: TRACKED },
       { at: [2, 2, 4, 9], furniture: true, nodes: [heading("Why This Matters")], style: TIGHT(40) },
       disc([3, 7, 6, 12]),
-      { at: [3, 7, 6, 12], furniture: true, nodes: [para("320%")], style: { ...TIGHT(64), textAlign: "center", customCss: "letter-spacing:-.04em;line-height:.98;padding-top:26px" } },
+      { at: [3, 7, 6, 12], furniture: true, nodes: [para("320%")], style: { ...TIGHT(64, 600), textAlign: "center", customCss: `${TIGHT_CSS};padding-top:26px` } },
       { at: [6, 2, 7, 12], nodes: [pq("Automated emails generate up to 320% more revenue than non-automated ones")], style: {} },
       { at: [7, 2, 12, 12], nodes: [
         para("Most small businesses still send emails one at a time — manually, inconsistently, and usually only when someone remembers to."),
@@ -175,7 +187,7 @@ const emailAutomation: StructureSpec = {
     // with an amber dot, justified intro, half disc at the page foot.
     { kind: "blocks", role: "perChapter", blocks: [
       { at: [1, 2, 2, 6], slot: "kicker", nodes: [para("Chapter 1")], style: TRACKED },
-      { at: [2, 2, 5, 11], slot: "chapterTitle", nodes: [heading("Step by Step Guide")], style: { ...TIGHT(44), customCss: "letter-spacing:-.04em;line-height:.98;text-transform:uppercase" } },
+      { at: [2, 2, 5, 11], slot: "chapterTitle", nodes: [heading("Step by Step Guide")], style: { ...TIGHT(44), customCss: `${TIGHT_CSS};text-transform:uppercase` } },
       disc([3, 11, 4, 12]),
       { at: [5, 2, 11, 12], slot: "intro", nodes: [
         para("A common mistake creatives make is building in isolation. Market demand doesn't require trends or virality — it requires listening."),
@@ -201,10 +213,10 @@ const emailAutomation: StructureSpec = {
     { kind: "blocks", blocks: [
       { at: [1, 2, 4, 12], furniture: true, nodes: [heading("Comparison (DIY vs. Automated)")], style: TIGHT(38) },
       { at: [4, 7, 6, 12], nodes: [para("A successful digital product is not defined by size or complexity. It's defined by usefulness.")], style: JUST },
-      { at: [5, 2, 6, 7], furniture: true, nodes: [para("DIY (Manual)")], style: TIGHT(26) },
+      { at: [5, 2, 6, 7], furniture: true, nodes: [para("DIY (Manual)")], style: TIGHT(26, 300) },
       { at: [6, 2, 10, 7], furniture: true, nodes: [para("You remember to send it — or forget"), para("Same message for everyone"), para("Takes time each week"), para("Easy to fall behind")], style: { textAlign: "center", fontSize: 11, textColor: INK, fontFamily: BODY, backgroundColor: ACCENT, customCss: "border-radius:999px;padding:34px 18px 0;p{margin-bottom:10px}" } },
       { at: [6, 7, 10, 12], furniture: true, nodes: [para("Sends itself, every time"), para("Message matches the reader"), para("Runs while you work"), para("Never falls behind")], style: { textAlign: "center", fontSize: 11, textColor: INK, fontFamily: BODY, backgroundColor: ACCENT, customCss: "border-radius:999px;padding:34px 18px 0;p{margin-bottom:10px}" } },
-      { at: [10, 8, 11, 12], furniture: true, nodes: [para("Automated")], style: TIGHT(26) },
+      { at: [10, 8, 11, 12], furniture: true, nodes: [para("Automated")], style: TIGHT(26, 300) },
       { at: [10, 2, 12, 7], nodes: [para("Focus on clarity over quantity. A short, well-structured product often performs better than a long, unfocused one.")], style: JUST },
     ] },
     // p40 — CTA back page: half disc off the left edge, big ask, pill button.
