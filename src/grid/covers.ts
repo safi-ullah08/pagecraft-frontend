@@ -59,6 +59,12 @@ export type CoverTemplate = {
   build: () => CoverSection;
 };
 
+// A skin colours h1..h6 directly, and that beats the colour a block sets on its
+// container — so a title over an accent field renders in the skin's heading
+// colour, which on some themes IS the accent. `inherit` hands it back to the
+// block's own textColor, whatever that is.
+const HEADING_INHERITS = "h1,h2,h3,h4,h5,h6{color:inherit}";
+
 // ---- Front covers -------------------------------------------------------
 const FRONT: CoverTemplate[] = [
   {
@@ -81,7 +87,7 @@ const FRONT: CoverTemplate[] = [
         block({ rowStart: 4, colStart: 1, rowEnd: 9, colEnd: COLS + 1, content: doc([para(" ")]),
           style: { backgroundColor: ACCENT } }, 0),
         block({ rowStart: 5, colStart: 2, rowEnd: 8, colEnd: 12, content: doc([heading("Your title"), para("Subtitle or author")]),
-          style: { textAlign: "center", fontSize: 42, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY } }, 1),
+          style: { textAlign: "center", fontSize: 42, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: HEADING_INHERITS } }, 1),
       ],
     }),
   },
@@ -116,7 +122,7 @@ const FRONT: CoverTemplate[] = [
       background: { kind: "image", src: "", fit: "cover", color: ACCENT }, // colour shows until an image is picked
       blocks: [
         block({ rowStart: 8, colStart: 2, rowEnd: 12, colEnd: 12, content: doc([heading("Your title"), para("Subtitle or author")]),
-          style: { fontSize: 40, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: "text-shadow: 0 2px 12px rgba(0,0,0,.55)" } }, 0),
+          style: { fontSize: 40, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: `text-shadow: 0 2px 12px rgba(0,0,0,.55);${HEADING_INHERITS}` } }, 0),
       ],
     }),
   },
@@ -158,7 +164,7 @@ const BACK: CoverTemplate[] = [
       blocks: [
         block({ rowStart: 4, colStart: 2, rowEnd: 9, colEnd: 12,
           content: doc([heading("“A line worth remembering.”", 2), para("— Attribution")]),
-          style: { textAlign: "center", fontSize: 30, textColor: ON_ACCENT, fontFamily: DISPLAY } }, 0),
+          style: { textAlign: "center", fontSize: 30, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: HEADING_INHERITS } }, 0),
       ],
     }),
   },
