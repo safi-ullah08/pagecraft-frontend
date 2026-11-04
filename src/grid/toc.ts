@@ -65,13 +65,39 @@ const rid = () => Math.random().toString(36).slice(2, 10);
 export function hasTocList(section: GridSection): boolean {
   return section.blocks.some((b) => b.block === "tocList");
 }
-export function fillTocEntries(section: GridSection, entries: TocEntry[]): GridSection {
+// `startIndex` = how many level-1 entries came before this page, so a continuation
+// page's chapter numbering resumes instead of restarting at one (the serializer
+// turns it into a counter-reset; a skin that draws no counter ignores it).
+export function fillTocEntries(section: GridSection, entries: TocEntry[], startIndex = 0): GridSection {
   return {
     ...section,
     blocks: section.blocks.map((b) =>
-      b.block === "tocList" ? { ...b, content: { ...(b.content as object), entries } } : b,
+      b.block === "tocList" ? { ...b, content: { ...(b.content as object), entries, startIndex } } : b,
     ),
   };
+}
+
+// Fresh block ids for a page cloned from another — ids are the handle for
+// selection and editing, so two pages must not share them.
+export function withFreshIds(section: GridSection): GridSection {
+  return { ...section, blocks: section.blocks.map((b) => ({ ...b, id: rid() })) };
+}
+
+// Split the entries into one chunk per contents page. `fits` reports how many of
+// the entries it is given will fit on a page; a chunk always takes at least one,
+// so an entry taller than the whole region clips there rather than looping.
+// A chapter heading is never left alone at the foot of a page — it goes over with
+// its sections, which is also how the source design breaks.
+export function paginateToc(entries: TocEntry[], fits: (es: TocEntry[]) => number): TocEntry[][] {
+  const pages: TocEntry[][] = [];
+  let rest = entries;
+  while (rest.length && pages.length < 50) {
+    let n = Math.max(1, Math.min(rest.length, fits(rest)));
+    if (n < rest.length && n > 1 && rest[n - 1]!.level === 1) n--;
+    pages.push(rest.slice(0, n));
+    rest = rest.slice(n);
+  }
+  return pages.length ? pages : [[]]; // no headings yet: still one (empty) page
 }
 
 // The DEFAULT contents page (untemplated docs, and templates' `kind:"toc"`

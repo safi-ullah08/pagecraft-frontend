@@ -103,9 +103,9 @@ export function heightToRows(heightPx: number, dim: PageDims, m: PageMargin): nu
   return Math.max(1, Math.ceil((heightPx + gap) / (rowH + gap)));
 }
 
-// Rendered height (px) of HTML at a given content width, skinned like the export so
-// it matches the on-screen block. One-shot off-screen surface.
-export function measureHtmlHeight(html: string, widthPx: number, theme: string): number {
+// Lay HTML out off-screen at a given content width, skinned like the export so it
+// matches the on-screen block, and hand the surface to `read`. One-shot.
+function measureIn<T>(html: string, widthPx: number, theme: string, read: (el: HTMLElement) => T): T {
   const style = document.createElement("style");
   style.textContent = scopeThemeCss(themeSkinCss(theme), ".pc-measure");
   const meas = document.createElement("div");
@@ -114,9 +114,34 @@ export function measureHtmlHeight(html: string, widthPx: number, theme: string):
   document.body.append(style, meas);
   try {
     meas.innerHTML = html;
-    return meas.offsetHeight;
+    return read(meas);
   } finally {
     meas.remove();
     style.remove();
   }
+}
+
+// Rendered height (px) of HTML at a given content width.
+export function measureHtmlHeight(html: string, widthPx: number, theme: string): number {
+  return measureIn(html, widthPx, theme, (el) => el.offsetHeight);
+}
+
+// How many of a tocList's entries fit in maxHpx — measured on the REAL rendered
+// rows, so a skin's per-level spacing (indigo-press gives a chapter row a margin
+// and a 29px floor) counts for exactly what it costs. entries.length = they all
+// fit; 0 = not even the first row does, and the caller forces one anyway so a
+// page always makes progress. Rects, not offsetTop: a skin may position .pc-toc,
+// which would otherwise become the offset parent.
+export function tocFitCount(content: object, widthPx: number, maxHpx: number, theme: string): number {
+  const html = renderTypedBlock("tocList", content);
+  if (!html) return 0;
+  return measureIn(html, widthPx, theme, (el) => {
+    const top = el.getBoundingClientRect().top;
+    let n = 0;
+    for (const row of el.querySelectorAll(".pc-toc-row")) {
+      if (row.getBoundingClientRect().bottom - top > maxHpx + 0.5) break;
+      n++;
+    }
+    return n;
+  });
 }

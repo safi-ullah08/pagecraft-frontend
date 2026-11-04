@@ -8,14 +8,14 @@ import { BLOCKS, serialize, DEFAULT_PAGE_NUMBERS, EMPTY_DESIGN, type PageNumberC
 import { isGridSection, emptyGridSection, ROWS, type BlockType, type GridArea, type GridBlock, type GridSection } from "./grid/types.ts";
 import { minArea, addBlock as opsAddBlock, resizeBlock, updateBlockContent, removeBlocks, cloneBlocks, clampArea, mergeInto } from "./grid/ops.ts";
 import { parseBlocks } from "./grid/parseBlocks.ts";
-import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries, type TocEntry } from "./grid/toc.ts";
+import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries, paginateToc, withFreshIds, type TocEntry } from "./grid/toc.ts";
 import { buildCover, isCoverSection, isBackCoverSection } from "./grid/covers.ts";
 import { insertSectionsAfter, updatePageNumbers, updatePageSize, updateDesign, updateTheme, renameDocument } from "./api.ts";
 import { parseTemplateId, structureToLayoutSpec, foldChapters, docPlanToLayout, STRUCTURES, IMPORT_COVER, type Template } from "./grid/templates.ts";
 import { withColumnCount } from "./grid/columns.ts";
 import { runLayout } from "./grid/layoutDoc.ts";
 import type { SourceMeta, StoredDocPlan } from "./api.ts";
-import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
+import { blockHtml, blockHeightPx, blockWidthPx, heightToRows, measureHtmlHeight, tocFitCount, sidesX, sidesY, splitTextFrameAt } from "./grid/measure.ts";
 import { themeMargin } from "./themes.ts";
 import { splitParagraphSentences } from "./grid/split-inline.ts";
 
@@ -685,38 +685,71 @@ export const useStore = create<Store>((set, get) => {
     },
     // Build (or refresh) the table of contents — ALWAYS page 1. Grid pages ARE pages,
     // so a heading's page number is its section index; no paged.js capture needed.
-    // Refreshing happens in place (page count unchanged); a new TOC is prepended and
-    // the numbering is projected WITH it, so the pages it pushes down are correct.
+    // The contents takes AS MANY PAGES AS IT NEEDS: entries are measured against the
+    // tocList's own region and split across repeats of the designed page, so a long
+    // document continues rather than clipping at the first page's foot.
+    // Refreshing fills those pages in place (the design survives); pages are added or
+    // removed as the document grows and shrinks. Numbering is projected WITH however
+    // many contents pages there turn out to be, so the pages they push down are right.
     generateToc: async () => {
-      const { sections, documentId, pageNumbers, edit } = get();
+      const { sections, documentId, pageNumbers, edit, theme, page } = get();
       if (!documentId || !sections.length) return;
       const startAt = pageNumbers.enabled ? (pageNumbers.startAt ?? 1) : 1;
-      const contents = sections.map((s) => s.content);
 
-      const existing = sections.findIndex((s) => isTocSection(s.content));
-      if (existing >= 0) {
-        // Fill the tocList slot IN PLACE so a template's designed contents page
-        // (panels/title/areas) survives the refresh; a legacy all-text TOC page
-        // is upgraded wholesale to the current default design.
-        const cur = sections[existing]!.content as GridSection;
-        const entries = collectToc(contents, startAt);
-        edit(sections[existing]!.id, (hasTocList(cur) ? fillTocEntries(cur, entries) : buildTocSection(entries)) as SectionContent);
-        set({ activeId: sections[existing]!.id });
-        return;
+      const tocIdx = sections.flatMap((s, i) => (isTocSection(s.content) ? [i] : []));
+      // The page to repeat: the contents page already in the document, design and
+      // all. A legacy all-text contents page (no tocList) is upgraded wholesale.
+      const head = tocIdx.length ? (sections[tocIdx[0]!]!.content as GridSection) : null;
+      const design = head && hasTocList(head) ? head : null;
+      // Where the contents lives: where it already is, else the first page —
+      // EXCEPT after a cover, which always stays page 1.
+      const at = tocIdx.length ? tocIdx[0]! : Math.max(0, sections.findIndex((s) => isCoverSection(s.content)) + 1);
+
+      // How many entries fit on one page, measured at the tocList's own area. The
+      // default contents page is built later, so fall back to its area here.
+      const tocBlock = design?.blocks.find((b) => b.block === "tocList");
+      const area = tocBlock?.area ?? { rowStart: 3, colStart: 2, rowEnd: ROWS + 1, colEnd: 12 };
+      const pm = themeMargin(theme);
+      const widthPx = blockWidthPx(area.colEnd - area.colStart, page, pm);
+      const maxHpx = blockHeightPx(area.rowEnd - area.rowStart, page, pm);
+      const fits = (es: TocEntry[]) =>
+        tocFitCount({ ...(tocBlock?.content as object), entries: es }, widthPx, maxHpx, theme);
+
+      // The page numbers depend on how many contents pages there are, and that
+      // depends on the entries — so project, split, and settle. The second pass
+      // agrees: a folio's width never changes a row's height.
+      const others = sections.filter((s) => !isTocSection(s.content)).map((s) => s.content);
+      let chunks: TocEntry[][] = [];
+      for (let pass = 0, count = Math.max(1, tocIdx.length); pass < 3; pass++) {
+        const projected = [...others];
+        projected.splice(at, 0, ...Array.from({ length: count }, tocPlaceholder));
+        chunks = paginateToc(collectToc(projected, startAt), fits);
+        if (chunks.length === count) break;
+        count = chunks.length;
       }
-      // First page, EXCEPT after a cover — a cover always stays page 1.
-      const coverIdx = sections.findIndex((s) => isCoverSection(s.content));
-      const at = coverIdx >= 0 ? coverIdx + 1 : 0;
-      const projected = [...contents];
-      projected.splice(at, 0, tocPlaceholder());
-      const toc = buildTocSection(collectToc(projected, startAt));
-      const afterId = at === 0 ? null : sections[at - 1]!.id;
-      const { sections: inserted } = await insertSectionsAfter(documentId, afterId, [assetsToCanonical(toc as SectionContent)]);
-      set((st) => {
-        const arr = [...st.sections];
-        arr.splice(at, 0, ...inserted.map((s) => ({ ...s, content: assetsToDisplay(s.content) })));
-        return { sections: arr, activeId: inserted[0]?.id ?? st.activeId };
-      });
+      // Level-1 entries before page i, so its chapter numbering resumes.
+      const pageFor = (i: number): SectionContent => {
+        const before = chunks.slice(0, i).flat().filter((e) => e.level === 1).length;
+        const built = design ? fillTocEntries(design, chunks[i]!, before) : buildTocSection(chunks[i]!);
+        return (i === 0 ? built : withFreshIds(built)) as SectionContent;
+      };
+
+      for (let i = 0; i < Math.min(chunks.length, tocIdx.length); i++) edit(sections[tocIdx[i]!]!.id, pageFor(i));
+      // Shed the contents pages a shrunken document no longer needs.
+      for (const i of tocIdx.slice(chunks.length)) await get().removePage(sections[i]!.id);
+
+      if (chunks.length > tocIdx.length) {
+        const add = chunks.slice(tocIdx.length).map((_, k) => assetsToCanonical(pageFor(tocIdx.length + k)));
+        const afterId = tocIdx.length ? sections[tocIdx[tocIdx.length - 1]!]!.id : (at === 0 ? null : sections[at - 1]!.id);
+        const { sections: inserted } = await insertSectionsAfter(documentId, afterId, add);
+        set((st) => {
+          const arr = [...st.sections];
+          const pos = afterId ? arr.findIndex((s) => s.id === afterId) + 1 : 0;
+          arr.splice(pos, 0, ...inserted.map((s) => ({ ...s, content: assetsToDisplay(s.content) })));
+          return { sections: arr, activeId: st.activeId ?? inserted[0]?.id ?? null };
+        });
+      }
+      set({ activeId: get().sections[at]?.id ?? get().activeId });
     },
     // Add a cover. A FRONT cover goes to the very front (page 1); a BACK cover is
     // appended last. One of each, max. Numbering follows automatically since neither
