@@ -82,6 +82,15 @@ export const DROPCAP: BlockStyleTokens = { fontSize: 15, textColor: INK, fontFam
 export const kicker = (text: string, at: [number, number, number, number]): BlockSpec => ({ at, nodes: [para(text)], style: KICKER });
 // An empty image slot the user fills with their own photo.
 export const img = (at: [number, number, number, number], z?: number): BlockSpec => ({ at, image: true, ...(z !== undefined ? { z } : {}) });
+// Art the TEMPLATE owns — a design's illustrations, not the user's pictures. The
+// file lives in pagecraft-backend/seed/art/ and `npm run db:seed` uploads it to
+// the shared system prefix, so the ref resolves for every workspace and the
+// render worker bundles it like any other asset. Unlike img(), it is never a
+// slot: nothing binds to it and it never renders as an empty box — which is what
+// makes a design that LEANS on its illustrations survive being applied to an
+// import that has none.
+export const art = (at: [number, number, number, number], file: string, alt = "", z?: number): BlockSpec =>
+  ({ at, block: "image", content: { src: `asset://assets/_system/${file}`, alt }, ...(z !== undefined ? { z } : {}) });
 // A coloured background panel (z:0 so content stacks above it).
 export const panel = (at: [number, number, number, number], color: string): BlockSpec => ({ at, nodes: [emptyP], style: { backgroundColor: color }, z: 0 });
 // A numbered list (the guidebook's 1/2/3 page).

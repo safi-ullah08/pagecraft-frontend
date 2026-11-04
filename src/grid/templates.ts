@@ -25,6 +25,16 @@ export type { BlockSpec, PageSpec, DocType, StructKey, StructureSpec } from "./s
 
 const rid = () => Math.random().toString(36).slice(2, 10);
 
+// A template's own content can carry an asset:// src (art the template ships —
+// see spec.ts's art()). The browser can't load asset://, and these sections are
+// inserted straight into the store rather than arriving through the API load
+// that normally maps them, so map here. assetsToCanonical puts it back before
+// the section is saved, so the DB still only ever sees asset://.
+function displayContent(content: unknown): Record<string, unknown> {
+  const c = (content ?? {}) as Record<string, unknown>;
+  return typeof c.src === "string" ? { ...c, src: assetUrl(c.src) } : c;
+}
+
 // ---- interpreter --------------------------------------------------------
 export function interpret(spec: StructureSpec): GridSection[] {
   return spec.pages.map(toSection);
@@ -45,7 +55,7 @@ function toBlock(b: BlockSpec, i: number): GridBlock {
     return { ...base, block: "tocList", content: { entries: [], leader: "dots", showNumbers: true, maxLevel: 3, ...(b.props ?? {}) } };
   }
   // a typed block saved from a designed document keeps its own type + content
-  if (b.block) return { ...base, block: b.block, content: (b.content ?? {}) as GridBlock["content"] };
+  if (b.block) return { ...base, block: b.block, content: displayContent(b.content) as GridBlock["content"] };
   return {
     ...base,
     block: b.image ? "image" : "textFrame",
@@ -158,7 +168,7 @@ function specBlock(b: BlockSpec, i: number): LayoutBlock {
     ...(b.props ? { props: b.props } : {}),
     ...(b.style ? { style: b.style } : {}),
     z: b.z ?? i,
-    ...(b.block ? { block: b.block, content: b.content ?? {} }
+    ...(b.block ? { block: b.block, content: displayContent(b.content) }
       : b.image ? { block: "image", content: { src: "", alt: "" } }
       : { content: doc(b.nodes ?? [emptyP]) }),
   };

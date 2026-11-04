@@ -4,6 +4,7 @@ import { layout, type LayoutPlan } from "@pagecraft/model";
 import { interpret, assertAreasValid, listTemplates, templateSections, parseTemplateId, structureToLayoutSpec, foldChapters, docPlanToLayout, setStructures } from "./templates.ts";
 import { BUILTIN_STRUCTURES as STRUCTURES, BUILTIN_ORDER } from "./builtinStructures.ts";
 import { isCoverSection } from "./covers.ts";
+import { art, type StructureSpec } from "./spec.ts";
 import { isTocSection, collectToc } from "./toc.ts";
 
 // run: cd pagecraft-backend && node --import tsx --test ../pagecraft-frontend/src/grid/templates.test.ts
@@ -233,4 +234,21 @@ test("blocks reference theme tokens, never hardcoded colour (so they re-skin)", 
     const json = JSON.stringify(interpret(spec));
     assert.ok(!/#[0-9a-fA-F]{3,6}\b/.test(json), `no hex colours in ${spec.key}`);
   }
+});
+
+test("template-owned art survives interpret() and the apply path, in display form", () => {
+  const spec: StructureSpec = {
+    key: "art-fixture", docType: "ebook", name: "Art fixture",
+    pages: [{ kind: "blocks", blocks: [art([1, 1, 4, 5], "lotus.svg", "Lotus")] }],
+  };
+  const display = "/api/assets/resolve?key=" + encodeURIComponent("assets/_system/lotus.svg");
+
+  const [page] = interpret(spec);
+  assert.deepEqual(page!.blocks[0]!.content, { src: display, alt: "Lotus" });
+  assert.equal(page!.blocks[0]!.block, "image");
+
+  // the apply path keeps it too — art is not a slot, so nothing can empty it
+  const lp = structureToLayoutSpec(spec).pages[0]!;
+  assert.equal(lp.blocks[0]!.slot, undefined);
+  assert.deepEqual(lp.blocks[0]!.content, { src: display, alt: "Lotus" });
 });
