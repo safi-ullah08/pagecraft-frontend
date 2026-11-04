@@ -10,7 +10,7 @@ import { minArea, addBlock as opsAddBlock, resizeBlock, updateBlockContent, remo
 import { parseBlocks } from "./grid/parseBlocks.ts";
 import { collectToc, buildTocSection, isTocSection, tocPlaceholder, hasTocList, fillTocEntries, type TocEntry } from "./grid/toc.ts";
 import { buildCover, isCoverSection, isBackCoverSection } from "./grid/covers.ts";
-import { insertSectionsAfter, updatePageNumbers, updateDesign, updateTheme, renameDocument } from "./api.ts";
+import { insertSectionsAfter, updatePageNumbers, updatePageSize, updateDesign, updateTheme, renameDocument } from "./api.ts";
 import { parseTemplateId, structureToLayoutSpec, foldChapters, docPlanToLayout, STRUCTURES, IMPORT_COVER, type Template } from "./grid/templates.ts";
 import { withColumnCount } from "./grid/columns.ts";
 import { runLayout } from "./grid/layoutDoc.ts";
@@ -770,8 +770,16 @@ export const useStore = create<Store>((set, get) => {
       const struct = STRUCTURES[t.structKey];
       if (!struct) throw new Error(`unknown template "${t.structKey}"`);
       set({ appliedTemplate: t }); // remember the target so a column switch can re-lay
+      // A structure drawn on its own sheet (guidebook is US Letter) lays out on
+      // THAT, not the document's — before measuring, and persisted so the editor
+      // sheet and the PDF agree with what the blocks were measured against.
+      const sheet = struct.page ?? page;
+      if (struct.page) {
+        set({ page: struct.page, customPage: presetOf(struct.page) ? null : struct.page });
+        try { await updatePageSize(documentId, struct.page); } catch (e) { console.error("page size persist failed:", e); }
+      }
       const spec = withColumnCount(structureToLayoutSpec(struct), get().columns);
-      const { sections: laid, report } = await runLayout(plan, spec, t.theme, page);
+      const { sections: laid, report } = await runLayout(plan, spec, t.theme, sheet);
       if (report.length) console.info("layout report:", report);
 
       const { sections: fresh } = await convertDocument(documentId, laid.map((s) => assetsToCanonical(s as SectionContent)));

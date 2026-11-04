@@ -12,6 +12,7 @@ import {
   type BlockSpec, type StructureSpec,
 } from "./spec.ts";
 import { CANVA_STRUCTURES } from "./canvaStructures.ts";
+import { PAGE_SIZES } from "../pages.ts";
 
 // ---- the 3 structures ---------------------------------------------------
 const leadMagnet: StructureSpec = {
@@ -132,13 +133,22 @@ const report: StructureSpec = {
 // contents, banner chapter opener, two-column body, numbered-list panel,
 // thank-you and back cover. Locked to its source skin (indigo-press) as one of
 // the isolated Canva templates. Placeholder copy — the user types over it.
+// The source uses two blues — a greyer navy for the full-page cover fields and a
+// brighter one for bands, titles and rules — plus a gold corner square. The skin
+// owns the values; the fallbacks keep the page sane if a guidebook document is
+// switched to a theme that only declares the D7 accent.
+const FIELD = "var(--pc-field, var(--pc-accent))";
+const GOLD = "var(--pc-gold, var(--pc-accent))";
+
 const guidebook: StructureSpec = {
   key: "guidebook", docType: "ebook", name: "Entrepreneur guidebook", lockedTheme: "indigo-press",
+  // The source pages are 1545x1999 px — US Letter, not A4.
+  page: PAGE_SIZES.Letter,
   pages: [
     // 1 — cover: full-bleed accent, inset panel, serif title, author strip.
     // Meta slots (fallback keep): an applied template binds the imported doc's
     // title/subtitle/author here; the placeholder text survives otherwise.
-    { kind: "blocks", cover: true, background: { kind: "solid", color: ACCENT }, blocks: [
+    { kind: "blocks", cover: true, background: { kind: "solid", color: FIELD }, blocks: [
       panel([2, 2, 9, 12], BG),
       { at: [3, 3, 7, 11], slot: "title", fallback: "empty", nodes: [heading("How to Become an Entrepreneur")], style: { textAlign: "center", fontSize: 40, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY, customCss: "line-height:1.15" } },
       { at: [7, 3, 8, 11], slot: "subtitle", fallback: "empty", nodes: [para("A step-by-step guide to level up your skills")], style: { textAlign: "center", fontSize: 15, textColor: ACCENT, fontFamily: BODY } },
@@ -149,7 +159,7 @@ const guidebook: StructureSpec = {
     ] },
     // 2 — welcome / colophon: lavender panel, accent corner square, photo slot
     { kind: "blocks", blocks: [
-      panel([1, 11, 2, 12], ACCENT),
+      panel([1, 11, 2, 12], GOLD),
       panel([2, 1, 10, 9], SURFACE),
       { at: [4, 2, 6, 8], furniture: true, nodes: [para("Hello and welcome!")], style: { fontSize: 32, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY } },
       { at: [6, 2, 9, 8], nodes: [para("Title of the book"), para("Author name"), para("Edition / Year"), para("All rights reserved")], style: { fontSize: 13, textColor: INK, fontFamily: BODY, customCss: "p:first-child{font-weight:700}p+p{margin-top:5px}" } },
@@ -207,7 +217,7 @@ const guidebook: StructureSpec = {
     ] },
     // 7 — thank you: italic serif accent title, body left, photo right
     { kind: "blocks", blocks: [
-      { at: [1, 2, 3, 8], furniture: true, nodes: [para("Thank you!")], style: { fontSize: 36, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY, customCss: "font-style:italic" } },
+      { at: [1, 2, 3, 8], furniture: true, nodes: [heading("Thank you!", 3)], style: { fontSize: 36, fontWeight: 700, fontFamily: DISPLAY, customCss: "font-style:italic" } }, // no textColor: inherits h3, the skin's burnt-orange subhead role
       { at: [3, 2, 11, 7], nodes: [
         para("Sign off in your own voice. Thank the reader for their time, and tell them the one thing to do next — visit a site, try the first step, reply with a question."),
         para("A short closing note beats a long one; this page is a handshake, not another chapter."),
@@ -216,7 +226,7 @@ const guidebook: StructureSpec = {
       { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT },
     ] },
     // 8 — back cover: accent page, centred blurb, colophon strip
-    { kind: "blocks", cover: true, background: { kind: "solid", color: ACCENT }, blocks: [
+    { kind: "blocks", cover: true, background: { kind: "solid", color: FIELD }, blocks: [
       { at: [4, 3, 8, 11], nodes: [para("“This book is for anyone who's ever thought ‘I should start something' and didn't know where to begin.”")], style: { textAlign: "center", fontSize: 17, textColor: ON_ACCENT, fontFamily: BODY, customCss: "line-height:1.75" } },
       { at: [8, 4, 9, 10], nodes: [para("Author name")], style: { textAlign: "center", fontSize: 14, textColor: ON_ACCENT, fontFamily: BODY } },
       { at: [10, 3, 11, 11], nodes: [emptyP], style: HAIR_ON_ACCENT },
