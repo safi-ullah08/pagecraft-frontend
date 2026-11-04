@@ -186,9 +186,13 @@ const guidebook: StructureSpec = {
     { kind: "blocks", role: "perChapter", blocks: [
       panel([1, 1, 5, 13], ACCENT),
       { at: [2, 2, 3, 8], slot: "kicker", nodes: [para("Chapter 01")], style: { ...KICKER, textColor: ON_ACCENT, letterSpacing: 0.2 } },
-      { at: [3, 2, 5, 12], slot: "chapterTitle", nodes: [heading("Introduction")], style: { fontSize: 32, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.08em" } },
+      // h1 override: the skin colours every heading, which beats the container's
+      // textColor — without it the title is navy ON the navy band (see the
+      // freelancer opener, which already carries the same line).
+      { at: [3, 2, 5, 12], slot: "chapterTitle", nodes: [heading("Introduction")], style: { fontSize: 32, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.08em;h1{color:var(--pc-on-accent)}" } },
       { ...img([5, 2, 12, 5]), slot: "image", fallback: "empty" },
       { at: [5, 5, 13, 12], slot: "intro", nodes: [
+        heading("Open with a subheading", 3), // the skin's h3 IS the source's burnt-orange subhead
         para("Open the chapter with the idea the reader came for. Keep the first paragraph short — it sets the pace for everything that follows."),
         para("Then widen out: give the background, the stakes, and the one thing the reader should hold onto as they move through the pages ahead."),
         para("Close the opener by pointing at what comes next, so turning the page feels like the obvious move."),

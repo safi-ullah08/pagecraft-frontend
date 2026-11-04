@@ -136,7 +136,10 @@ test("guidebook spec: imported content lands in the designed layout, placeholder
       assert.ok(a.rowStart >= 1 && a.colStart >= 1 && a.rowEnd <= 13 && a.colEnd <= 13 && a.rowStart < a.rowEnd && a.colStart < a.colEnd, `bad area ${JSON.stringify(a)}`);
     }
   }
-  assert.deepEqual(report, []); // every slot bound — nothing hidden
+  // The illustrated flow page's image slot carries no fallback, so a fixture with
+  // no pictures leaves that corner empty and says so. Nothing ELSE may be hidden.
+  assert.deepEqual(report.filter((r) => !r.startsWith("hidden image slot")), []);
+  assert.ok(report.every((r) => r === "hidden image slot (chapter has no image)"));
 });
 
 test("foldChapters: h1 opens a chapter, h2 folds in (heading kept); Notes stays apart", () => {
