@@ -167,13 +167,17 @@ const guidebook: StructureSpec = {
 
       { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT },
     ] },
-    // 3 — contents: lavender band, serif title, dotted leaders (source design).
+    // 3 — contents: navy band, white sans title, then the skin's two-level
+    // contents design (numbered chapters over dotted-leader sub-entries).
     // A slot:"toc" page — the store fills entries; the design survives refreshes.
+    // The region starts directly under the band because the source fits five
+    // chapter groups on the page and a row of kicker would cost one of them.
+    // ponytail: the source's own title reads "Table of content"; shipping the
+    // typo into every document it makes is a worse bargain than the fidelity.
     { kind: "blocks", blocks: [
-      panel([1, 1, 4, 13], SURFACE),
-      { at: [2, 2, 3, 8], furniture: true, nodes: [para("What's inside")], style: KICKER },
-      { at: [3, 2, 5, 10], furniture: true, nodes: [heading("Contents")], style: { fontSize: 32, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY } },
-      { at: [5, 2, 12, 12], slot: "toc" },
+      panel([1, 1, 4, 13], ACCENT),
+      { at: [2, 2, 3, 12], furniture: true, nodes: [para("Table of contents")], style: { fontSize: 28, fontWeight: 700, textColor: ON_ACCENT, fontFamily: BODY } },
+      { at: [4, 2, 12, 12], slot: "toc" },
       { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT },
     ] },
     // 4 — chapter opener (perChapter): accent banner, photo column + intro.
