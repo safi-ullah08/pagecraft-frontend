@@ -16,7 +16,7 @@ setStructures(BUILTIN_ORDER.map((k) => STRUCTURES[k]));
 test("every structure interprets to the expected page count", () => {
   assert.equal(interpret(STRUCTURES.leadMagnet).length, 3);
   assert.equal(interpret(STRUCTURES.ebook).length, 6);
-  assert.equal(interpret(STRUCTURES.guidebook).length, 8);
+  assert.equal(interpret(STRUCTURES.guidebook).length, 9); // two flow pages: plain + illustrated
   assert.equal(interpret(STRUCTURES.wellness).length, 8);
   assert.equal(interpret(STRUCTURES.report).length, 4);
   assert.equal(interpret(STRUCTURES.mediaKit).length, 9);
@@ -37,7 +37,7 @@ test("cover / toc pages keep their flags so they're excluded from numbering + co
   assert.ok(isCoverSection(eb[0]), "ebook page 1 is a cover");
   assert.ok(isTocSection(eb[2]), "ebook page 3 is a toc");
   const gb = interpret(STRUCTURES.guidebook);
-  assert.ok(isCoverSection(gb[0]) && isCoverSection(gb[7]), "guidebook front + back are covers");
+  assert.ok(isCoverSection(gb[0]) && isCoverSection(gb[8]), "guidebook front + back are covers"); // 8: the illustrated flow page pushed it along
   assert.ok(isTocSection(gb[2]), "guidebook page 3 is a toc");
   const wl = interpret(STRUCTURES.wellness);
   assert.ok(isCoverSection(wl[0]) && isCoverSection(wl[7]), "wellness front + back are covers");

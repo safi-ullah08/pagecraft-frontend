@@ -208,6 +208,23 @@ const guidebook: StructureSpec = {
       ], style: BODY_S },
       { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT, z: 20 },
     ] },
+    // 5b — body with an illustration (flow, alternates with 5): the same left
+    // column, the right one shortened to give its lower half to a portrait
+    // image. The source alternates a plain spread with an illustrated one, so
+    // the two flow pages cycle. No fallback: a document with no pictures leaves
+    // the corner empty rather than printing a box nothing will ever fill.
+    { kind: "blocks", role: "flow", blocks: [
+      { at: [1, 2, 12, 7], slot: "body", nodes: [
+        heading("The illustrated spread", 3),
+        para("The left column reads exactly as it does on the plain spread — the alternation is in the right-hand column, not here."),
+        para("Keeping one column full-height means a long passage still has somewhere to go when the picture takes the other."),
+      ], style: BODY_S },
+      { at: [1, 7, 7, 12], slot: "body", nodes: [
+        para("The right column runs half the page and then hands over to the illustration below it."),
+      ], style: BODY_S },
+      { ...img([7, 7, 12, 12]), slot: "image" },
+      { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT, z: 20 },
+    ] },
     // 6 — numbered list on a lavender panel, landscape photo below
     { kind: "blocks", blocks: [
       panel([1, 1, 9, 13], SURFACE),
