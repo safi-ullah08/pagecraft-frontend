@@ -20,7 +20,7 @@ test("every structure interprets to the expected page count", () => {
   assert.equal(interpret(STRUCTURES.wellness).length, 8);
   assert.equal(interpret(STRUCTURES.report).length, 4);
   assert.equal(interpret(STRUCTURES.mediaKit).length, 9);
-  assert.equal(interpret(STRUCTURES.emailAutomation).length, 6);
+  assert.equal(interpret(STRUCTURES.emailAutomation).length, 7); // + the chapter 2 chart page
   assert.equal(interpret(STRUCTURES.remoteReport).length, 8);
   assert.equal(interpret(STRUCTURES.mindful).length, 9);
   assert.equal(interpret(STRUCTURES.freelancer).length, 9);

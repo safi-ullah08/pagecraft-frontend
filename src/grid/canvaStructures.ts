@@ -263,6 +263,26 @@ const emailAutomation: StructureSpec = {
       { at: [12, 11, 13, 13], nodes: [emptyP], style: { customCss: "border-radius:100% 0 0 0;background:var(--pc-accent)" }, z: 0 },
       wordmark([12, 2, 13, 5]),
     ] },
+    // p38 — chapter 2: subheads either side of a stacked bar chart, in the set's
+    // diagonal rhythm (the comparison page overleaf does the same with its two
+    // circle labels). Back matter, like the comparison page, so it prints once.
+    // The chart carries the template's own figures as furniture: a reader edits
+    // them, nothing binds to them.
+    { kind: "blocks", blocks: [
+      { at: [1, 2, 2, 6], furniture: true, nodes: [para("Chapter 2")], style: TRACKED },
+      { at: [2, 2, 5, 13], furniture: true, nodes: [heading("What This Looks Like in Practice")], style: TIGHT(62) },
+      { at: [5, 2, 6, 9], furniture: true, nodes: [para("Three sequences, four months")], style: TIGHT(30, 300) },
+      { at: [6, 2, 11, 13], furniture: true, block: "stackedBars", content: {
+        categories: ["Month 1", "Month 2", "Month 3", "Month 4"],
+        series: [
+          { label: "Welcome", values: [12, 18, 24, 31] },
+          { label: "Nurture", values: [8, 14, 19, 26] },
+          { label: "Win-back", values: [4, 6, 9, 13] },
+        ],
+      } },
+      { at: [11, 5, 12, 13], furniture: true, nodes: [para("Compounding, not spiking")], style: { ...TIGHT(30, 300), textAlign: "right" } },
+      wordmark([12, 2, 13, 5]),
+    ] },
     // p39 — comparison: two amber discs of stacked lines, oversized labels.
     { kind: "blocks", blocks: [
       { at: [1, 2, 4, 13], furniture: true, nodes: [heading("Comparison (DIY vs. Automated)")], style: TIGHT(62) },

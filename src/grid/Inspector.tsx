@@ -345,6 +345,8 @@ function ContentSection({ block, onContent }: { block: GridBlock; onContent: (c:
       return wrap(<GalleryFields c={c} u={u} />);
     case "trackerGrid":
       return wrap(<TrackerFields c={c} u={u} />);
+    case "stackedBars":
+      return wrap(<BarsFields c={c} u={u} />);
     default:
       if (BLOCKS[block.block].text) return wrap(<div style={{ fontSize: 11, color: PALETTE.MUTED }}>Edit this content directly on the page.</div>);
       return wrap(<div style={{ fontSize: 11, color: PALETTE.MUTED }}>This block has no editable content.</div>);
@@ -368,6 +370,50 @@ function GalleryFields({ c, u }: { c: Record<string, unknown>; u: (p: Record<str
         </div>
       ))}
       <button style={addBtn} onClick={() => u({ images: [...images, { url: "", caption: "" }] })}>+ Add image</button>
+    </>
+  );
+}
+
+// stackedBars: the categories along the axis, then one row of values per series.
+// Values are kept as TEXT while typing — parsing on every keystroke would eat a
+// half-typed "1." — and the renderer coerces, clamping anything unparseable to 0.
+function BarsFields({ c, u }: { c: Record<string, unknown>; u: (p: Record<string, unknown>) => void }) {
+  type Series = { label: string; values: unknown[] };
+  const cats = (c.categories as string[]) ?? [];
+  const series = (c.series as Series[]) ?? [];
+  const setSeries = (i: number, patch: Partial<Series>) => u({ series: series.map((x, j) => (j === i ? { ...x, ...patch } : x)) });
+  return (
+    <>
+      <Field label="Categories">
+        <input
+          value={cats.join(", ")}
+          placeholder="Jan, Feb, Mar"
+          onChange={(e) => {
+            const next = e.target.value.split(",").map((t) => t.trim());
+            // Keep every series the same length as the axis, or a bar would
+            // silently lose its top segment when a category is added.
+            u({ categories: next, series: series.map((x) => ({ ...x, values: next.map((_, i) => x.values?.[i] ?? 0) })) });
+          }}
+          style={inputStyle}
+        />
+      </Field>
+      {series.map((sv, i) => (
+        <div key={i} style={{ padding: 6, background: PALETTE.SURFACE, borderRadius: 4, display: "flex", flexDirection: "column", gap: 4 }}>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input value={sv.label ?? ""} placeholder={`Series ${i + 1}`} onChange={(e) => setSeries(i, { label: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
+            <button style={rmBtn} onClick={() => u({ series: series.filter((_, j) => j !== i) })}>✕</button>
+          </div>
+          <input
+            value={(sv.values ?? []).join(", ")}
+            placeholder={cats.map(() => "0").join(", ")}
+            onChange={(e) => setSeries(i, { values: e.target.value.split(",").map((t) => t.trim()) })}
+            style={inputStyle}
+          />
+        </div>
+      ))}
+      {series.length < 4 && (
+        <button style={addBtn} onClick={() => u({ series: [...series, { label: "New series", values: cats.map(() => 0) }] })}>+ Add series</button>
+      )}
     </>
   );
 }
