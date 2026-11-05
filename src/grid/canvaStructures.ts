@@ -152,6 +152,20 @@ const TIGHT_CSS = "letter-spacing:-.04em;line-height:.98;h1,h2,h3,h4,h5,h6{font-
 const TIGHT = (size: number, weight = 400): BlockStyleTokens => ({ fontSize: size, fontWeight: weight, textColor: INK, fontFamily: DISPLAY, customCss: TIGHT_CSS });
 const TRACKED: BlockStyleTokens = { fontSize: 10, fontWeight: 700, textColor: INK, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.2em" };
 const JUST: BlockStyleTokens = { fontSize: 12, textColor: INK, fontFamily: BODY, customCss: "text-align:justify" };
+// The set's half-disc, cut off by the page edge rather than tucked inside the
+// margin — so it BLEEDS left, past the grid's inset. Over cols 1-2 the box is
+// 24.7mm wide plus the 22mm left margin against 93.1mm tall, which is a half
+// circle to within a third of a percent: `999px` rounds the right side only.
+const halfDiscLeft = (at: At): BlockSpec => ({ at, nodes: [emptyP], style: { bleed: { left: true }, customCss: "border-radius:0 999px 999px 0;background:var(--pc-accent)" }, z: 0 });
+// The header row is three cells across the full measure — name left, site
+// centred, handle right — not one centred line with separators. The name cell
+// differs per page (the cover's is the author slot), so only the other two are
+// shared; a fresh array per call, since a spec object is never shared by pages.
+const HEAD: BlockStyleTokens = { ...TRACKED, fontSize: 9 };
+const headRest = (): BlockSpec[] => [
+  { at: [1, 5, 2, 9], furniture: true, nodes: [para("reallygreatsite.com")], style: { ...HEAD, textAlign: "center" } },
+  { at: [1, 9, 2, 13], furniture: true, nodes: [para("@reallygreatsite")], style: { ...HEAD, textAlign: "right" } },
+];
 
 const emailAutomation: StructureSpec = {
   key: "emailAutomation", docType: "ebook", name: "Email automation guide", lockedTheme: "canva-amber-mono",
@@ -161,8 +175,9 @@ const emailAutomation: StructureSpec = {
     // p35 — cover: tracked header row, amber disc off the left edge, tight
     // grotesk title stack, thin strapline, arrowed footer taglines.
     { kind: "blocks", cover: true, background: { kind: "solid", color: BG }, blocks: [
-      { at: [1, 2, 2, 12], slot: "author", fallback: "empty", nodes: [para("Author name · reallygreatsite.com · @reallygreatsite")], style: { ...TRACKED, textAlign: "center", fontSize: 9 } },
-      disc([4, 1, 10, 4]),
+      { at: [1, 1, 2, 5], slot: "author", fallback: "empty", nodes: [para("Author name")], style: HEAD },
+      ...headRest(),
+      halfDiscLeft([4, 1, 9, 3]),
       { at: [5, 4, 7, 13], furniture: true, nodes: [para("Beginner's Guide")], style: TIGHT(63) },
       { at: [7, 4, 10, 13], slot: "title", fallback: "empty", nodes: [heading("Email Automation")], style: TIGHT(86, 600) },
       { at: [10, 4, 11, 13], slot: "subtitle", fallback: "empty", nodes: [para("A practical guide to turning your ideas into a digital business")], style: { fontSize: 12, textColor: INK, fontFamily: BODY } },
@@ -222,8 +237,9 @@ const emailAutomation: StructureSpec = {
     ] },
     // p40 — CTA back page: half disc off the left edge, big ask, pill button.
     { kind: "blocks", cover: true, background: { kind: "solid", color: BG }, blocks: [
-      { at: [1, 2, 2, 12], furniture: true, nodes: [para("Author name · reallygreatsite.com · @reallygreatsite")], style: { ...TRACKED, textAlign: "center", fontSize: 9 } },
-      { at: [4, 1, 9, 3], nodes: [emptyP], style: { customCss: "border-radius:0 999px 999px 0;background:var(--pc-accent)" }, z: 0 },
+      { at: [1, 1, 2, 5], furniture: true, nodes: [para("Author name")], style: HEAD },
+      ...headRest(),
+      halfDiscLeft([4, 1, 9, 3]),
       { at: [4, 4, 9, 13], furniture: true, nodes: [heading("Ready to Set Up Your First Automation?")], style: TIGHT(70) },
       { at: [9, 4, 10, 11], furniture: true, nodes: [para("Progress happens through action, not perfection.")], style: { fontSize: 11, textColor: INK, fontFamily: BODY } },
       { at: [10, 4, 11, 10], furniture: true, nodes: [para("Download the automation checklist")], style: { textAlign: "center", fontSize: 11, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.06em;background:var(--pc-accent);border-radius:999px;padding:9px 4px" } },
