@@ -37,8 +37,10 @@ export type StructureSpec = {
   key: StructKey; docType: DocType; name: string; pages: PageSpec[];
   pageNumbers?: PageNumberConfig; // set on the new doc when the structure wants a specific look (e.g. wellness's corner tab)
   // The sheet this design was drawn on, in mm — set on the new doc (and measured
-  // against) when it isn't the A4 default. ponytail: builtins only. A custom
-  // template's saved spec doesn't carry it, since nothing authors one off-A4 yet.
+  // against) when it isn't the A4 default. Carried by built-ins AND by a custom
+  // template saved from an off-A4 document: the backend reads the document's
+  // sheet into the stored spec, and catalog.ts spreads it back onto the
+  // structure here, so createFromTemplate sets it either way.
   page?: PageDims;
   // A matched design: this structure ships as ONE catalog card bound to this
   // theme, outside the themes × structures cross-product (the Canva templates).
