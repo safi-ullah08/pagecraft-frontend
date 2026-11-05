@@ -169,6 +169,16 @@ const halfDiscLeft = (at: At): BlockSpec => ({ at, nodes: [emptyP], style: { ble
 // differs per page (the cover's is the author slot), so only the other two are
 // shared; a fresh array per call, since a spec object is never shared by pages.
 const HEAD: BlockStyleTokens = { ...TRACKED, fontSize: 9 };
+// The footer wordmark: EMAIL over AUTOMATION on two tight lines, bottom-left —
+// one line of tracked caps is a different mark. The shared sheet puts 8pt under
+// every paragraph, which would split the pair into two separate lines of
+// furniture, so the margin goes and the leading tightens. z above the accent
+// shapes, since the chapter opener's half-disc reaches into this block's columns.
+const wordmark = (at: At): BlockSpec => ({
+  at, furniture: true, z: 1,
+  nodes: [para("Email"), para("Automation")],
+  style: { ...TRACKED, fontSize: 8, customCss: UPPER + ";letter-spacing:.2em;line-height:1.15;p{margin:0}" },
+});
 const headRest = (): BlockSpec[] => [
   { at: [1, 5, 2, 9], furniture: true, nodes: [para("reallygreatsite.com")], style: { ...HEAD, textAlign: "center" } },
   { at: [1, 9, 2, 13], furniture: true, nodes: [para("@reallygreatsite")], style: { ...HEAD, textAlign: "right" } },
@@ -206,7 +216,7 @@ const emailAutomation: StructureSpec = {
         para("Automation fixes that by sending the right message the moment it's needed, whether that's a welcome note, a cart reminder, or a thank-you after purchase."),
       ], style: JUST },
       { at: [11, 10, 13, 13], nodes: [emptyP], style: { customCss: "border-radius:100% 0 0 0;background:var(--pc-accent)" }, z: 0 },
-      { at: [12, 2, 13, 5], furniture: true, nodes: [para("Email Automation")], style: { ...TRACKED, fontSize: 8 } },
+      wordmark([12, 2, 13, 5]),
     ] },
     // p37 — chapter opener (perChapter): tracked kicker, huge uppercase title
     // with an amber dot, justified intro, half disc at the page foot.
@@ -219,7 +229,7 @@ const emailAutomation: StructureSpec = {
         para("Pay attention to the questions people repeatedly ask, the frustrations they share, and the gaps in existing products. If people are already searching for solutions, you don't need to convince them — you need to guide them."),
       ], style: JUST },
       { at: [11, 4, 13, 10], nodes: [emptyP], style: { customCss: "border-radius:999px 999px 0 0;background:var(--pc-accent)" }, z: 0 },
-      { at: [12, 2, 13, 5], furniture: true, nodes: [para("Email Automation")], style: { ...TRACKED, fontSize: 8 } },
+      wordmark([12, 2, 13, 5]),
     ] },
     // flow — two justified columns; h3 subheads render as the amber chips.
     { kind: "blocks", role: "flow", blocks: [
@@ -232,7 +242,7 @@ const emailAutomation: StructureSpec = {
         para("The second column continues the sequence — each amber chip marks the next step in the workflow."),
       ], style: JUST },
       { at: [12, 11, 13, 13], nodes: [emptyP], style: { customCss: "border-radius:100% 0 0 0;background:var(--pc-accent)" }, z: 0 },
-      { at: [12, 2, 13, 5], furniture: true, nodes: [para("Email Automation")], style: { ...TRACKED, fontSize: 8 }, z: 1 },
+      wordmark([12, 2, 13, 5]),
     ] },
     // p39 — comparison: two amber discs of stacked lines, oversized labels.
     { kind: "blocks", blocks: [
