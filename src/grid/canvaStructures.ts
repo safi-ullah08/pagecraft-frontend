@@ -174,6 +174,13 @@ const HEAD: BlockStyleTokens = { ...TRACKED, fontSize: 9 };
 // every paragraph, which would split the pair into two separate lines of
 // furniture, so the margin goes and the leading tightens. z above the accent
 // shapes, since the chapter opener's half-disc reaches into this block's columns.
+// One cell of the chapter opener's 2x2 grid: the amber chip (an h3, which is
+// what the skin styles), the justified copy under it, and a short bullet pair.
+// An `intro` slot, so a real chapter's next heading-and-paragraphs fills it.
+const step = (at: At, chip: string, copy: string, ...bullets: string[]): BlockSpec => ({
+  at, slot: "intro", style: JUST,
+  nodes: [heading(chip, 3), para(copy), ul(...bullets)],
+});
 const wordmark = (at: At): BlockSpec => ({
   at, furniture: true, z: 1,
   nodes: [para("Email"), para("Automation")],
@@ -224,10 +231,22 @@ const emailAutomation: StructureSpec = {
       { at: [1, 2, 2, 6], slot: "kicker", nodes: [para("Chapter 1")], style: TRACKED },
       { at: [2, 2, 5, 12], slot: "chapterTitle", nodes: [heading("Step by Step Guide")], style: { ...TIGHT(67), customCss: `${TIGHT_CSS};text-transform:uppercase` } },
       disc([3, 11, 4, 12]),
-      { at: [5, 2, 11, 12], slot: "intro", nodes: [
-        para("A common mistake creatives make is building in isolation. Market demand doesn't require trends or virality — it requires listening."),
-        para("Pay attention to the questions people repeatedly ask, the frustrations they share, and the gaps in existing products. If people are already searching for solutions, you don't need to convince them — you need to guide them."),
-      ], style: JUST },
+      // The source puts the chapter's steps on the OPENER, as a 2x2 grid of
+      // chip-led blocks, not as one wide column with the body following
+      // overleaf. Four `intro` slots, each taking the chapter's next
+      // heading-and-paragraphs; the h3 is what the skin draws as the amber chip.
+      step([5, 2, 8, 7], "Pick your trigger",
+        "Decide what starts the sequence. A trigger is an action, not a date — someone subscribes.",
+        "Subscribed to the list", "Abandoned a cart"),
+      step([5, 7, 8, 12], "Map the journey",
+        "Sketch what the reader should know by the end, then work backwards. Each email earns the next one.",
+        "What they need first", "What can wait"),
+      step([8, 2, 11, 7], "Write the sequence",
+        "Write all of it before scheduling any of it. Reading them in order is how you hear the voice drift.",
+        "One idea per email", "One clear action"),
+      step([8, 7, 11, 12], "Measure and refine",
+        "Watch the step where people stop. Opens judge the subject line; clicks judge the promise.",
+        "Where they drop off", "What they click"),
       { at: [11, 4, 13, 10], nodes: [emptyP], style: { customCss: "border-radius:999px 999px 0 0;background:var(--pc-accent)" }, z: 0 },
       wordmark([12, 2, 13, 5]),
     ] },
