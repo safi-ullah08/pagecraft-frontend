@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/react";
 import { COLS, ROWS, isGridSection, type GridBlock, type GridSection } from "./types.ts";
+import { hInherit } from "./spec.ts";
 
 // Cover pages, front and back. The MECHANISM is a normal grid section flagged
 // `cover`/`backCover` — editable like any other page, so nothing here is a special
@@ -63,7 +64,8 @@ export type CoverTemplate = {
 // container — so a title over an accent field renders in the skin's heading
 // colour, which on some themes IS the accent. `inherit` hands it back to the
 // block's own textColor, whatever that is.
-const HEADING_INHERITS = "h1,h2,h3,h4,h5,h6{color:inherit}";
+// A cover title block IS its heading, so it takes the block's own colour.
+const HEADING_INHERITS = hInherit("color");
 
 // ---- Front covers -------------------------------------------------------
 const FRONT: CoverTemplate[] = [

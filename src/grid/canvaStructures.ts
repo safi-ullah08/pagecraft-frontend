@@ -16,6 +16,7 @@ import {
   MUTED, SURFACE, BORDER, pq, callout, aside, KICKER, TITLE, H2, BODY_S,
   kicker, img, panel, ol, ul, rule, stat, HAIR_ACCENT, HAIR_ON_ACCENT,
   type BlockSpec, type StructureSpec,
+  hInherit,
 } from "./spec.ts";
 import type { BlockStyleTokens } from "./types.ts";
 import { PAGE_SIZES } from "../pages.ts";
@@ -37,7 +38,7 @@ const mediaKit: StructureSpec = {
     // badge, centred pitch, handle/site/date footer row.
     { kind: "blocks", cover: true, background: { kind: "solid", color: BG }, blocks: [
       stripes([1, 1, 2, 13]), stripes([12, 1, 13, 13]),
-      { at: [4, 2, 7, 11], slot: "title", fallback: "empty", nodes: [heading("15 Steps Guide")], style: { fontSize: 54, fontWeight: 800, textColor: INK, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:-.03em;line-height:.95;h1{font-size:54px;line-height:.95}" } },
+      { at: [4, 2, 7, 11], slot: "title", fallback: "empty", nodes: [heading("15 Steps Guide")], style: { fontSize: 54, fontWeight: 800, textColor: INK, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:-.03em;line-height:.95;" + hInherit("font-size", "line-height") } },
       { at: [7, 2, 8, 10], slot: "subtitle", fallback: "empty", nodes: [para("Social media kit")], style: { fontSize: 30, fontWeight: 500, textColor: INK, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:-.01em" } },
       { at: [7, 10, 8, 12], furniture: true, nodes: [para("2026")], style: BADGE },
       { at: [9, 3, 11, 11], nodes: [para("Easy step by step guide"), para("Learn how to manage social media, trends and designs — and save your time efficiently.")], style: { textAlign: "center", fontSize: 13, textColor: INK, fontFamily: BODY, customCss: "p:first-child{font-weight:700}" } },
@@ -148,7 +149,7 @@ const disc = (at: At): BlockSpec => ({ at, nodes: [emptyP], style: { customCss: 
 // A skin sets size, weight AND colour on h1..h6 directly, and every one of those
 // beats what a block puts on its container — so a heading node ignored both the
 // size and the weight asked for here. They inherit instead.
-const TIGHT_CSS = "letter-spacing:-.04em;line-height:.98;h1,h2,h3,h4,h5,h6{font-weight:inherit;font-size:inherit;line-height:inherit}";
+const TIGHT_CSS = "letter-spacing:-.04em;line-height:.98;" + hInherit("font-size", "font-weight", "line-height");
 const TIGHT = (size: number, weight = 400): BlockStyleTokens => ({ fontSize: size, fontWeight: weight, textColor: INK, fontFamily: DISPLAY, customCss: TIGHT_CSS });
 const TRACKED: BlockStyleTokens = { fontSize: 10, fontWeight: 700, textColor: INK, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.2em" };
 // Body copy. 14px, not the 12px first transcribed: a source body line occupies
@@ -320,7 +321,7 @@ const remoteReport: StructureSpec = {
     { kind: "blocks", cover: true, background: { kind: "solid", color: INK }, blocks: [
       { at: [1, 2, 2, 3], nodes: [emptyP], style: { customCss: "border-radius:999px;border:6px solid var(--pc-accent)" } },
       { at: [1, 10, 2, 12], furniture: true, nodes: [para("2026")], style: { textAlign: "center", fontSize: 12, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, backgroundColor: ACCENT, customCss: "letter-spacing:.08em;padding-top:6px" } },
-      { at: [3, 2, 7, 11], slot: "title", fallback: "empty", nodes: [heading("The State of Remote Work 2026")], style: { fontSize: 46, fontWeight: 600, textColor: BG, fontFamily: DISPLAY, customCss: "letter-spacing:-.02em;line-height:1.12;h1{color:var(--pc-bg);font-size:46px;font-weight:600}" } },
+      { at: [3, 2, 7, 11], slot: "title", fallback: "empty", nodes: [heading("The State of Remote Work 2026")], style: { fontSize: 46, fontWeight: 600, textColor: BG, fontFamily: DISPLAY, customCss: "letter-spacing:-.02em;line-height:1.12;" + hInherit("color", "font-size", "font-weight") } },
       { at: [7, 2, 9, 8], slot: "subtitle", fallback: "empty", nodes: [para("A Global Look at Where, How, and Why We Work")], style: { fontSize: 15, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, backgroundColor: ACCENT, customCss: "padding:10px 12px" } },
       { ...img([9, 2, 12, 8]), slot: "hero", fallback: "empty" },
       { at: [9, 8, 10, 12], furniture: true, nodes: [para("A company's report")], style: { ...ON_DARK, fontSize: 11 } },
@@ -400,7 +401,7 @@ const remoteReport: StructureSpec = {
     // p50 — back cover: dark field, title echo, about blurb, contact block.
     { kind: "blocks", cover: true, background: { kind: "solid", color: INK }, blocks: [
       { at: [1, 2, 2, 3], nodes: [emptyP], style: { customCss: "border-radius:999px;border:6px solid var(--pc-accent)" } },
-      { at: [3, 2, 6, 11], slot: "title", fallback: "keep", nodes: [heading("The State of Remote Work 2026")], style: { fontSize: 36, fontWeight: 600, textColor: BG, fontFamily: DISPLAY, customCss: "letter-spacing:-.02em;line-height:1.15;h1{color:var(--pc-bg);font-size:36px;font-weight:600}" } },
+      { at: [3, 2, 6, 11], slot: "title", fallback: "keep", nodes: [heading("The State of Remote Work 2026")], style: { fontSize: 36, fontWeight: 600, textColor: BG, fontFamily: DISPLAY, customCss: "letter-spacing:-.02em;line-height:1.15;" + hInherit("color", "font-size", "font-weight") } },
       { at: [6, 2, 8, 11], nodes: [para("[Brand Name] helps companies understand how the world works — literally. We partner with research organisations to deliver data-backed insights for smarter decisions about people.")], style: { ...ON_DARK, fontSize: 12 } },
       { at: [9, 2, 11, 7], furniture: true, nodes: [para("Contact block:"), para("Website · Email · Social handles")], style: { ...ON_DARK, fontSize: 11, customCss: "p:first-child{font-weight:700}" } },
       { at: [11, 2, 13, 7], slot: "author", fallback: "empty", nodes: [para("Written by:"), para("Author Name")], style: { ...ON_DARK, customCss: "p:last-child{font-weight:700}" } },
@@ -409,7 +410,7 @@ const remoteReport: StructureSpec = {
 };
 
 // ---- mindful — pp. 51-64 ----------------------------------------------------
-const TRACKED_TITLE: BlockStyleTokens = { fontSize: 30, fontWeight: 700, textColor: INK, fontFamily: BODY, customCss: UPPER + ";letter-spacing:.16em;line-height:1.55;h1{font-family:var(--pc-body);font-size:30px;letter-spacing:.16em;line-height:1.55}" };
+const TRACKED_TITLE: BlockStyleTokens = { fontSize: 30, fontWeight: 700, textColor: INK, fontFamily: BODY, customCss: UPPER + ";letter-spacing:.16em;line-height:1.55;" + hInherit("font-family", "font-size", "letter-spacing", "line-height") };
 const CELL: BlockStyleTokens = { textAlign: "center", fontSize: 10.5, textColor: INK, fontFamily: BODY, customCss: `border:1px solid ${BORDER};padding-top:16px` };
 
 const mindful: StructureSpec = {
@@ -520,7 +521,7 @@ const freelancer: StructureSpec = {
       { at: [1, 2, 2, 6], slot: "author", fallback: "empty", nodes: [para("Company name")], style: { ...FLAME_TRACKED, fontSize: 10 } },
       { at: [1, 6, 2, 9], furniture: true, nodes: [para("2025-2030")], style: { ...FLAME_TRACKED, fontSize: 10, textAlign: "center" } },
       { at: [1, 9, 2, 12], furniture: true, nodes: [para("Guidebook")], style: { ...FLAME_TRACKED, fontSize: 10, textAlign: "right" } },
-      { at: [7, 2, 12, 11], slot: "title", fallback: "empty", nodes: [heading("The Freelancer's Survival Guide")], style: { fontSize: 46, fontWeight: 300, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.02em;line-height:1.18;h1{color:var(--pc-on-accent);font-size:46px;font-weight:300;line-height:1.18}" } },
+      { at: [7, 2, 12, 11], slot: "title", fallback: "empty", nodes: [heading("The Freelancer's Survival Guide")], style: { fontSize: 46, fontWeight: 300, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.02em;line-height:1.18;" + hInherit("color", "font-size", "font-weight", "line-height") } },
       { at: [12, 7, 13, 12], furniture: true, nodes: [para("creative")], style: { fontSize: 24, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: "font-style:italic;border-bottom:1px solid var(--pc-on-accent);padding-bottom:4px;text-align:right" } },
     ] },
     // p68 — foreword: hairlines, huge tracked display, justified prose.
@@ -546,7 +547,7 @@ const freelancer: StructureSpec = {
       { at: [1, 2, 2, 4], furniture: true, nodes: [para("✳")], style: { fontSize: 34, textColor: ON_ACCENT, fontFamily: DISPLAY } },
       { at: [2, 2, 6, 10], slot: "kicker", nodes: [para("Chapter 01")], style: { fontSize: 52, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: "letter-spacing:-.02em;line-height:1" } },
       { at: [6, 2, 7, 10], nodes: [emptyP], style: HAIR_ON_ACCENT },
-      { at: [7, 2, 8, 12], slot: "chapterTitle", nodes: [heading("Getting Your First Client", 3)], style: { fontSize: 14, fontWeight: 800, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.06em;h3{color:var(--pc-on-accent)}" } },
+      { at: [7, 2, 8, 12], slot: "chapterTitle", nodes: [heading("Getting Your First Client", 3)], style: { fontSize: 14, fontWeight: 800, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.06em;" + hInherit("color") } },
       { at: [10, 2, 12, 12], slot: "intro", nodes: [
         para("Nobody hires the freelancer with the best portfolio. They hire the one they trust the most."),
       ], style: { fontSize: 15, fontWeight: 800, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";line-height:1.4" } },

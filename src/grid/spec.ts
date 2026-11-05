@@ -79,6 +79,31 @@ export const aside = (text: string): JSONContent => ({ type: "sidebarNote", cont
 
 // Shared style recipes (temp/src values: kicker 0.08–0.18em uppercase accent; drop
 // cap ~3 line-heights; stat = oversized accent numeral + uppercase muted label).
+// Every skin styles h1..h6 DIRECTLY, and an element rule in the sheet beats the
+// inline style a block puts on its own container — which is where a block's
+// tokens land. So a heading node inside a block silently ignores the block's
+// textColor, fontSize and fontWeight: the skin's h-rules win every time. A block
+// whose content IS the heading opts back in with these, composed as needed:
+//
+//   customCss: hInherit("color")
+//   customCss: hInherit("font-size", "font-weight", "line-height")
+//   customCss: UPPER + ";" + hInherit("color", "font-size")
+//
+// Name the properties, because the sites want different sets and each extra one
+// is a live change: adding "font-weight" to a block whose weight differs from
+// the skin's restyles the heading. Nine sites, nine different answers.
+//
+// Opt-in on purpose. Doing it automatically for every heading-only block was
+// built and measured (2026-11-05): it moves 32 headings across 8 of the 10
+// templates, because those designs were all drawn with the skin's h-rules
+// winning — mindful's 24px Lora subhead became 12px DM Sans, the guidebook's
+// "Thank you!" jumped to 36px Playfair, media kit and wellness h3s lost their
+// accent colour. The mechanism is right; what was wrong was hand-writing the
+// same CSS at seven sites, four of which restated the block's own numbers
+// (`font-size:46px` beside `fontSize: 46`) where they could drift apart.
+export const hInherit = (...props: string[]): string =>
+  `h1,h2,h3,h4,h5,h6{${props.map((p) => `${p}:inherit`).join(";")}}`;
+
 export const KICKER: BlockStyleTokens = { fontSize: 12, letterSpacing: 0.16, fontWeight: 600, textColor: ACCENT, fontFamily: BODY, customCss: UPPER };
 export const TITLE: BlockStyleTokens = { fontSize: 40, fontWeight: 700, textColor: INK, fontFamily: DISPLAY };
 export const H2: BlockStyleTokens = { fontSize: 24, fontWeight: 700, textColor: INK, fontFamily: DISPLAY };

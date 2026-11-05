@@ -311,3 +311,26 @@ test("email automation: a chapter's sections fill all four cells of the 2x2 open
   assert.doesNotMatch(js, /Decide what starts the sequence/);
   assert.doesNotMatch(js, /Watch the step where people stop/);
 });
+
+test("a block's h-rule says `inherit`, never a second copy of its own type tokens", () => {
+  // A skin styles h1..h6 directly and beats a block's inline style, so a block
+  // that IS a heading has to opt back in. Writing `font-size:46px` into that
+  // rule, beside the block's own `fontSize: 46`, is one number written twice and
+  // free to drift — hInherit() names the property and says inherit. Decoration
+  // on a heading (a rule, a border, a background) is a different thing and fine.
+  const COPY = /^\s*(?:color|font-size|font-weight|font-family|letter-spacing|line-height)\s*:\s*(?!inherit)/;
+  const bad: string[] = [];
+  for (const key of BUILTIN_ORDER) {
+    STRUCTURES[key]!.pages.forEach((page, pi) => {
+      if (page.kind !== "blocks") return;
+      for (const b of page.blocks) {
+        for (const m of (b.style?.customCss ?? "").matchAll(/h[1-6][^{]*\{([^}]*)\}/g)) {
+          for (const decl of m[1]!.split(";")) {
+            if (COPY.test(decl)) bad.push(`${key} page ${pi + 1}: ${decl.trim()}`);
+          }
+        }
+      }
+    });
+  }
+  assert.deepEqual(bad, []);
+});
