@@ -20,7 +20,7 @@ test("every structure interprets to the expected page count", () => {
   assert.equal(interpret(STRUCTURES.wellness).length, 8);
   assert.equal(interpret(STRUCTURES.report).length, 4);
   assert.equal(interpret(STRUCTURES.mediaKit).length, 9);
-  assert.equal(interpret(STRUCTURES.emailAutomation).length, 6);
+  assert.equal(interpret(STRUCTURES.emailAutomation).length, 7); // + the chapter 2 chart page
   assert.equal(interpret(STRUCTURES.remoteReport).length, 8);
   assert.equal(interpret(STRUCTURES.mindful).length, 9);
   assert.equal(interpret(STRUCTURES.freelancer).length, 9);
@@ -254,4 +254,83 @@ test("template-owned art survives interpret() and the apply path, in display for
   const lp = structureToLayoutSpec(spec).pages[0]!;
   assert.equal(lp.blocks[0]!.slot, undefined);
   assert.deepEqual(lp.blocks[0]!.content, { src: display, alt: "Lotus" });
+});
+
+test("email automation: a chapter's sections fill all four cells of the 2x2 opener", () => {
+  // The source design puts the steps ON the opener, so that page carries four
+  // `intro` slots rather than one column. Each takes the chapter's next
+  // heading-and-paragraphs, in READING order — which is not array order on a
+  // grid, so the engine sorts by row then column.
+  //
+  // This test needs its own measure: the shared `stub` charges 100px a row per
+  // node and a cell is 3 rows, so under it a single heading already fills a
+  // cell and nothing would group. 30px a node lets a chip and its paragraph sit
+  // together, which is what the browser actually renders.
+  const roomy = (d: { content?: unknown[] }, cols: number) => ({ w: cols * 100, h: 30 * (d.content?.length ?? 1) });
+  const section = (title: string, body: string) => [h(title, 3), p(body)];
+  const sectioned: LayoutPlan = {
+    meta: { title: "Doc" },
+    chapters: [{
+      title: "Step by Step", level: 1,
+      nodes: [h("Step by Step"),
+        ...section("First step", "first body"),
+        ...section("Second step", "second body"),
+        ...section("Third step", "third body"),
+        ...section("Fourth step", "fourth body"),
+        ...section("Fifth step", "runs past the grid")],
+    }],
+  };
+  let n = 0;
+  const { sections } = layout(sectioned, structureToLayoutSpec(STRUCTURES.emailAutomation), geom, roomy, () => `b${n++}`);
+  const opener = sections.find((s) => JSON.stringify(s).includes("Step by Step"))!;
+  assert.ok(opener, "opener present");
+  const cells = [
+    { rowStart: 5, colStart: 2, rowEnd: 8, colEnd: 7 },
+    { rowStart: 5, colStart: 7, rowEnd: 8, colEnd: 12 },
+    { rowStart: 8, colStart: 2, rowEnd: 11, colEnd: 7 },
+    { rowStart: 8, colStart: 7, rowEnd: 11, colEnd: 12 },
+  ];
+  const texts = cells.map((c) => {
+    const b = opener.blocks.find((x) => JSON.stringify(x.area) === JSON.stringify(c));
+    assert.ok(b, `a block fills cell ${JSON.stringify(c)}`);
+    return JSON.stringify(b!.content);
+  });
+  // Reading order, each cell holding its chip AND its copy.
+  assert.match(texts[0]!, /First step/);
+  assert.match(texts[0]!, /first body/);
+  assert.match(texts[1]!, /Second step/);
+  assert.match(texts[2]!, /Third step/);
+  assert.match(texts[3]!, /Fourth step/);
+  // No cell steals the next cell's chip.
+  assert.doesNotMatch(texts[0]!, /Second step/);
+  // What the grid has no room for still flows onto the body pages.
+  const past = sections.filter((s) => s !== opener);
+  assert.match(JSON.stringify(past), /Fifth step/);
+  // And the template's own placeholder copy never ships.
+  const js = JSON.stringify(sections);
+  assert.doesNotMatch(js, /Decide what starts the sequence/);
+  assert.doesNotMatch(js, /Watch the step where people stop/);
+});
+
+test("a block's h-rule says `inherit`, never a second copy of its own type tokens", () => {
+  // A skin styles h1..h6 directly and beats a block's inline style, so a block
+  // that IS a heading has to opt back in. Writing `font-size:46px` into that
+  // rule, beside the block's own `fontSize: 46`, is one number written twice and
+  // free to drift — hInherit() names the property and says inherit. Decoration
+  // on a heading (a rule, a border, a background) is a different thing and fine.
+  const COPY = /^\s*(?:color|font-size|font-weight|font-family|letter-spacing|line-height)\s*:\s*(?!inherit)/;
+  const bad: string[] = [];
+  for (const key of BUILTIN_ORDER) {
+    STRUCTURES[key]!.pages.forEach((page, pi) => {
+      if (page.kind !== "blocks") return;
+      for (const b of page.blocks) {
+        for (const m of (b.style?.customCss ?? "").matchAll(/h[1-6][^{]*\{([^}]*)\}/g)) {
+          for (const decl of m[1]!.split(";")) {
+            if (COPY.test(decl)) bad.push(`${key} page ${pi + 1}: ${decl.trim()}`);
+          }
+        }
+      }
+    });
+  }
+  assert.deepEqual(bad, []);
 });

@@ -16,6 +16,7 @@ import {
   MUTED, SURFACE, BORDER, pq, callout, aside, KICKER, TITLE, H2, BODY_S,
   kicker, img, panel, ol, ul, rule, stat, HAIR_ACCENT, HAIR_ON_ACCENT,
   type BlockSpec, type StructureSpec,
+  hInherit,
 } from "./spec.ts";
 import type { BlockStyleTokens } from "./types.ts";
 import { PAGE_SIZES } from "../pages.ts";
@@ -37,7 +38,7 @@ const mediaKit: StructureSpec = {
     // badge, centred pitch, handle/site/date footer row.
     { kind: "blocks", cover: true, background: { kind: "solid", color: BG }, blocks: [
       stripes([1, 1, 2, 13]), stripes([12, 1, 13, 13]),
-      { at: [4, 2, 7, 11], slot: "title", fallback: "empty", nodes: [heading("15 Steps Guide")], style: { fontSize: 54, fontWeight: 800, textColor: INK, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:-.03em;line-height:.95;h1{font-size:54px;line-height:.95}" } },
+      { at: [4, 2, 7, 11], slot: "title", fallback: "empty", nodes: [heading("15 Steps Guide")], style: { fontSize: 54, fontWeight: 800, textColor: INK, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:-.03em;line-height:.95;" + hInherit("font-size", "line-height") } },
       { at: [7, 2, 8, 10], slot: "subtitle", fallback: "empty", nodes: [para("Social media kit")], style: { fontSize: 30, fontWeight: 500, textColor: INK, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:-.01em" } },
       { at: [7, 10, 8, 12], furniture: true, nodes: [para("2026")], style: BADGE },
       { at: [9, 3, 11, 11], nodes: [para("Easy step by step guide"), para("Learn how to manage social media, trends and designs — and save your time efficiently.")], style: { textAlign: "center", fontSize: 13, textColor: INK, fontFamily: BODY, customCss: "p:first-child{font-weight:700}" } },
@@ -148,10 +149,48 @@ const disc = (at: At): BlockSpec => ({ at, nodes: [emptyP], style: { customCss: 
 // A skin sets size, weight AND colour on h1..h6 directly, and every one of those
 // beats what a block puts on its container — so a heading node ignored both the
 // size and the weight asked for here. They inherit instead.
-const TIGHT_CSS = "letter-spacing:-.04em;line-height:.98;h1,h2,h3,h4,h5,h6{font-weight:inherit;font-size:inherit;line-height:inherit}";
+const TIGHT_CSS = "letter-spacing:-.04em;line-height:.98;" + hInherit("font-size", "font-weight", "line-height");
 const TIGHT = (size: number, weight = 400): BlockStyleTokens => ({ fontSize: size, fontWeight: weight, textColor: INK, fontFamily: DISPLAY, customCss: TIGHT_CSS });
 const TRACKED: BlockStyleTokens = { fontSize: 10, fontWeight: 700, textColor: INK, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.2em" };
-const JUST: BlockStyleTokens = { fontSize: 12, textColor: INK, fontFamily: BODY, customCss: "text-align:justify" };
+// Body copy. 14px, not the 12px first transcribed: a source body line occupies
+// 1.30% of page height against our 0.95%. Two readings of the right size
+// disagree — band height says 17px, characters per line says 14.3px — and the
+// gap between them IS the width difference of the faces, since DM Sans runs
+// wider than the source's body face just as Inter does its display face. Sized
+// to the MEASURE (characters per line), the same choice made for the display
+// type: match the reading rhythm, and let the cap height land where it lands.
+const JUST: BlockStyleTokens = { fontSize: 14, textColor: INK, fontFamily: BODY, customCss: "text-align:justify" };
+// The set's half-disc, cut off by the page edge rather than tucked inside the
+// margin — so it BLEEDS left, past the grid's inset. Over cols 1-2 the box is
+// 24.7mm wide plus the 22mm left margin against 93.1mm tall, which is a half
+// circle to within a third of a percent: `999px` rounds the right side only.
+const halfDiscLeft = (at: At): BlockSpec => ({ at, nodes: [emptyP], style: { bleed: { left: true }, customCss: "border-radius:0 999px 999px 0;background:var(--pc-accent)" }, z: 0 });
+// The header row is three cells across the full measure — name left, site
+// centred, handle right — not one centred line with separators. The name cell
+// differs per page (the cover's is the author slot), so only the other two are
+// shared; a fresh array per call, since a spec object is never shared by pages.
+const HEAD: BlockStyleTokens = { ...TRACKED, fontSize: 9 };
+// The footer wordmark: EMAIL over AUTOMATION on two tight lines, bottom-left —
+// one line of tracked caps is a different mark. The shared sheet puts 8pt under
+// every paragraph, which would split the pair into two separate lines of
+// furniture, so the margin goes and the leading tightens. z above the accent
+// shapes, since the chapter opener's half-disc reaches into this block's columns.
+// One cell of the chapter opener's 2x2 grid: the amber chip (an h3, which is
+// what the skin styles), the justified copy under it, and a short bullet pair.
+// An `intro` slot, so a real chapter's next heading-and-paragraphs fills it.
+const step = (at: At, chip: string, copy: string, ...bullets: string[]): BlockSpec => ({
+  at, slot: "intro", style: JUST,
+  nodes: [heading(chip, 3), para(copy), ul(...bullets)],
+});
+const wordmark = (at: At): BlockSpec => ({
+  at, furniture: true, z: 1,
+  nodes: [para("Email"), para("Automation")],
+  style: { ...TRACKED, fontSize: 8, customCss: UPPER + ";letter-spacing:.2em;line-height:1.15;p{margin:0}" },
+});
+const headRest = (): BlockSpec[] => [
+  { at: [1, 5, 2, 9], furniture: true, nodes: [para("reallygreatsite.com")], style: { ...HEAD, textAlign: "center" } },
+  { at: [1, 9, 2, 13], furniture: true, nodes: [para("@reallygreatsite")], style: { ...HEAD, textAlign: "right" } },
+];
 
 const emailAutomation: StructureSpec = {
   key: "emailAutomation", docType: "ebook", name: "Email automation guide", lockedTheme: "canva-amber-mono",
@@ -161,8 +200,9 @@ const emailAutomation: StructureSpec = {
     // p35 — cover: tracked header row, amber disc off the left edge, tight
     // grotesk title stack, thin strapline, arrowed footer taglines.
     { kind: "blocks", cover: true, background: { kind: "solid", color: BG }, blocks: [
-      { at: [1, 2, 2, 12], slot: "author", fallback: "empty", nodes: [para("Author name · reallygreatsite.com · @reallygreatsite")], style: { ...TRACKED, textAlign: "center", fontSize: 9 } },
-      disc([4, 1, 10, 4]),
+      { at: [1, 1, 2, 5], slot: "author", fallback: "empty", nodes: [para("Author name")], style: HEAD },
+      ...headRest(),
+      halfDiscLeft([4, 1, 9, 3]),
       { at: [5, 4, 7, 13], furniture: true, nodes: [para("Beginner's Guide")], style: TIGHT(63) },
       { at: [7, 4, 10, 13], slot: "title", fallback: "empty", nodes: [heading("Email Automation")], style: TIGHT(86, 600) },
       { at: [10, 4, 11, 13], slot: "subtitle", fallback: "empty", nodes: [para("A practical guide to turning your ideas into a digital business")], style: { fontSize: 12, textColor: INK, fontFamily: BODY } },
@@ -176,13 +216,15 @@ const emailAutomation: StructureSpec = {
       { at: [2, 2, 4, 13], furniture: true, nodes: [heading("Why This Matters")], style: TIGHT(70) },
       disc([3, 6, 6, 13]),
       { at: [3, 6, 6, 13], furniture: true, nodes: [para("320%")], style: { ...TIGHT(120, 600), textAlign: "center", customCss: `${TIGHT_CSS};padding-top:26px` } },
-      { at: [6, 2, 7, 12], nodes: [pq("Automated emails generate up to 320% more revenue than non-automated ones")], style: {} },
-      { at: [7, 2, 12, 12], nodes: [
+      // Two rows: the strapline wraps to two lines, and at one row the second
+      // line's descenders were cut by the block's own overflow:hidden.
+      { at: [6, 2, 8, 12], nodes: [pq("Automated emails generate up to 320% more revenue than non-automated ones")], style: {} },
+      { at: [8, 2, 12, 12], nodes: [
         para("Most small businesses still send emails one at a time — manually, inconsistently, and usually only when someone remembers to."),
         para("Automation fixes that by sending the right message the moment it's needed, whether that's a welcome note, a cart reminder, or a thank-you after purchase."),
       ], style: JUST },
       { at: [11, 10, 13, 13], nodes: [emptyP], style: { customCss: "border-radius:100% 0 0 0;background:var(--pc-accent)" }, z: 0 },
-      { at: [12, 2, 13, 5], furniture: true, nodes: [para("Email Automation")], style: { ...TRACKED, fontSize: 8 } },
+      wordmark([12, 2, 13, 5]),
     ] },
     // p37 — chapter opener (perChapter): tracked kicker, huge uppercase title
     // with an amber dot, justified intro, half disc at the page foot.
@@ -190,12 +232,24 @@ const emailAutomation: StructureSpec = {
       { at: [1, 2, 2, 6], slot: "kicker", nodes: [para("Chapter 1")], style: TRACKED },
       { at: [2, 2, 5, 12], slot: "chapterTitle", nodes: [heading("Step by Step Guide")], style: { ...TIGHT(67), customCss: `${TIGHT_CSS};text-transform:uppercase` } },
       disc([3, 11, 4, 12]),
-      { at: [5, 2, 11, 12], slot: "intro", nodes: [
-        para("A common mistake creatives make is building in isolation. Market demand doesn't require trends or virality — it requires listening."),
-        para("Pay attention to the questions people repeatedly ask, the frustrations they share, and the gaps in existing products. If people are already searching for solutions, you don't need to convince them — you need to guide them."),
-      ], style: JUST },
+      // The source puts the chapter's steps on the OPENER, as a 2x2 grid of
+      // chip-led blocks, not as one wide column with the body following
+      // overleaf. Four `intro` slots, each taking the chapter's next
+      // heading-and-paragraphs; the h3 is what the skin draws as the amber chip.
+      step([5, 2, 8, 7], "Pick your trigger",
+        "Decide what starts the sequence. A trigger is an action, not a date — someone subscribes.",
+        "Subscribed to the list", "Abandoned a cart"),
+      step([5, 7, 8, 12], "Map the journey",
+        "Sketch what the reader should know by the end, then work backwards. Each email earns the next one.",
+        "What they need first", "What can wait"),
+      step([8, 2, 11, 7], "Write the sequence",
+        "Write all of it before scheduling any of it. Reading them in order is how you hear the voice drift.",
+        "One idea per email", "One clear action"),
+      step([8, 7, 11, 12], "Measure and refine",
+        "Watch the step where people stop. Opens judge the subject line; clicks judge the promise.",
+        "Where they drop off", "What they click"),
       { at: [11, 4, 13, 10], nodes: [emptyP], style: { customCss: "border-radius:999px 999px 0 0;background:var(--pc-accent)" }, z: 0 },
-      { at: [12, 2, 13, 5], furniture: true, nodes: [para("Email Automation")], style: { ...TRACKED, fontSize: 8 } },
+      wordmark([12, 2, 13, 5]),
     ] },
     // flow — two justified columns; h3 subheads render as the amber chips.
     { kind: "blocks", role: "flow", blocks: [
@@ -208,7 +262,27 @@ const emailAutomation: StructureSpec = {
         para("The second column continues the sequence — each amber chip marks the next step in the workflow."),
       ], style: JUST },
       { at: [12, 11, 13, 13], nodes: [emptyP], style: { customCss: "border-radius:100% 0 0 0;background:var(--pc-accent)" }, z: 0 },
-      { at: [12, 2, 13, 5], furniture: true, nodes: [para("Email Automation")], style: { ...TRACKED, fontSize: 8 }, z: 1 },
+      wordmark([12, 2, 13, 5]),
+    ] },
+    // p38 — chapter 2: subheads either side of a stacked bar chart, in the set's
+    // diagonal rhythm (the comparison page overleaf does the same with its two
+    // circle labels). Back matter, like the comparison page, so it prints once.
+    // The chart carries the template's own figures as furniture: a reader edits
+    // them, nothing binds to them.
+    { kind: "blocks", blocks: [
+      { at: [1, 2, 2, 6], furniture: true, nodes: [para("Chapter 2")], style: TRACKED },
+      { at: [2, 2, 5, 13], furniture: true, nodes: [heading("What This Looks Like in Practice")], style: TIGHT(62) },
+      { at: [5, 2, 6, 9], furniture: true, nodes: [para("Three sequences, four months")], style: TIGHT(30, 300) },
+      { at: [6, 2, 11, 13], furniture: true, block: "stackedBars", content: {
+        categories: ["Month 1", "Month 2", "Month 3", "Month 4"],
+        series: [
+          { label: "Welcome", values: [12, 18, 24, 31] },
+          { label: "Nurture", values: [8, 14, 19, 26] },
+          { label: "Win-back", values: [4, 6, 9, 13] },
+        ],
+      } },
+      { at: [11, 5, 12, 13], furniture: true, nodes: [para("Compounding, not spiking")], style: { ...TIGHT(30, 300), textAlign: "right" } },
+      wordmark([12, 2, 13, 5]),
     ] },
     // p39 — comparison: two amber discs of stacked lines, oversized labels.
     { kind: "blocks", blocks: [
@@ -222,8 +296,9 @@ const emailAutomation: StructureSpec = {
     ] },
     // p40 — CTA back page: half disc off the left edge, big ask, pill button.
     { kind: "blocks", cover: true, background: { kind: "solid", color: BG }, blocks: [
-      { at: [1, 2, 2, 12], furniture: true, nodes: [para("Author name · reallygreatsite.com · @reallygreatsite")], style: { ...TRACKED, textAlign: "center", fontSize: 9 } },
-      { at: [4, 1, 9, 3], nodes: [emptyP], style: { customCss: "border-radius:0 999px 999px 0;background:var(--pc-accent)" }, z: 0 },
+      { at: [1, 1, 2, 5], furniture: true, nodes: [para("Author name")], style: HEAD },
+      ...headRest(),
+      halfDiscLeft([4, 1, 9, 3]),
       { at: [4, 4, 9, 13], furniture: true, nodes: [heading("Ready to Set Up Your First Automation?")], style: TIGHT(70) },
       { at: [9, 4, 10, 11], furniture: true, nodes: [para("Progress happens through action, not perfection.")], style: { fontSize: 11, textColor: INK, fontFamily: BODY } },
       { at: [10, 4, 11, 10], furniture: true, nodes: [para("Download the automation checklist")], style: { textAlign: "center", fontSize: 11, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.06em;background:var(--pc-accent);border-radius:999px;padding:9px 4px" } },
@@ -246,7 +321,7 @@ const remoteReport: StructureSpec = {
     { kind: "blocks", cover: true, background: { kind: "solid", color: INK }, blocks: [
       { at: [1, 2, 2, 3], nodes: [emptyP], style: { customCss: "border-radius:999px;border:6px solid var(--pc-accent)" } },
       { at: [1, 10, 2, 12], furniture: true, nodes: [para("2026")], style: { textAlign: "center", fontSize: 12, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, backgroundColor: ACCENT, customCss: "letter-spacing:.08em;padding-top:6px" } },
-      { at: [3, 2, 7, 11], slot: "title", fallback: "empty", nodes: [heading("The State of Remote Work 2026")], style: { fontSize: 46, fontWeight: 600, textColor: BG, fontFamily: DISPLAY, customCss: "letter-spacing:-.02em;line-height:1.12;h1{color:var(--pc-bg);font-size:46px;font-weight:600}" } },
+      { at: [3, 2, 7, 11], slot: "title", fallback: "empty", nodes: [heading("The State of Remote Work 2026")], style: { fontSize: 46, fontWeight: 600, textColor: BG, fontFamily: DISPLAY, customCss: "letter-spacing:-.02em;line-height:1.12;" + hInherit("color", "font-size", "font-weight") } },
       { at: [7, 2, 9, 8], slot: "subtitle", fallback: "empty", nodes: [para("A Global Look at Where, How, and Why We Work")], style: { fontSize: 15, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, backgroundColor: ACCENT, customCss: "padding:10px 12px" } },
       { ...img([9, 2, 12, 8]), slot: "hero", fallback: "empty" },
       { at: [9, 8, 10, 12], furniture: true, nodes: [para("A company's report")], style: { ...ON_DARK, fontSize: 11 } },
@@ -326,7 +401,7 @@ const remoteReport: StructureSpec = {
     // p50 — back cover: dark field, title echo, about blurb, contact block.
     { kind: "blocks", cover: true, background: { kind: "solid", color: INK }, blocks: [
       { at: [1, 2, 2, 3], nodes: [emptyP], style: { customCss: "border-radius:999px;border:6px solid var(--pc-accent)" } },
-      { at: [3, 2, 6, 11], slot: "title", fallback: "keep", nodes: [heading("The State of Remote Work 2026")], style: { fontSize: 36, fontWeight: 600, textColor: BG, fontFamily: DISPLAY, customCss: "letter-spacing:-.02em;line-height:1.15;h1{color:var(--pc-bg);font-size:36px;font-weight:600}" } },
+      { at: [3, 2, 6, 11], slot: "title", fallback: "keep", nodes: [heading("The State of Remote Work 2026")], style: { fontSize: 36, fontWeight: 600, textColor: BG, fontFamily: DISPLAY, customCss: "letter-spacing:-.02em;line-height:1.15;" + hInherit("color", "font-size", "font-weight") } },
       { at: [6, 2, 8, 11], nodes: [para("[Brand Name] helps companies understand how the world works — literally. We partner with research organisations to deliver data-backed insights for smarter decisions about people.")], style: { ...ON_DARK, fontSize: 12 } },
       { at: [9, 2, 11, 7], furniture: true, nodes: [para("Contact block:"), para("Website · Email · Social handles")], style: { ...ON_DARK, fontSize: 11, customCss: "p:first-child{font-weight:700}" } },
       { at: [11, 2, 13, 7], slot: "author", fallback: "empty", nodes: [para("Written by:"), para("Author Name")], style: { ...ON_DARK, customCss: "p:last-child{font-weight:700}" } },
@@ -335,7 +410,7 @@ const remoteReport: StructureSpec = {
 };
 
 // ---- mindful — pp. 51-64 ----------------------------------------------------
-const TRACKED_TITLE: BlockStyleTokens = { fontSize: 30, fontWeight: 700, textColor: INK, fontFamily: BODY, customCss: UPPER + ";letter-spacing:.16em;line-height:1.55;h1{font-family:var(--pc-body);font-size:30px;letter-spacing:.16em;line-height:1.55}" };
+const TRACKED_TITLE: BlockStyleTokens = { fontSize: 30, fontWeight: 700, textColor: INK, fontFamily: BODY, customCss: UPPER + ";letter-spacing:.16em;line-height:1.55;" + hInherit("font-family", "font-size", "letter-spacing", "line-height") };
 const CELL: BlockStyleTokens = { textAlign: "center", fontSize: 10.5, textColor: INK, fontFamily: BODY, customCss: `border:1px solid ${BORDER};padding-top:16px` };
 
 const mindful: StructureSpec = {
@@ -446,7 +521,7 @@ const freelancer: StructureSpec = {
       { at: [1, 2, 2, 6], slot: "author", fallback: "empty", nodes: [para("Company name")], style: { ...FLAME_TRACKED, fontSize: 10 } },
       { at: [1, 6, 2, 9], furniture: true, nodes: [para("2025-2030")], style: { ...FLAME_TRACKED, fontSize: 10, textAlign: "center" } },
       { at: [1, 9, 2, 12], furniture: true, nodes: [para("Guidebook")], style: { ...FLAME_TRACKED, fontSize: 10, textAlign: "right" } },
-      { at: [7, 2, 12, 11], slot: "title", fallback: "empty", nodes: [heading("The Freelancer's Survival Guide")], style: { fontSize: 46, fontWeight: 300, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.02em;line-height:1.18;h1{color:var(--pc-on-accent);font-size:46px;font-weight:300;line-height:1.18}" } },
+      { at: [7, 2, 12, 11], slot: "title", fallback: "empty", nodes: [heading("The Freelancer's Survival Guide")], style: { fontSize: 46, fontWeight: 300, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.02em;line-height:1.18;" + hInherit("color", "font-size", "font-weight", "line-height") } },
       { at: [12, 7, 13, 12], furniture: true, nodes: [para("creative")], style: { fontSize: 24, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: "font-style:italic;border-bottom:1px solid var(--pc-on-accent);padding-bottom:4px;text-align:right" } },
     ] },
     // p68 — foreword: hairlines, huge tracked display, justified prose.
@@ -472,7 +547,7 @@ const freelancer: StructureSpec = {
       { at: [1, 2, 2, 4], furniture: true, nodes: [para("✳")], style: { fontSize: 34, textColor: ON_ACCENT, fontFamily: DISPLAY } },
       { at: [2, 2, 6, 10], slot: "kicker", nodes: [para("Chapter 01")], style: { fontSize: 52, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: "letter-spacing:-.02em;line-height:1" } },
       { at: [6, 2, 7, 10], nodes: [emptyP], style: HAIR_ON_ACCENT },
-      { at: [7, 2, 8, 12], slot: "chapterTitle", nodes: [heading("Getting Your First Client", 3)], style: { fontSize: 14, fontWeight: 800, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.06em;h3{color:var(--pc-on-accent)}" } },
+      { at: [7, 2, 8, 12], slot: "chapterTitle", nodes: [heading("Getting Your First Client", 3)], style: { fontSize: 14, fontWeight: 800, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.06em;" + hInherit("color") } },
       { at: [10, 2, 12, 12], slot: "intro", nodes: [
         para("Nobody hires the freelancer with the best portfolio. They hire the one they trust the most."),
       ], style: { fontSize: 15, fontWeight: 800, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";line-height:1.4" } },

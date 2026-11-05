@@ -10,6 +10,7 @@ import {
   MUTED, SURFACE, BORDER, pq, callout, aside, KICKER, TITLE, H2, BODY_S, DROPCAP,
   kicker, img, panel, ol, rule, stat, HAIR_ON_ACCENT, HAIR_ACCENT,
   type BlockSpec, type StructureSpec,
+  hInherit,
 } from "./spec.ts";
 import { CANVA_STRUCTURES } from "./canvaStructures.ts";
 import { PAGE_SIZES } from "../pages.ts";
@@ -35,7 +36,7 @@ const leadMagnet: StructureSpec = {
       { at: [3, 2, 4, 11], furniture: true, nodes: [para("Ready when you are")], style: { ...KICKER, textAlign: "center", textColor: ON_ACCENT } },
       // h1 override: a skin colours headings directly, which beats the block's
       // own textColor — without it this title is the accent ON the accent page.
-      { at: [4, 2, 7, 12], furniture: true, nodes: [heading("Start today")], style: { ...TITLE, textAlign: "center", textColor: ON_ACCENT, customCss: "h1{color:inherit}" } },
+      { at: [4, 2, 7, 12], furniture: true, nodes: [heading("Start today")], style: { ...TITLE, textAlign: "center", textColor: ON_ACCENT, customCss: hInherit("color") } },
       { at: [7, 3, 9, 11], furniture: true, nodes: [para("Grab the full toolkit and take the first step in the next ten minutes.")], style: { textAlign: "center", fontSize: 17, textColor: ON_ACCENT, fontFamily: BODY } },
       { at: [9, 5, 10, 9], furniture: true, nodes: [para("yourname.com/start")], style: { textAlign: "center", fontSize: 14, fontWeight: 700, textColor: ON_ACCENT, fontFamily: BODY, customCss: "border:2px solid var(--pc-on-accent);border-radius:999px;padding:9px 4px" } },
     ] },
@@ -191,7 +192,7 @@ const guidebook: StructureSpec = {
       // h1 override: the skin colours every heading, which beats the container's
       // textColor — without it the title is navy ON the navy band (see the
       // freelancer opener, which already carries the same line).
-      { at: [3, 2, 5, 12], slot: "chapterTitle", nodes: [heading("Introduction")], style: { fontSize: 32, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.08em;h1{color:var(--pc-on-accent)}" } },
+      { at: [3, 2, 5, 12], slot: "chapterTitle", nodes: [heading("Introduction")], style: { fontSize: 32, fontWeight: 700, textColor: ON_ACCENT, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.08em;" + hInherit("color") } },
       { ...img([5, 2, 12, 5]), slot: "image", fallback: "empty" },
       { at: [5, 5, 13, 12], slot: "intro", nodes: [
         heading("Open with a subheading", 3), // the skin's h3 IS the source's burnt-orange subhead
