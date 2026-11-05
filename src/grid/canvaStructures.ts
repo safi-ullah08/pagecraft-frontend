@@ -151,7 +151,14 @@ const disc = (at: At): BlockSpec => ({ at, nodes: [emptyP], style: { customCss: 
 const TIGHT_CSS = "letter-spacing:-.04em;line-height:.98;h1,h2,h3,h4,h5,h6{font-weight:inherit;font-size:inherit;line-height:inherit}";
 const TIGHT = (size: number, weight = 400): BlockStyleTokens => ({ fontSize: size, fontWeight: weight, textColor: INK, fontFamily: DISPLAY, customCss: TIGHT_CSS });
 const TRACKED: BlockStyleTokens = { fontSize: 10, fontWeight: 700, textColor: INK, fontFamily: DISPLAY, customCss: UPPER + ";letter-spacing:.2em" };
-const JUST: BlockStyleTokens = { fontSize: 12, textColor: INK, fontFamily: BODY, customCss: "text-align:justify" };
+// Body copy. 14px, not the 12px first transcribed: a source body line occupies
+// 1.30% of page height against our 0.95%. Two readings of the right size
+// disagree — band height says 17px, characters per line says 14.3px — and the
+// gap between them IS the width difference of the faces, since DM Sans runs
+// wider than the source's body face just as Inter does its display face. Sized
+// to the MEASURE (characters per line), the same choice made for the display
+// type: match the reading rhythm, and let the cap height land where it lands.
+const JUST: BlockStyleTokens = { fontSize: 14, textColor: INK, fontFamily: BODY, customCss: "text-align:justify" };
 // The set's half-disc, cut off by the page edge rather than tucked inside the
 // margin — so it BLEEDS left, past the grid's inset. Over cols 1-2 the box is
 // 24.7mm wide plus the 22mm left margin against 93.1mm tall, which is a half
@@ -191,8 +198,10 @@ const emailAutomation: StructureSpec = {
       { at: [2, 2, 4, 13], furniture: true, nodes: [heading("Why This Matters")], style: TIGHT(70) },
       disc([3, 6, 6, 13]),
       { at: [3, 6, 6, 13], furniture: true, nodes: [para("320%")], style: { ...TIGHT(120, 600), textAlign: "center", customCss: `${TIGHT_CSS};padding-top:26px` } },
-      { at: [6, 2, 7, 12], nodes: [pq("Automated emails generate up to 320% more revenue than non-automated ones")], style: {} },
-      { at: [7, 2, 12, 12], nodes: [
+      // Two rows: the strapline wraps to two lines, and at one row the second
+      // line's descenders were cut by the block's own overflow:hidden.
+      { at: [6, 2, 8, 12], nodes: [pq("Automated emails generate up to 320% more revenue than non-automated ones")], style: {} },
+      { at: [8, 2, 12, 12], nodes: [
         para("Most small businesses still send emails one at a time — manually, inconsistently, and usually only when someone remembers to."),
         para("Automation fixes that by sending the right message the moment it's needed, whether that's a welcome note, a cart reminder, or a thank-you after purchase."),
       ], style: JUST },
