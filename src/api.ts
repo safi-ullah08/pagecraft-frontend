@@ -89,7 +89,7 @@ export async function createFromTemplate(t: Template): Promise<string> {
 // ---- template catalog (backend-stored) ------------------------------------
 // System rows are shared by every workspace; `owned` rows are this workspace's
 // custom templates / skins / fonts. See catalog.ts for how they're registered.
-export type ApiTemplate = { id: string; key: string; name: string; docType: StructureSpec["docType"]; spec: Pick<StructureSpec, "pages" | "pageNumbers" | "lockedTheme">; sortOrder: number; version: number; owned: boolean };
+export type ApiTemplate = { id: string; key: string; name: string; docType: StructureSpec["docType"]; spec: Pick<StructureSpec, "pages" | "pageNumbers" | "lockedTheme" | "page">; sortOrder: number; version: number; owned: boolean };
 export type ApiTheme = { slug: string; name: string; css: string; fontIds: string[]; version: number; owned: boolean };
 export type ApiFont = { id: string; family: string; style: "normal" | "italic"; weight: string; source: "system" | "upload"; format: string | null; owned: boolean };
 
