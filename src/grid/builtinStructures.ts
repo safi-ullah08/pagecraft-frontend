@@ -1,135 +1,20 @@
 // The BUILT-IN structures — the authoring source for the system rows in the
-// backend's `templates` table. Nothing at runtime imports this file: the app
+// backend's `templates` table. All seven are matched designs transcribed from
+// Canva design DAHQxublRs4 and LOCKED to their own skin, so each ships as one
+// catalog card; the gallery groups them under one heading. The three generic
+// structures that used to multiply across every theme (leadMagnet / ebook /
+// report) were removed on 2026-11-07 — see listTemplates, whose cross-product
+// loop now has nothing unlocked to pair with a theme. Nothing at runtime imports this file: the app
 // loads its catalog from GET /api/templates (see catalog.ts). To change a
 // built-in template, edit it here (or in canvaStructures.ts), then re-export the
 // seed and re-seed the backend:
 //   cd pageCraft-backend && npm run catalog:export && npm run db:seed
 import type { BlockStyleTokens } from "./types.ts";
 import {
-  heading, para, emptyP, BG, INK, ACCENT, ON_ACCENT, DISPLAY, BODY, UPPER,
-  MUTED, SURFACE, BORDER, pq, callout, aside, KICKER, TITLE, H2, BODY_S, DROPCAP,
-  kicker, img, panel, ol, rule, stat, HAIR_ON_ACCENT, HAIR_ACCENT,
-  type BlockSpec, type StructureSpec,
-  hInherit,
+  heading, para, emptyP, BG, INK, ACCENT, ON_ACCENT, DISPLAY, BODY, UPPER, SURFACE, BORDER, KICKER, BODY_S, kicker, img, panel, ol, rule, HAIR_ON_ACCENT, HAIR_ACCENT, type StructureSpec, hInherit,
 } from "./spec.ts";
 import { CANVA_STRUCTURES } from "./canvaStructures.ts";
 import { PAGE_SIZES } from "../pages.ts";
-
-// ---- the 3 structures ---------------------------------------------------
-const leadMagnet: StructureSpec = {
-  key: "leadMagnet", docType: "leadMagnet", name: "Lead magnet",
-  pages: [
-    { kind: "cover", cover: "band" },
-    { kind: "blocks", role: "flow", blocks: [
-      { ...kicker("The guide", [2, 2, 3, 8]), furniture: true },
-      { at: [3, 2, 5, 12], nodes: [heading("What you'll learn")], style: TITLE },
-      { at: [5, 2, 9, 8], slot: "body", nodes: [
-        para("This short guide walks you through a simple, repeatable process you can put to work today — no fluff, just the moves that matter."),
-        para("By the end you'll have a one-page checklist you can reuse on every project."),
-      ], style: DROPCAP },
-      { at: [5, 8, 9, 12], nodes: [callout("Inside", "A step-by-step process, the three common pitfalls, and a one-page checklist.")], style: {} },
-      stat("3", "Simple steps", [9, 2, 12, 5]),
-      stat("10m", "To first result", [9, 5, 12, 9]),
-      stat("1", "Handy checklist", [9, 9, 12, 12]),
-    ] },
-    { kind: "blocks", background: { kind: "solid", color: ACCENT }, blocks: [
-      { at: [3, 2, 4, 11], furniture: true, nodes: [para("Ready when you are")], style: { ...KICKER, textAlign: "center", textColor: ON_ACCENT } },
-      // h1 override: a skin colours headings directly, which beats the block's
-      // own textColor — without it this title is the accent ON the accent page.
-      { at: [4, 2, 7, 12], furniture: true, nodes: [heading("Start today")], style: { ...TITLE, textAlign: "center", textColor: ON_ACCENT, customCss: hInherit("color") } },
-      { at: [7, 3, 9, 11], furniture: true, nodes: [para("Grab the full toolkit and take the first step in the next ten minutes.")], style: { textAlign: "center", fontSize: 17, textColor: ON_ACCENT, fontFamily: BODY } },
-      { at: [9, 5, 10, 9], furniture: true, nodes: [para("yourname.com/start")], style: { textAlign: "center", fontSize: 14, fontWeight: 700, textColor: ON_ACCENT, fontFamily: BODY, customCss: "border:2px solid var(--pc-on-accent);border-radius:999px;padding:9px 4px" } },
-    ] },
-  ],
-};
-
-// Running head for ebook body pages — small uppercase muted tag on a hairline rule.
-const runHead = (text: string): BlockSpec => ({ at: [1, 2, 2, 12], nodes: [para(text)],
-  style: { fontSize: 10, letterSpacing: 0.14, textColor: MUTED, fontFamily: BODY, customCss: `text-transform:uppercase;border-bottom:1px solid ${BORDER};padding-bottom:7px` } });
-
-const ebook: StructureSpec = {
-  key: "ebook", docType: "ebook", name: "Ebook",
-  pages: [
-    // 1 — hand-crafted editorial cover (unnumbered, not in contents)
-    { kind: "blocks", cover: true, background: { kind: "solid", color: BG }, blocks: [
-      { at: [2, 2, 3, 9], nodes: [para("The complete guide")], style: { ...KICKER, fontSize: 12, letterSpacing: 0.22 } },
-      { at: [3, 2, 4, 3], nodes: [emptyP], style: { customCss: "width:56px;height:3px;background:var(--pc-accent)" } },
-      { at: [5, 2, 9, 11], slot: "title", fallback: "empty", nodes: [heading("Designing Beautiful Ebooks")], style: { fontFamily: DISPLAY, fontWeight: 700, fontSize: 56, textColor: INK, customCss: "line-height:1.05" } },
-      { at: [9, 2, 10, 10], slot: "subtitle", fallback: "empty", nodes: [para("A practical guide to type, layout and rhythm on the page.")], style: { fontSize: 17, textColor: MUTED, fontFamily: BODY, customCss: "font-style:italic" } },
-      { at: [11, 2, 12, 8], slot: "author", fallback: "empty", nodes: [para("By Author Name")], style: { ...KICKER, textColor: INK, letterSpacing: 0.12 } },
-    ] },
-    // 2 — epigraph: centred, airy
-    { kind: "blocks", blocks: [
-      { at: [5, 3, 8, 11], nodes: [para("“Good design is as little design as possible.”")], style: { textAlign: "center", fontSize: 26, textColor: INK, fontFamily: DISPLAY, customCss: "font-style:italic;line-height:1.4" } },
-      { at: [8, 4, 9, 10], nodes: [para("— Dieter Rams")], style: { textAlign: "center", fontSize: 14, textColor: MUTED, fontFamily: BODY, customCss: "letter-spacing:.04em" } },
-    ] },
-    // 3 — contents
-    { kind: "toc" },
-    // 4 — chapter opener (perChapter): oversized accent numeral
-    { kind: "blocks", role: "perChapter", blocks: [
-      { at: [2, 2, 6, 7], slot: "chapterNumber", nodes: [para("1")], style: { fontFamily: DISPLAY, fontWeight: 700, fontSize: 150, textColor: ACCENT, customCss: "line-height:.8" } },
-      { at: [6, 2, 7, 9], slot: "kicker", nodes: [para("Chapter one")], style: { ...KICKER, letterSpacing: 0.2 } },
-      { at: [7, 2, 10, 11], slot: "chapterTitle", nodes: [heading("Where good books begin")], style: { ...TITLE, fontSize: 46, customCss: "line-height:1.1" } },
-      rule([10, 2, 11, 5]),
-      { at: [11, 2, 12, 10], nodes: [para("A one-line promise of what this chapter delivers to the reader.")], style: { fontSize: 16, textColor: MUTED, fontFamily: BODY, customCss: "font-style:italic" } },
-    ] },
-    // 5 — body (flow): drop-cap column; right rail placeholders are preview-only
-    // (quote/aside hints land with the engine's opportunistic slots — revisit).
-    { kind: "blocks", role: "flow", blocks: [
-      { ...runHead("Chapter one · Where good books begin"), slot: "kicker" },
-      { at: [2, 2, 12, 8], slot: "body", nodes: [
-        para("Every good book begins with restraint. Before a single ornament, the page needs a measure the eye can follow, a rhythm between blocks, and one colour doing the work of ten. This opening paragraph inherits the theme's body font and leading, so it always matches the cover — and the drop cap sets the tone."),
-        para("Set your measure first. A column that is too wide tires the reader; too narrow and the rhythm stutters. Everything after is detail."),
-        para("From there, hierarchy does the rest: a confident heading, generous space, and quiet secondary text that never competes with the argument."),
-      ], style: DROPCAP },
-      { at: [3, 8, 6, 12], nodes: [pq("One colour, doing the work of ten.")], style: {} },
-      { at: [8, 8, 12, 12], nodes: [aside("Measure — the length of a line of text, ideally 55–75 characters. It is the single biggest lever on readability.")], style: {} },
-    ] },
-    // 6 — body: subhead, list, and a key-idea callout
-    { kind: "blocks", blocks: [
-      runHead("Chapter one · Where good books begin"),
-      { at: [2, 2, 3, 10], nodes: [heading("The three principles", 2)], style: H2 },
-      { at: [3, 2, 8, 8], nodes: [
-        para("Good pages share a small set of habits. None of them are decorative; each one removes a decision the reader would otherwise have to make."),
-        para("Hold to these and the rest of the design falls into place almost on its own."),
-      ], style: BODY_S },
-      { at: [3, 8, 8, 12], nodes: [{ type: "bulletList", content: [
-        { type: "listItem", content: [para("Set the measure before anything else.")] },
-        { type: "listItem", content: [para("Let one accent carry the whole book.")] },
-        { type: "listItem", content: [para("Give headings room to breathe.")] },
-      ] }], style: BODY_S },
-      { at: [8, 2, 11, 12], nodes: [callout("Key idea", "Design is not decoration — it is the order that makes the meaning obvious at a glance.")], style: {} },
-      { at: [11, 2, 13, 12], nodes: [para("Carry these principles into the next chapter, where we put them to work on a real spread.")], style: BODY_S },
-    ] },
-  ],
-};
-
-const report: StructureSpec = {
-  key: "report", docType: "report", name: "Report",
-  pages: [
-    { kind: "blocks", blocks: [
-      { ...kicker("Quarterly report", [3, 2, 4, 10]), furniture: true },
-      { at: [4, 2, 8, 12], slot: "title", fallback: "empty", nodes: [heading("Report title goes here")], style: { ...TITLE, fontSize: 48, customCss: "border-top:3px solid var(--pc-accent);padding-top:14px" } },
-      { at: [9, 2, 10, 9], slot: "author", fallback: "empty", nodes: [para("Prepared by · Date")], style: { fontSize: 14, textColor: MUTED, fontFamily: BODY } },
-    ] },
-    { kind: "toc" },
-    { kind: "blocks", role: "perChapter", blocks: [
-      { ...kicker("Section 1", [4, 2, 5, 8]), slot: "kicker", props: { prefix: "Section" } },
-      { at: [5, 2, 8, 12], slot: "chapterTitle", nodes: [heading("Section title")], style: TITLE },
-      rule([8, 2, 9, 6]),
-    ] },
-    { kind: "blocks", blocks: [
-      { at: [2, 2, 3, 9], nodes: [heading("Findings", 2)], style: H2 },
-      stat("72%", "Adoption", [3, 2, 6, 6]),
-      stat("3.4×", "Faster", [3, 6, 6, 9]),
-      stat("1,200", "Responses", [3, 9, 6, 12]),
-      { at: [6, 2, 9, 12], nodes: [callout("Key takeaway", "Adoption climbed while turnaround time fell — the two goals reinforced each other this quarter.")], style: {} },
-      { at: [9, 2, 11, 9], nodes: [emptyP], style: { backgroundColor: SURFACE, customCss: `border:1px solid ${BORDER};border-radius:6px` } },
-      { at: [9, 9, 11, 12], nodes: [para("Figure 1 — replace with your chart or table.")], style: { fontSize: 12, textColor: MUTED, fontFamily: BODY, customCss: "font-style:italic" } },
-      { at: [11, 2, 13, 12], nodes: [para("Summarise the finding here — what the data shows and why it matters to the reader.")], style: BODY_S },
-    ] },
-  ],
-};
 
 // ---- Guidebook — page-for-page from the "Entrepreneur" ebook design (Canva
 // DAHQxublRs4 pp. 2–13): accent cover with inset light panel, welcome/colophon,
@@ -360,7 +245,7 @@ const wellness: StructureSpec = {
   ],
 };
 
-export const BUILTIN_STRUCTURES = { leadMagnet, ebook, report, guidebook, wellness, ...CANVA_STRUCTURES } satisfies Record<string, StructureSpec>;
+export const BUILTIN_STRUCTURES = { guidebook, wellness, ...CANVA_STRUCTURES } satisfies Record<string, StructureSpec>;
 // Gallery order (becomes templates.sort_order when seeded).
-export const BUILTIN_ORDER: Array<keyof typeof BUILTIN_STRUCTURES> = ["leadMagnet", "ebook", "report",
+export const BUILTIN_ORDER: Array<keyof typeof BUILTIN_STRUCTURES> = [
   "guidebook", "wellness", "mediaKit", "emailAutomation", "remoteReport", "mindful", "freelancer"];

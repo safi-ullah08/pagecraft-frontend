@@ -14,11 +14,8 @@ import { isTocSection, collectToc } from "./toc.ts";
 setStructures(BUILTIN_ORDER.map((k) => STRUCTURES[k]));
 
 test("every structure interprets to the expected page count", () => {
-  assert.equal(interpret(STRUCTURES.leadMagnet).length, 3);
-  assert.equal(interpret(STRUCTURES.ebook).length, 6);
   assert.equal(interpret(STRUCTURES.guidebook).length, 9); // two flow pages: plain + illustrated
   assert.equal(interpret(STRUCTURES.wellness).length, 8);
-  assert.equal(interpret(STRUCTURES.report).length, 4);
   assert.equal(interpret(STRUCTURES.mediaKit).length, 9);
   assert.equal(interpret(STRUCTURES.emailAutomation).length, 7); // + the chapter 2 chart page
   assert.equal(interpret(STRUCTURES.remoteReport).length, 8);
@@ -31,11 +28,6 @@ test("all placed blocks fit the 12×12 grid", () => {
 });
 
 test("cover / toc pages keep their flags so they're excluded from numbering + contents", () => {
-  const em = interpret(STRUCTURES.leadMagnet);
-  assert.ok(isCoverSection(em[0]), "lead magnet page 1 is a cover");
-  const eb = interpret(STRUCTURES.ebook);
-  assert.ok(isCoverSection(eb[0]), "ebook page 1 is a cover");
-  assert.ok(isTocSection(eb[2]), "ebook page 3 is a toc");
   const gb = interpret(STRUCTURES.guidebook);
   assert.ok(isCoverSection(gb[0]) && isCoverSection(gb[8]), "guidebook front + back are covers"); // 8: the illustrated flow page pushed it along
   assert.ok(isTocSection(gb[2]), "guidebook page 3 is a toc");
@@ -44,13 +36,17 @@ test("cover / toc pages keep their flags so they're excluded from numbering + co
   assert.ok(isTocSection(wl[1]), "wellness page 2 is a toc");
 });
 
-test("catalog: open structures cross-product; locked Canva designs ship one card each", () => {
+test("catalog: every design ships exactly one card, bound to its own skin", () => {
   const themes = ["editorial-classic", "botanical", "luxe-dark", "modern-minimal", "tech-manual", "canva-media-kit"];
   const all = listTemplates(themes);
-  const open = 3;   // leadMagnet, ebook, report
+  // Every built-in is locked now, so listTemplates' theme cross-product has
+  // nothing to pair with and contributes NOTHING: the catalog is one card per
+  // design, however many themes are passed in. The loop stays for a future
+  // open structure, so pass a theme list here that would multiply if one came
+  // back — if that ever yields extra cards, this count is what catches it.
   const locked = 7; // guidebook, wellness + the 5 canva sets
-  // canva-* themes never enter the cross-product; locked structures appear once
-  assert.equal(all.length, (themes.length - 1) * open + locked);
+  assert.equal(all.length, locked);
+  assert.equal(listTemplates([]).length, locked, "no themes, same catalog");
   assert.equal(new Set(all.map((t) => t.id)).size, all.length, "ids are unique");
   assert.ok(!all.some((t) => t.theme.startsWith("canva-") && !STRUCTURES[t.structKey as keyof typeof STRUCTURES].lockedTheme), "no open structure wears a canva skin");
   for (const key of ["guidebook", "wellness", "mediaKit", "emailAutomation", "remoteReport", "mindful", "freelancer"] as const) {
@@ -202,20 +198,18 @@ test("every structure applies cleanly through the engine", () => {
   }
 });
 
-test("report speaks in Sections; ebook binds its numeral opener and running head", () => {
+test("a kicker's prefix prop overrides the \"Chapter\" default", () => {
+  // The removed `report` structure used to pin this with prefix "Section"; the
+  // media kit says "Module", which exercises the same props.prefix path in
+  // layout's kicker case. Nothing else overrides the default, so without this
+  // the feature would be untested.
   let n = 0;
-  const report = JSON.stringify(layout(fakePlan, structureToLayoutSpec(STRUCTURES.report), geom, stub, () => `b${n++}`).sections);
-  assert.match(report, /Section 1/);
-  assert.match(report, /Section 2/);
-  assert.doesNotMatch(report, /Chapter 1/);
-  assert.doesNotMatch(report, /Report title goes here/); // title slot went empty, not placeholder
-  n = 0;
-  const ebook = JSON.stringify(layout(fakePlan, structureToLayoutSpec(STRUCTURES.ebook), geom, stub, () => `b${n++}`).sections);
-  assert.match(ebook, /Chapter 1/); // running head + opener kicker
-  assert.doesNotMatch(ebook, /Where good books begin/);      // opener placeholder gone
-  assert.doesNotMatch(ebook, /Designing Beautiful Ebooks/);  // cover title bound from meta
-  assert.doesNotMatch(ebook, /Good design is as little design/); // epigraph page vanished
-  assert.match(ebook, /Real Title/);
+  const js = JSON.stringify(layout(fakePlan, structureToLayoutSpec(STRUCTURES.mediaKit), geom, stub, () => `b${n++}`).sections);
+  assert.match(js, /Module 1/);
+  assert.match(js, /Module 2/);
+  assert.doesNotMatch(js, /Chapter 1/);
+  assert.doesNotMatch(js, /What is Online Branding/); // opener placeholder gone
+  assert.match(js, /Real Title/);
 });
 
 test("docPlanToLayout: display srcs, folded chapters, hero resolved", () => {
