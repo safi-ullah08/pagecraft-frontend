@@ -91,7 +91,7 @@ export function setStructures(list: Array<StructureSpec & { owned?: boolean }>):
 //    cross-product. `themes` is passed in (the browser's themeNames() uses
 //    import.meta.glob, which can't run under tests), so this stays pure.
 export const DOC_LABELS: Record<DocType, string> = { leadMagnet: "Lead magnets", ebook: "Ebooks", report: "Reports" };
-export const CANVA_LABEL = "Canva templates";
+export const CANVA_LABEL = "Premium themes";
 export const OWNED_LABEL = "My templates";
 export const isLockedTemplate = (t: Template): boolean => !!STRUCTURES[t.structKey]?.lockedTheme;
 // A workspace's custom template (vs. the shared system catalog).
