@@ -66,7 +66,20 @@ function SignedOutShell() {
             Documents that export exactly as designed.
           </p>
         </header>
-        <SignIn routing="hash" />
+        {/* Consent notice under the single auth entry point — one box that both
+            signs in and signs up, so this covers either path.
+            A real tick-box is NOT addable here: Clerk renders the form, and the
+            sign-up half is hosted at accounts.kitaabio.com. It comes from
+            Clerk's dashboard instead ("Require express consent to legal
+            documents"), which stamps legalAcceptedAt on the user — an actual
+            record of agreement, which this line is not. */}
+        <div style={{ display: "grid", justifyItems: "center", gap: 12 }}>
+          <SignIn routing="hash" />
+          <p style={{ margin: 0, maxWidth: 360, textAlign: "center", fontSize: 12, lineHeight: 1.5, color: "var(--ui-muted)" }}>
+            By continuing you agree to the <a href={`${SITE}/terms`} style={footLink}>Terms of Service</a>{" "}
+            and <a href={`${SITE}/privacy`} style={footLink}>Privacy Policy</a>.
+          </p>
+        </div>
       </div>
       <footer style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "center", fontSize: 13, color: "var(--ui-muted)" }}>
         <a href={SITE} style={footLink}>← kitaabio.com</a>
