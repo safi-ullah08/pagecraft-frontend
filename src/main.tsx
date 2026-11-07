@@ -48,6 +48,36 @@ function CatalogGate({ children }: { children: ReactNode }) {
   );
 }
 
+// The app subdomain's front door. Signed out, this used to be a bare Clerk box
+// on an empty page: no product name, no way back to kitaabio.com, and nothing a
+// payment provider's compliance reviewer (or a first-time visitor who typed the
+// wrong subdomain) could use to tell what they had reached. The marketing site
+// owns the selling — this only names the product and points home.
+const SITE = "https://kitaabio.com";
+const footLink = { color: "var(--ui-muted)", textDecoration: "none", borderBottom: "1px solid var(--ui-border-strong)" };
+
+function SignedOutShell() {
+  return (
+    <div style={{ display: "grid", gridTemplateRows: "1fr auto", minHeight: "100vh", padding: 24, boxSizing: "border-box" }}>
+      <div style={{ display: "grid", placeItems: "center", gap: 20, alignContent: "center" }}>
+        <header style={{ textAlign: "center" }}>
+          <a href={SITE} style={{ color: "var(--ui-ink)", textDecoration: "none", fontSize: 30, letterSpacing: "0.01em" }}>Kitaabio</a>
+          <p style={{ margin: "6px 0 0", color: "var(--ui-muted)", fontSize: 15 }}>
+            Documents that export exactly as designed.
+          </p>
+        </header>
+        <SignIn routing="hash" />
+      </div>
+      <footer style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "center", fontSize: 13, color: "var(--ui-muted)" }}>
+        <a href={SITE} style={footLink}>← kitaabio.com</a>
+        <a href={`${SITE}/terms`} style={footLink}>Terms</a>
+        <a href={`${SITE}/privacy`} style={footLink}>Privacy</a>
+        <a href="mailto:safi@kitaabio.com" style={footLink}>safi@kitaabio.com</a>
+      </footer>
+    </div>
+  );
+}
+
 const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
 
 // Without a Clerk key the app runs open (backend is single-tenant dev mode too).
@@ -59,9 +89,7 @@ const root = clerkKey ? (
       <ConfirmModal/>
     </SignedIn>
     <SignedOut>
-      <div style={{ display: "grid", placeItems: "center", minHeight: "100vh" }}>
-        <SignIn routing="hash" />
-      </div>
+      <SignedOutShell />
     </SignedOut>
   </ClerkProvider>
 ) : (
