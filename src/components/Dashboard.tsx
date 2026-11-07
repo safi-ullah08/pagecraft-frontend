@@ -182,6 +182,11 @@ export function Dashboard() {
           <button onClick={() => fileInput.current?.click()} disabled={uploading} title="Upload a .docx, .md or .txt file" style={ghostBtn}>
             {uploading ? "Uploading…" : "↑ Upload"}
           </button>
+          {/* Account menu — the only way to sign out. The editor has carried one
+              since it shipped (App.tsx), but this view never did, so anyone who
+              stopped at the dashboard was stuck signed in. Same guard as there:
+              UserButton only mounts under ClerkProvider, i.e. when a key is set. */}
+          {import.meta.env.VITE_CLERK_PUBLISHABLE_KEY && <UserButton afterSignOutUrl="/" />}
           <button onClick={() => { setImportedDocId(null); setGalleryOpen(true); }} title="Start from a ready-made template" style={ghostBtn}>
             ◆ Templates
           </button>
@@ -190,11 +195,6 @@ export function Dashboard() {
               border: "none", borderRadius: 8, cursor: "pointer", boxShadow: "0 2px 8px rgba(62,44,24,.35)" }}>
             {creating ? "Creating…" : "+ New document"}
           </button>
-          {/* Account menu — the only way to sign out. The editor has carried one
-              since it shipped (App.tsx), but this view never did, so anyone who
-              stopped at the dashboard was stuck signed in. Same guard as there:
-              UserButton only mounts under ClerkProvider, i.e. when a key is set. */}
-          {import.meta.env.VITE_CLERK_PUBLISHABLE_KEY && <UserButton afterSignOutUrl="/" />}
         </header>
 
         {plan === "free" && (
