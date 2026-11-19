@@ -723,7 +723,15 @@ export const useStore = create<Store>((set, get) => {
       for (let pass = 0, count = Math.max(1, tocIdx.length); pass < 3; pass++) {
         const projected = [...others];
         projected.splice(at, 0, ...Array.from({ length: count }, tocPlaceholder));
-        chunks = paginateToc(collectToc(projected, startAt), fits);
+        // Drop what the contents will never SHOW before paginating it. The
+        // renderer filters entries deeper than maxLevel, but paginateToc was
+        // chunking the unfiltered list, so a page's worth of invisible entries
+        // became a page of blank contents: one 253-page herbal import had 90
+        // entries of which 76 were level 4-5, and produced THIRTY-TWO contents
+        // pages, nearly all empty. Filter once, here, and the page count follows
+        // what a reader can actually see.
+        const visible = collectToc(projected, startAt).filter((e) => (Number(e.level) || 1) <= tocMaxLevel((tocBlock?.content as { maxLevel?: unknown }) ?? {}));
+        chunks = paginateToc(visible, fits);
         if (chunks.length === count) break;
         count = chunks.length;
       }
