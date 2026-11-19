@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { UserButton } from "@clerk/clerk-react";
-import { listDocuments, createDocument, deleteDocument, renameDocument, getBillingStatus, startCheckout, uploadDocument, type DocumentSummary } from "../api.ts";
+import { listDocuments, createDocument, deleteDocument, renameDocument, getBillingStatus, billingRedirect, uploadDocument, type DocumentSummary } from "../api.ts";
 import { ImportBar } from "./ImportBar.tsx";
 import { ImportHub } from "./ImportHub.tsx";
 import { TemplateGallery } from "./TemplateGallery.tsx";
@@ -70,9 +70,9 @@ export function Dashboard() {
     }
   }
 
-  async function upgrade() {
+  async function billing(kind: "checkout" | "portal") {
     try {
-      await startCheckout(); // redirects to Lemon Squeezy on success
+      await billingRedirect(kind); // redirects to Creem on success
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
     }
@@ -171,7 +171,10 @@ export function Dashboard() {
             </p>
           </div>
           {plan === "free" && (
-            <button onClick={upgrade} style={ghostBtn}>Upgrade to Pro</button>
+            <button onClick={() => billing("checkout")} style={ghostBtn}>Upgrade to Pro</button>
+          )}
+          {plan === "pro" && (
+            <button onClick={() => billing("portal")} style={ghostBtn}>Manage billing</button>
           )}
           <ImportBar />
           <input ref={fileInput} type="file" accept=".docx,.md,.markdown,.txt" style={{ display: "none" }}
