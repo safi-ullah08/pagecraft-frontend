@@ -376,6 +376,9 @@ function LayersPanel() {
 function SwitchTemplate() {
   const docPlan = useStore((s) => s.docPlan);
   const sourceMeta = useStore((s) => s.sourceMeta);
+  // sourceMeta carries no title — that lives on the document — so the switch
+  // panel's previews need it passed in or they all show a blank cover.
+  const docTitle = useStore((s) => s.title);
   const documentId = useStore((s) => s.documentId);
   const [open, setOpen] = useState(false);
   return (
@@ -391,7 +394,7 @@ function SwitchTemplate() {
           </div>
           {open && (
             <TemplateGallery
-              previewPlan={docPlanToLayout(docPlan, sourceMeta)}
+              previewPlan={docPlanToLayout(docPlan, { title: docTitle, ...sourceMeta })}
               onClose={() => setOpen(false)}
               onPick={async (t) => {
                 const ok = await confirmDialog({
