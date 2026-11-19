@@ -46,7 +46,6 @@ const mediaKit: StructureSpec = {
     ] },
     // p26 — about author: sticker, rounded photo, boxed follower stat, icon rail.
     { kind: "blocks", blocks: [
-      { at: [1, 2, 2, 5], furniture: true, nodes: [para("@reallygreatsite")], style: { ...BADGE, fontSize: 10 } },
       { ...img([2, 2, 6, 7]), slot: "hero", fallback: "empty" },
       { at: [2, 7, 4, 12], furniture: true, nodes: [heading("About Author")], style: { fontSize: 40, fontWeight: 800, textColor: INK, fontFamily: DISPLAY, customCss: "letter-spacing:-.03em;line-height:1" } },
       { at: [4, 7, 6, 12], nodes: [para("Hi, I'm a creator and content strategist specialising in short-form video and lifestyle photography. I help brands stand out through authentic storytelling.")], style: { fontSize: 12, textColor: INK, fontFamily: BODY, customCss: "text-align:justify" } },
@@ -187,10 +186,12 @@ const wordmark = (at: At): BlockSpec => ({
   nodes: [para("Email"), para("Automation")],
   style: { ...TRACKED, fontSize: 8, customCss: UPPER + ";letter-spacing:.2em;line-height:1.15;p{margin:0}" },
 });
-const headRest = (): BlockSpec[] => [
-  { at: [1, 5, 2, 9], furniture: true, nodes: [para("reallygreatsite.com")], style: { ...HEAD, textAlign: "center" } },
-  { at: [1, 9, 2, 13], furniture: true, nodes: [para("@reallygreatsite")], style: { ...HEAD, textAlign: "right" } },
-];
+// The source design put the studio's own site and handle in the running header.
+// They shipped as `furniture`, meaning every book made from this template
+// carried Canva's demo URL across the top of every page as if it were the
+// author's. There is nothing to bind a reader's own site to yet, so the header
+// is the wordmark alone until there is.
+const headRest = (): BlockSpec[] => [];
 
 const emailAutomation: StructureSpec = {
   key: "emailAutomation", docType: "ebook", name: "Email automation guide", lockedTheme: "canva-amber-mono",
@@ -424,7 +425,6 @@ const mindful: StructureSpec = {
       { at: [10, 2, 11, 7], slot: "author", fallback: "empty", nodes: [para("Kimberly Nguyen")], style: { fontSize: 16, fontWeight: 700, textColor: INK, fontFamily: DISPLAY } },
       { ...img([1, 7, 12, 13]), slot: "hero", fallback: "empty" },
       panel([12, 1, 13, 13], INK),
-      { at: [12, 3, 13, 11], furniture: true, nodes: [para("www.reallygreatsite.com")], style: { textAlign: "center", fontSize: 11, textColor: BG, fontFamily: BODY, customCss: UPPER + ";letter-spacing:.2em;padding-top:12px" }, z: 1 },
     ] },
     // p52 — introduction: serif heading + short rule, bold opening statement.
     { kind: "blocks", blocks: [
@@ -446,8 +446,12 @@ const mindful: StructureSpec = {
     { kind: "blocks", role: "perChapter", blocks: [
       { at: [1, 2, 2, 8], slot: "kicker", nodes: [para("Chapter 1")], style: { fontSize: 12, fontWeight: 500, textColor: INK, fontFamily: BODY, customCss: UPPER + ";letter-spacing:.3em" } },
       { at: [2, 2, 3, 8], nodes: [emptyP], style: { customCss: "width:3px;height:100%;background:var(--pc-accent)" } },
-      { at: [2, 3, 9, 12], slot: "chapterTitle", nodes: [heading("Why We Struggle to Slow Down")], style: TRACKED_TITLE },
-      { ...img([8, 6, 12, 12]), slot: "image", fallback: "empty" },
+      // The title takes the rest of the page. There used to be an illustration
+      // slot bottom-right that pulled a figure out of the chapter to sit here:
+      // it relocated a picture away from the paragraph that explained it, and
+      // printed an empty box whenever the chapter had none. Images now stay
+      // where the author put them, in the flow.
+      { at: [2, 3, 12, 12], slot: "chapterTitle", nodes: [heading("Why We Struggle to Slow Down")], style: TRACKED_TITLE },
     ] },
     // p62 — flow A: sage highlight-bar heading + full-measure tracked body.
     { kind: "blocks", role: "flow", blocks: [
@@ -459,16 +463,19 @@ const mindful: StructureSpec = {
         para("The good news: you don't need a silent retreat to feel calmer. You need a few consistent anchors in your day that remind your nervous system it's safe to slow down."),
       ], style: { fontSize: 12, textColor: INK, fontFamily: BODY, customCss: "line-height:1.85;letter-spacing:.02em" } },
     ] },
-    // p57 — flow B: illustration rail left, annotated column right (alternates).
+    // p57 — flow B: the same full measure as flow A, with the h3 rule.
+    // This was a diagram page: an illustration rail down the left, a caption
+    // under it, and an annotated column on the right. Three of those four
+    // blocks could not be filled from an imported document — the rail was a
+    // bare placeholder that printed an empty box on every second spread, and
+    // the two columns chopped the measure in half around it. A body page that
+    // always works beats a diagram page that only works when someone lays it
+    // out by hand.
     { kind: "blocks", role: "flow", blocks: [
-      { at: [1, 2, 3, 9], slot: "body", nodes: [
+      { at: [1, 2, 12, 12], slot: "body", nodes: [
         heading("Environment care", 2),
-      ], style: { fontSize: 12, textColor: INK, fontFamily: BODY } },
-      { ...img([4, 2, 9, 6]) },
-      { at: [9, 2, 12, 6], nodes: [para("Beyond this, a houseplant may need direct (bright) light or indirect light.")], style: { textAlign: "center", fontSize: 11.5, textColor: INK, fontFamily: BODY } },
-      { at: [3, 6, 12, 12], slot: "body", nodes: [
         heading("Low light around house", 3),
-        para("Annotated notes run down the right column, each under its tracked caps label — the set's diagram-page rhythm."),
+        para("Annotated notes run on under their tracked caps labels — the set's diagram-page rhythm, kept as type."),
       ], style: { fontSize: 11.5, textColor: INK, fontFamily: BODY, customCss: `line-height:1.8;h3{border-top:1px solid ${BORDER};padding-top:10px}` } },
     ] },
     // p59 — journaling prompts: bordered prompt rows over lined writing space.
@@ -500,7 +507,6 @@ const mindful: StructureSpec = {
       { at: [4, 3, 8, 11], nodes: [para("Believe in the magic of each season, and bloom where you are planted.")], style: { textAlign: "center", fontSize: 26, textColor: INK, fontFamily: DISPLAY, customCss: "font-style:italic;line-height:1.5" } },
       { at: [8, 3, 9, 11], slot: "author", fallback: "empty", nodes: [para("Kimberly Nguyen")], style: { textAlign: "center", fontSize: 13, textColor: INK, fontFamily: BODY, customCss: UPPER + ";letter-spacing:.18em" } },
       panel([12, 1, 13, 13], INK),
-      { at: [12, 3, 13, 11], furniture: true, nodes: [para("www.reallygreatsite.com")], style: { textAlign: "center", fontSize: 11, textColor: BG, fontFamily: BODY, customCss: UPPER + ";letter-spacing:.2em;padding-top:12px" }, z: 1 },
     ] },
   ],
 };
