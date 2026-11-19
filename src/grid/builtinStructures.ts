@@ -86,35 +86,37 @@ const guidebook: StructureSpec = {
         para("Close the opener by pointing at what comes next, so turning the page feels like the obvious move."),
       ], style: BODY_S },
     ] },
-    // 5 — body (flow, repeats while the chapter has content): two columns,
-    // hairline foot rule on every spread.
+    // 5 — body (flow, repeats while the chapter has content): ONE full-measure
+    // column, hairline foot rule on every spread.
+    // This was two columns, transcribed from the source design. Two columns at
+    // Letter width give a ~45-character measure, which is fine for the marketing
+    // copy the original sold and wrong for anything carrying figures: a diagram
+    // or a bar of notation is wider than half the page, so it either shrinks to
+    // illegible or strands the column it lands in. One column also means a
+    // figure can run the full measure. Side-by-side is still available per page
+    // — place two blocks in adjacent cells — it just isn't the default any more.
     { kind: "blocks", role: "flow", blocks: [
-      { at: [1, 2, 12, 7], slot: "body", nodes: [
+      { at: [1, 2, 12, 12], slot: "body", nodes: [
         heading("Introduce the next section with a subheading", 3),
-        para("Body copy flows down the left column first. Keep paragraphs short — three to five lines reads best at this measure."),
-        para("Use the second paragraph to develop the point, and save examples for the facing column so the spread stays balanced."),
-      ], style: BODY_S },
-      { at: [1, 7, 12, 12], slot: "body", nodes: [
-        para("The right column continues the thought. A reader should be able to skim the subheads alone and still follow the argument."),
-        para("When a section ends mid-page, let the white space stand — the rule at the foot of the page closes the spread."),
+        para("Body copy runs the full measure. Keep paragraphs short — three to five lines still reads best, even with the wider column."),
+        para("Use the second paragraph to develop the point. A reader should be able to skim the subheads alone and still follow the argument."),
       ], style: BODY_S },
       { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT, z: 20 },
     ] },
-    // 5b — body with an illustration (flow, alternates with 5): the same left
-    // column, the right one shortened to give its lower half to a portrait
-    // image. The source alternates a plain spread with an illustrated one, so
-    // the two flow pages cycle. No fallback: a document with no pictures leaves
-    // the corner empty rather than printing a box nothing will ever fill.
+    // 5b — body with an illustration (flow, alternates with 5): text on the
+    // upper two thirds, the picture across the full measure below it. The source
+    // alternates a plain spread with an illustrated one, so the two flow pages
+    // cycle. The image went full width with the column change — a landscape
+    // figure (a chart, a wide diagram, a stave) is the common case and a
+    // half-page box was throttling it. No fallback: a document with no pictures
+    // leaves the lower band empty rather than printing a box nothing will fill.
     { kind: "blocks", role: "flow", blocks: [
-      { at: [1, 2, 12, 7], slot: "body", nodes: [
+      { at: [1, 2, 8, 12], slot: "body", nodes: [
         heading("The illustrated spread", 3),
-        para("The left column reads exactly as it does on the plain spread — the alternation is in the right-hand column, not here."),
-        para("Keeping one column full-height means a long passage still has somewhere to go when the picture takes the other."),
+        para("Text reads exactly as it does on the plain spread — the alternation is the picture below, not the measure."),
+        para("Giving the figure the full width means a wide one lands at a readable size instead of being squeezed into a half-column."),
       ], style: BODY_S },
-      { at: [1, 7, 7, 12], slot: "body", nodes: [
-        para("The right column runs half the page and then hands over to the illustration below it."),
-      ], style: BODY_S },
-      { ...img([7, 7, 12, 12]), slot: "image" },
+      { ...img([8, 2, 12, 12]), slot: "image" },
       { at: [12, 2, 13, 12], nodes: [emptyP], style: HAIR_ACCENT, z: 20 },
     ] },
     // 6 — numbered list on a lavender panel, landscape photo below
