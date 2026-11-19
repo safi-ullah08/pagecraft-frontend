@@ -59,7 +59,9 @@ export function TemplateGallery({ onClose, applyToDocId, onPick, previewPlan }: 
   useEffect(() => {
     if (previewPlan || !applyToDocId) return;
     getDocument(applyToDocId)
-      .then((d) => { if (d.docPlan) setPlan(slimPlan(docPlanToLayout(d.docPlan, d.sourceMeta ?? {}))); })
+      // title comes from the document, not sourceMeta (which has no such field),
+      // or every preview shows a blank cover where the real one has a title.
+      .then((d) => { if (d.docPlan) setPlan(slimPlan(docPlanToLayout(d.docPlan, { title: d.title, ...(d.sourceMeta ?? {}) }))); })
       .catch(() => { /* placeholder previews */ });
   }, [applyToDocId, previewPlan]);
 

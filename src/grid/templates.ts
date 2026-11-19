@@ -210,7 +210,12 @@ export function structureToLayoutSpec(spec: StructureSpec): LayoutSpec {
 // A stored plan (+ its meta) → the engine's LayoutPlan: srcs in display form
 // (browsers can't load asset://), chapters folded to h1 boundaries. Used by the
 // apply path, the switch panel, and the gallery's real-content previews.
-export function docPlanToLayout(stored: StoredDocPlan, meta: SourceMeta): LayoutPlan {
+// `title` is NOT part of SourceMeta and never will be: a source doesn't carry
+// the book's name, it carries a post's. The book's name is the document's own
+// title column — what the importer set and what the user renamed it to. Callers
+// pass it alongside, because without it the engine's "title" slot binds nothing
+// and every imported cover falls back to blank.
+export function docPlanToLayout(stored: StoredDocPlan, meta: SourceMeta & { title?: string }): LayoutPlan {
   return {
     meta: { ...meta, ...(meta.hero ? { hero: assetUrl(meta.hero) } : {}) },
     chapters: foldChapters(stored.chapters.map((c) => ({

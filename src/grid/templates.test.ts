@@ -328,3 +328,20 @@ test("a block's h-rule says `inherit`, never a second copy of its own type token
   }
   assert.deepEqual(bad, []);
 });
+
+// SourceMeta has no `title` field and never will: a source carries a post's
+// name, not the book's. The book's name is the document's own title column, so
+// callers pass it alongside — and before they did, the engine's "title" slot
+// bound nothing and EVERY imported cover fell back to blank while the subtitle
+// slot happily took the first post's excerpt.
+test("docPlanToLayout: the document title reaches the cover's title slot", () => {
+  const stored = { chapters: [{ title: "One", level: 1, body: { type: "doc", content: [h("One"), p("body")] } }] };
+
+  const withTitle = docPlanToLayout(stored, { title: "Jazz Theory Fundamentals", subtitle: "S" });
+  assert.equal(withTitle.meta.title, "Jazz Theory Fundamentals");
+  assert.equal(withTitle.meta.subtitle, "S", "the source's own subtitle still comes through");
+
+  // sourceMeta alone — what the callers used to pass — leaves it undefined.
+  const without = docPlanToLayout(stored, { subtitle: "S" });
+  assert.equal(without.meta.title, undefined);
+});

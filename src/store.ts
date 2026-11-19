@@ -56,7 +56,7 @@ type Store = {
   setDesign: (patch: Partial<DesignTokens> | null) => void; // null = reset to the pure theme
   setColumns: (n: 1 | 2) => Promise<void>; // re-lay the current template's flow pages as one/two columns
   applyImportedTemplate: (t: Template) => Promise<void>; // legacy: look + cover + TOC on an already-grid doc
-  applyTemplateLayout: (t: Template, meta: SourceMeta) => Promise<void>; // engine: lay flow chapters into the template's designed pages
+  applyTemplateLayout: (t: Template, meta: SourceMeta & { title?: string }) => Promise<void>; // engine: lay flow chapters into the template's designed pages
   setActive: (id: string) => void;
   selectBlock: (id: string | null, additive?: boolean) => void;
   selectAll: () => void;
@@ -345,7 +345,7 @@ export const useStore = create<Store>((set, get) => {
       const id = get().documentId;
       if (id) { try { localStorage.setItem(`pc-columns:${id}`, String(n)); } catch { /* ignore */ } }
       const t = get().appliedTemplate;
-      if (t && get().docPlan) await get().applyTemplateLayout(t, get().sourceMeta);
+      if (t && get().docPlan) await get().applyTemplateLayout(t, { title: get().title, ...get().sourceMeta });
     },
     setActive: (activeId) => set({ activeId }),
     // Select a block. additive (shift) toggles it in the multi-selection; otherwise
@@ -621,7 +621,7 @@ export const useStore = create<Store>((set, get) => {
         if (sections.some((s) => !isGridSection(s.content))) {
           try {
             if (t && sections.every((s) => !isGridSection(s.content))) {
-              await get().applyTemplateLayout(t, doc.sourceMeta ?? {});
+              await get().applyTemplateLayout(t, { title: doc.title, ...(doc.sourceMeta ?? {}) });
             } else {
               await get().convertToGrid();
               if (t) await get().applyImportedTemplate(t); // mixed doc — legacy look+cover+toc
@@ -633,7 +633,7 @@ export const useStore = create<Store>((set, get) => {
           // already grid: with a stored plan this is a template SWITCH — re-lay
           // the frozen chapters under the new design; without one, legacy look+cover+toc.
           try {
-            if (get().docPlan) await get().applyTemplateLayout(t, doc.sourceMeta ?? {});
+            if (get().docPlan) await get().applyTemplateLayout(t, { title: doc.title, ...(doc.sourceMeta ?? {}) });
             else await get().applyImportedTemplate(t);
           } catch (e) { console.error("apply template failed:", e); }
         }
