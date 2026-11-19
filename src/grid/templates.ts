@@ -189,9 +189,31 @@ function sectionPage(sec: GridSection & { cover?: boolean; backCover?: boolean; 
   };
 }
 
+// This is the IMPORT path only — createFromTemplate builds a blank document
+// from the same structure and keeps every designed page, because there the
+// placeholder copy is the point.
+//
+// An import brings a cover, a contents, chapters and their body. It brings
+// nothing for the designed furniture pages a structure also carries — the
+// "Introduction" spread, the "Thank you!" sign-off, the about-the-author page,
+// the journaling prompts. Those shipped anyway, as a heading over an empty
+// page, because `furniture` survives the placeholder rule below. A reader gets
+// a blank page with a title on it, which reads as a bug rather than a design.
+//
+// So on import a page has to be able to hold the document's own content:
+// a cover, the contents, a chapter opener, or a flow page. Everything else is
+// dropped. Deliberately coarse — a page with one real slot and five lines of
+// Canva copy is still mostly placeholder.
+const populatableOnImport = (p: StructureSpec["pages"][number]): boolean =>
+  p.kind === "cover" || p.kind === "toc" ||
+  ("cover" in p && !!p.cover) ||
+  ("role" in p && (p.role === "perChapter" || p.role === "flow")) ||
+  ("blocks" in p && p.blocks.some((b) => b.slot === "toc"));
+
 export function structureToLayoutSpec(spec: StructureSpec): LayoutSpec {
   const pages: LayoutPage[] = [];
   for (const p of spec.pages) {
+    if (!populatableOnImport(p)) continue;
     if (p.kind === "cover") { pages.push(sectionPage(buildCover(p.cover))); continue; }
     if (p.kind === "toc") { pages.push(sectionPage(buildTocSection([]))); continue; }
     // placeholder rule: literal prose is preview-only — dropped unless furniture

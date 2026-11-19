@@ -102,8 +102,11 @@ test("guidebook spec: imported content lands in the designed layout, placeholder
   assert.match(js, /Real Title/);
   assert.match(js, /Real Author/);
   assert.doesNotMatch(js, /How to Become an Entrepreneur/);
-  // hero image slot on the welcome page
+  // The hero now sits on the COVER. It used to live on the welcome/colophon
+  // page, which import no longer carries, so without this the design had
+  // nowhere to put an imported picture.
   assert.match(js, /asset:\/\/hero\.png/);
+  assert.ok(JSON.stringify(sections[0]).includes("asset://hero.png"), "on the cover, not somewhere later");
   // per-chapter openers bound; both chapters present
   assert.match(js, /Chapter 1/);
   assert.match(js, /Chapter 2/);
@@ -117,9 +120,13 @@ test("guidebook spec: imported content lands in the designed layout, placeholder
   assert.doesNotMatch(js, /Lead with the step itself/);            // numbered-list panel
   assert.doesNotMatch(js, /Sign off in your own voice/);           // thank-you body
   assert.doesNotMatch(js, /I should start something/);             // back-cover blurb
-  // — but designed furniture does
-  assert.match(js, /Hello and welcome!/);
-  assert.match(js, /Thank you!/);
+  // Designed furniture pages are DROPPED on import: an import brings nothing
+  // to fill a "Hello and welcome!" spread or a "Thank you!" sign-off, so they
+  // used to print as a heading over an empty page. They still appear when a
+  // blank document is created from the template — that is createFromTemplate,
+  // a different path, where the placeholder copy is the point.
+  assert.doesNotMatch(js, /Hello and welcome!/);
+  assert.doesNotMatch(js, /Thank you!/);
   // contents page kept its design (toc slot) and the toc flag
   assert.ok(sections.some((s) => isTocSection(s) && s.blocks.some((b) => b.block === "tocList")));
   // front + back covers survive the adapter
@@ -174,11 +181,12 @@ test("wellness spec: flow pages alternate and back matter lands after the chapte
   const js = JSON.stringify(sections);
   assert.match(js, /Real Title/);
   assert.match(js, /Getting Started/);
-  // back matter (quadrant framework + glossary + back cover) after the content
-  assert.match(js, /Glossary/);
-  const glossaryIdx = sections.findIndex((s) => JSON.stringify(s).includes("Glossary"));
-  const lastBody = sections.reduce((acc, s, i) => (JSON.stringify(s).includes("para ") ? i : acc), 0);
-  assert.ok(glossaryIdx > lastBody, "glossary sits after the flowed content");
+  // The glossary and quadrant-framework pages are furniture: an import has
+  // nothing to put in them, so they are dropped rather than printed empty.
+  assert.doesNotMatch(js, /Glossary/);
+  // The back COVER still lands last — a cover is populatable (title, author,
+  // the source's own hero) and a book without one looks unfinished.
+  assert.ok(sections.at(-1)!.cover, "back cover still closes the book");
 });
 
 test("every structure applies cleanly through the engine", () => {
@@ -244,10 +252,17 @@ test("template-owned art survives interpret() and the apply path, in display for
   assert.deepEqual(page!.blocks[0]!.content, { src: display, alt: "Lotus" });
   assert.equal(page!.blocks[0]!.block, "image");
 
-  // the apply path keeps it too — art is not a slot, so nothing can empty it
-  const lp = structureToLayoutSpec(spec).pages[0]!;
-  assert.equal(lp.blocks[0]!.slot, undefined);
-  assert.deepEqual(lp.blocks[0]!.content, { src: display, alt: "Lotus" });
+  // On IMPORT that page is dropped: art rides on designed furniture pages, and
+  // a page of illustration with no place for the document's own content is not
+  // worth the paper. interpret() above is the blank-document path and keeps it.
+  assert.deepEqual(structureToLayoutSpec(spec).pages, [], "a pure-art page is furniture on import");
+
+  // On a page the import CAN fill, the art comes through untouched — it is not
+  // a slot, so nothing can empty it.
+  const onFlow = structureToLayoutSpec({ ...spec,
+    pages: [{ kind: "blocks", role: "flow", blocks: [art([1, 1, 4, 5], "lotus.svg", "Lotus")] }] }).pages[0]!;
+  assert.equal(onFlow.blocks[0]!.slot, undefined);
+  assert.deepEqual(onFlow.blocks[0]!.content, { src: display, alt: "Lotus" });
 });
 
 test("email automation: a chapter's sections fill all four cells of the 2x2 opener", () => {
@@ -344,4 +359,17 @@ test("docPlanToLayout: the document title reaches the cover's title slot", () =>
   // sourceMeta alone — what the callers used to pass — leaves it undefined.
   const without = docPlanToLayout(stored, { subtitle: "S" });
   assert.equal(without.meta.title, undefined);
+});
+
+// The cover hero carries NO fallback, unlike the meta slots beside it: an
+// unfilled image is a grey box in the middle of a cover, and a document with no
+// pictures is better served by the title on a clean panel.
+test("guidebook cover: no hero means no box, and the title still binds", () => {
+  let n = 0;
+  const bare = { ...fakePlan, meta: { title: "Real Title", author: "Real Author" } };
+  const { sections, report } = layout(bare, structureToLayoutSpec(STRUCTURES.guidebook), geom, stub, () => `b${n++}`);
+  const cover = JSON.stringify(sections[0]);
+  assert.match(cover, /Real Title/);
+  assert.doesNotMatch(cover, /"block":"image"/, "the hero slot hides rather than printing an empty box");
+  assert.ok(report.some((r) => r.includes("hero")), `reported as hidden: ${report}`);
 });

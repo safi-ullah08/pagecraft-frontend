@@ -38,8 +38,22 @@ const guidebook: StructureSpec = {
     // title/subtitle/author here; the placeholder text survives otherwise.
     { kind: "blocks", cover: true, background: { kind: "solid", color: FIELD }, blocks: [
       panel([2, 2, 9, 12], BG),
-      { at: [3, 3, 7, 11], slot: "title", fallback: "empty", nodes: [heading("How to Become an Entrepreneur")], style: { textAlign: "center", fontSize: 40, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY, customCss: "line-height:1.15" } },
-      { at: [7, 3, 8, 11], slot: "subtitle", fallback: "empty", nodes: [para("A step-by-step guide to level up your skills")], style: { textAlign: "center", fontSize: 15, textColor: ACCENT, fontFamily: BODY } },
+      { at: [3, 3, 6, 11], slot: "title", fallback: "empty", nodes: [heading("How to Become an Entrepreneur")], style: { textAlign: "center", fontSize: 40, fontWeight: 700, textColor: ACCENT, fontFamily: DISPLAY, customCss: "line-height:1.15" } },
+      // Clamped to two lines. `subtitle` binds meta.subtitle, which for a blog
+      // import is the post's EXCERPT — three hundred characters of body copy,
+      // not a strapline. It always overflowed this row; it simply had empty
+      // panel to overflow into until the hero went in below it, and then it
+      // ran straight across the picture. A cover gets the opening line or two
+      // and stops.
+      { at: [6, 3, 7, 11], slot: "subtitle", fallback: "empty", nodes: [para("A step-by-step guide to level up your skills")], style: { textAlign: "center", fontSize: 15, textColor: ACCENT, fontFamily: BODY, customCss: "display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden" } },
+      // A band of the source's own cover image, inside the panel under the
+      // title. The guidebook's only hero slot used to live on the welcome
+      // page, so once import stopped carrying furniture pages this design had
+      // nowhere to put an imported picture and its cover went type-only.
+      // NO fallback on purpose: unlike the meta slots above, an unfilled image
+      // is a grey box on the cover, and a document with no pictures is better
+      // served by the title sitting on a clean panel. The slot simply hides.
+      { ...img([7, 3, 9, 11]), slot: "hero" },
       { at: [10, 3, 11, 11], nodes: [emptyP], style: HAIR_ON_ACCENT },
       { at: [11, 3, 13, 11], slot: "author", fallback: "empty", nodes: [para("By An Author"), para("CEO · Entrepreneur")], style: { textAlign: "center", textColor: ON_ACCENT, fontFamily: BODY, fontSize: 13, customCss:
         "p:first-child{font-family:var(--pc-display);font-weight:700;letter-spacing:.12em;text-transform:uppercase}" +
