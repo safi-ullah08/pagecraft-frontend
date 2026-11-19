@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import {
-  listConnections, disconnectSource, connectWordpress, listSourceContent, importItems, startOauth, getPickerToken,
-  type ConnectionSource, type ConnectionInfo, type SourceItem,
-} from "../api.ts";
+  listConnections, disconnectSource, connectWordpress, connectSquarespace, listSourceContent, importItems, startOauth, getPickerToken,
+  type ConnectionSource, type ConnectionInfo, type SourceItem } from "../api.ts";
 
 // Google Picker globals (loaded on demand from apis.google.com).
 declare global {
@@ -18,6 +17,7 @@ declare global {
 
 const SOURCES: Array<{ key: ConnectionSource; name: string; ready: boolean }> = [
   { key: "wordpress", name: "WordPress", ready: true },
+  { key: "squarespace", name: "Squarespace", ready: true },
   { key: "notion", name: "Notion", ready: true },
   { key: "googledocs", name: "Google Docs", ready: true },
 ];
@@ -80,6 +80,8 @@ export function ImportHub({ onClose, onImported, appendTo, initialTab }: {
             onDisconnect={async () => { await disconnectSource(tab).catch(() => {}); refresh(); }} />
         ) : tab === "wordpress" ? (
           <WordpressConnect onConnected={refresh} />
+        ) : tab === "squarespace" ? (
+          <SquarespaceConnect onConnected={refresh} />
         ) : (
           <OauthConnect source={tab} name={meta.name} />
         )}
@@ -250,6 +252,49 @@ function GooglePickerPane({ label, appendTo, onImported, onDisconnect }: {
             : `Add ${picked.length || ""} chapter${picked.length === 1 ? "" : "s"}`}
         </button>
       </div>
+    </div>
+  );
+}
+
+// Squarespace: one field. There are no credentials to collect — a public
+// collection answers ?format=json-pretty with every post, body HTML included —
+// so the only thing we need is which blog, and the server probes it before
+// storing anything.
+function SquarespaceConnect({ onConnected }: { onConnected: () => void }) {
+  const [siteUrl, setSiteUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function connect() {
+    if (busy || !siteUrl.trim()) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await connectSquarespace({ siteUrl: siteUrl.trim() });
+      onConnected();
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+      setBusy(false);
+    }
+  }
+
+  const field: React.CSSProperties = { width: "100%", boxSizing: "border-box", padding: "9px 10px", fontSize: 14, marginBottom: 10 };
+  return (
+    <div style={{ maxWidth: 440 }}>
+      <p style={{ fontSize: 13, color: "var(--ui-muted)", marginTop: 0 }}>
+        Paste the address of your <b>blog page</b>, not just the domain — that is how we know which
+        collection to read. Nothing to install and no password: public Squarespace blogs are readable as they stand.
+      </p>
+      <input style={field} placeholder="https://yoursite.com/blog" value={siteUrl}
+        onChange={(e) => setSiteUrl(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") void connect(); }} />
+      {err && <p style={{ color: "#b3261e", fontSize: 13, margin: "4px 0 10px" }}>{err}</p>}
+      <button onClick={() => void connect()} disabled={busy || !siteUrl.trim()}
+        style={{ padding: "9px 16px", fontSize: 14, fontWeight: 700, color: "var(--ui-primary-ink)",
+          background: "var(--ui-primary)", border: "none", borderRadius: 8,
+          cursor: busy || !siteUrl.trim() ? "default" : "pointer", opacity: busy || !siteUrl.trim() ? 0.6 : 1 }}>
+        {busy ? "Checking…" : "Connect"}
+      </button>
     </div>
   );
 }

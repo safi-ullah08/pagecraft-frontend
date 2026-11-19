@@ -164,7 +164,7 @@ export async function saveAsTemplateFor(body: {
 
 // ---- integration connections + content pickers (ImportHub) ----------------
 
-export type ConnectionSource = "wordpress" | "notion" | "googledocs";
+export type ConnectionSource = "wordpress" | "squarespace" | "notion" | "googledocs";
 export type ConnectionInfo = { source: ConnectionSource; label: string | null; connectedAt: string };
 export type SourceItem = { id: string; title: string; date?: string };
 
@@ -177,6 +177,19 @@ export async function listConnections(): Promise<ConnectionInfo[]> {
 export async function disconnectSource(source: ConnectionSource) {
   const res = await authedFetch(`/api/integrations/connections/${source}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`disconnect failed: ${res.status}`);
+}
+
+// Squarespace needs no credentials: a public collection serves its whole
+// contents to an unauthenticated request, so this is just "which blog".
+export async function connectSquarespace(body: { siteUrl: string }): Promise<{ label: string }> {
+  const res = await authedFetch("/api/integrations/squarespace/connect", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.message || `connect failed: ${res.status}`);
+  return json as { label: string };
 }
 
 export async function connectWordpress(body: { siteUrl: string; username: string; appPassword: string }): Promise<{ label: string }> {
