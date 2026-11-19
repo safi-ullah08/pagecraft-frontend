@@ -68,13 +68,28 @@ export function hasTocList(section: GridSection): boolean {
 // `startIndex` = how many level-1 entries came before this page, so a continuation
 // page's chapter numbering resumes instead of restarting at one (the serializer
 // turns it into a counter-reset; a skin that draws no counter ignores it).
-export function fillTocEntries(section: GridSection, entries: TocEntry[], startIndex = 0): GridSection {
-  return {
-    ...section,
-    blocks: section.blocks.map((b) =>
-      b.block === "tocList" ? { ...b, content: { ...(b.content as object), entries, startIndex } } : b,
-    ),
-  };
+export function fillTocEntries(section: GridSection, entries: TocEntry[], startIndex = 0, isContinuation = false): GridSection {
+  const filled = section.blocks.map((b) =>
+    b.block === "tocList" ? { ...b, content: { ...(b.content as object), entries, startIndex } } : b,
+  );
+  if (!isContinuation) return { ...section, blocks: filled };
+
+  // A contents that runs past one page repeats the whole designed page, banner
+  // and all — so a four-page contents printed "Table of contents" four times,
+  // each time eating the top third before a single entry. A book prints that
+  // title once and lets the list keep going.
+  // Everything that isn't the list goes, and the list takes the space back: it
+  // starts where the title block started, so page two picks up exactly where
+  // page one's column ended rather than beginning a third of the way down.
+  // ONE list. A contents page is meant to hold a single tocList; if a page has
+  // picked up more (see the duplication note in generateToc), they overlap and
+  // repeat each other's entries, so carrying them onto continuation pages would
+  // spread the damage. Take the first and give it the banner's space back, so
+  // page two resumes where page one's column ended instead of a third down.
+  const list = filled.find((b) => b.block === "tocList");
+  if (!list) return { ...section, blocks: filled };
+  const top = Math.min(...filled.map((b) => b.area.rowStart));
+  return { ...section, blocks: [{ ...list, area: { ...list.area, rowStart: top } }] };
 }
 
 // Fresh block ids for a page cloned from another — ids are the handle for

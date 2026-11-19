@@ -730,7 +730,7 @@ export const useStore = create<Store>((set, get) => {
       // Level-1 entries before page i, so its chapter numbering resumes.
       const pageFor = (i: number): SectionContent => {
         const before = chunks.slice(0, i).flat().filter((e) => e.level === 1).length;
-        const built = design ? fillTocEntries(design, chunks[i]!, before) : buildTocSection(chunks[i]!);
+        const built = design ? fillTocEntries(design, chunks[i]!, before, i > 0) : buildTocSection(chunks[i]!);
         return (i === 0 ? built : withFreshIds(built)) as SectionContent;
       };
 
