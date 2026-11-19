@@ -148,3 +148,44 @@ test("a continuation page resumes the chapter numbering and carries fresh ids", 
   assert.equal((list.content as { startIndex: number }).startIndex, 5);
   assert.notEqual(list.id, design.blocks.find((b) => b.block === "tocList")!.id);
 });
+
+// A contents that overruns one page used to repeat the whole designed page —
+// banner included — so a four-page contents printed its title four times and
+// lost the top third of each continuation to it.
+test("fillTocEntries strips the design off continuation pages and reclaims the space", () => {
+  const design = {
+    type: "grid",
+    blocks: [
+      { id: "hdr", area: { rowStart: 1, colStart: 2, rowEnd: 4, colEnd: 12 }, block: "heading", content: { type: "doc", content: [] } },
+      { id: "list", area: { rowStart: 4, colStart: 2, rowEnd: 13, colEnd: 12 }, block: "tocList", content: { maxLevel: 3 } },
+    ],
+  } as unknown as Parameters<typeof fillTocEntries>[0];
+  const entries = [{ text: "Ch", level: 1, page: 3 }];
+
+  const first = fillTocEntries(design, entries, 0, false);
+  assert.equal(first.blocks.length, 2, "the first page keeps its banner");
+  assert.equal(first.blocks.find((b) => b.block === "tocList")!.area.rowStart, 4);
+
+  const next = fillTocEntries(design, entries, 0, true);
+  assert.equal(next.blocks.length, 1, "a continuation page is the list alone");
+  assert.equal(next.blocks[0]!.block, "tocList");
+  assert.equal(next.blocks[0]!.area.rowStart, 1, "and it starts where the banner did");
+  assert.deepEqual((next.blocks[0]!.content as { entries: unknown }).entries, entries);
+});
+
+// A page that has picked up a duplicate tocList (they overlap and repeat each
+// other's entries) must not carry both onto continuation pages.
+test("fillTocEntries takes one list when a page has picked up duplicates", () => {
+  const dupe = {
+    type: "grid",
+    blocks: [
+      { id: "hdr", area: { rowStart: 1, colStart: 2, rowEnd: 4, colEnd: 12 }, block: "heading", content: { type: "doc", content: [] } },
+      { id: "a", area: { rowStart: 4, colStart: 2, rowEnd: 12, colEnd: 12 }, block: "tocList", content: {} },
+      { id: "b", area: { rowStart: 8, colStart: 2, rowEnd: 12, colEnd: 12 }, block: "tocList", content: {} },
+    ],
+  } as unknown as Parameters<typeof fillTocEntries>[0];
+  const next = fillTocEntries(dupe, [{ text: "Ch", level: 1, page: 3 }], 0, true);
+  assert.equal(next.blocks.length, 1, "only one list survives");
+  assert.equal(next.blocks[0]!.id, "a");
+  assert.equal(next.blocks[0]!.area.rowStart, 1);
+});
