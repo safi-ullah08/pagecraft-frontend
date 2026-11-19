@@ -102,13 +102,11 @@ test("guidebook spec: imported content lands in the designed layout, placeholder
   assert.match(js, /Real Title/);
   assert.match(js, /Real Author/);
   assert.doesNotMatch(js, /How to Become an Entrepreneur/);
-  // The guidebook's ONLY hero slot sat on the welcome/colophon page, and that
-  // page is furniture, so dropping it loses the imported hero entirely — this
-  // design's cover is type-only by construction. Worth knowing rather than
-  // asserting away: templates whose hero lives on the COVER (mindful, media
-  // kit, freelancer) still place it. If the guidebook should show an imported
-  // picture, the fix is a hero slot on its cover, not keeping the colophon.
-  assert.doesNotMatch(js, /asset:\/\/hero\.png/);
+  // The hero now sits on the COVER. It used to live on the welcome/colophon
+  // page, which import no longer carries, so without this the design had
+  // nowhere to put an imported picture.
+  assert.match(js, /asset:\/\/hero\.png/);
+  assert.ok(JSON.stringify(sections[0]).includes("asset://hero.png"), "on the cover, not somewhere later");
   // per-chapter openers bound; both chapters present
   assert.match(js, /Chapter 1/);
   assert.match(js, /Chapter 2/);
@@ -361,4 +359,17 @@ test("docPlanToLayout: the document title reaches the cover's title slot", () =>
   // sourceMeta alone — what the callers used to pass — leaves it undefined.
   const without = docPlanToLayout(stored, { subtitle: "S" });
   assert.equal(without.meta.title, undefined);
+});
+
+// The cover hero carries NO fallback, unlike the meta slots beside it: an
+// unfilled image is a grey box in the middle of a cover, and a document with no
+// pictures is better served by the title on a clean panel.
+test("guidebook cover: no hero means no box, and the title still binds", () => {
+  let n = 0;
+  const bare = { ...fakePlan, meta: { title: "Real Title", author: "Real Author" } };
+  const { sections, report } = layout(bare, structureToLayoutSpec(STRUCTURES.guidebook), geom, stub, () => `b${n++}`);
+  const cover = JSON.stringify(sections[0]);
+  assert.match(cover, /Real Title/);
+  assert.doesNotMatch(cover, /"block":"image"/, "the hero slot hides rather than printing an empty box");
+  assert.ok(report.some((r) => r.includes("hero")), `reported as hidden: ${report}`);
 });
