@@ -279,8 +279,8 @@ export async function getBillingStatus() {
   return (await res.json()) as { plan: "free" | "pro"; subStatus?: string | null; currentPeriodEnd?: string | null };
 }
 
-export async function billingRedirect(kind: "checkout" | "portal") {
-  const res = await authedFetch(`/api/billing/${kind}`);
+export async function billingRedirect(kind: "checkout" | "portal", interval?: "monthly" | "annual") {
+  const res = await authedFetch(`/api/billing/${kind}${interval ? `?interval=${interval}` : ""}`);
   if (res.status === 503) throw new Error("Billing isn't configured yet.");
   if (!res.ok) throw new Error(`${kind} failed: ${res.status}`);
   const { url } = (await res.json()) as { url: string };

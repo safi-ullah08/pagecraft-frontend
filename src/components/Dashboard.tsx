@@ -70,9 +70,9 @@ export function Dashboard() {
     }
   }
 
-  async function billing(kind: "checkout" | "portal") {
+  async function billing(kind: "checkout" | "portal", interval?: "monthly" | "annual") {
     try {
-      await billingRedirect(kind); // redirects to Creem on success
+      await billingRedirect(kind, interval); // redirects to Creem on success
     } catch (e) {
       setErr(String(e instanceof Error ? e.message : e));
     }
@@ -171,7 +171,10 @@ export function Dashboard() {
             </p>
           </div>
           {plan === "free" && (
-            <button onClick={() => billing("checkout")} style={ghostBtn}>Upgrade to Pro</button>
+            <>
+              <button onClick={() => billing("checkout", "monthly")} style={ghostBtn}>Pro · $45/mo</button>
+              <button onClick={() => billing("checkout", "annual")} style={ghostBtn}>Pro · $450/yr</button>
+            </>
           )}
           {plan === "pro" && (
             <button onClick={() => billing("portal")} style={ghostBtn}>Manage billing</button>
