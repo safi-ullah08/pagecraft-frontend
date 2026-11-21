@@ -1,6 +1,6 @@
 import { serialize, renderTypedBlock, type PageMargin, type SideValues } from "@pagecraft/model";
 import type { JSONContent } from "@tiptap/react";
-import { themeSkinCss } from "../themes.ts";
+import { themeSkinCss, typedBlockCss } from "../themes.ts";
 import { scopeThemeCss } from "../scope-css.ts";
 import { contentBoxMm, type PageDims } from "../pages.ts";
 import { COLS, ROWS, type GridBlock } from "./types.ts";
@@ -107,7 +107,12 @@ export function heightToRows(heightPx: number, dim: PageDims, m: PageMargin): nu
 // matches the on-screen block, and hand the surface to `read`. One-shot.
 function measureIn<T>(html: string, widthPx: number, theme: string, read: (el: HTMLElement) => T): T {
   const style = document.createElement("style");
-  style.textContent = scopeThemeCss(themeSkinCss(theme), ".pc-measure");
+  // The TYPED-block rules as well as the skin. Without them a tocList measured
+  // here was a stack of inline spans, not the flex rows the PDF prints, and the
+  // count came back far too high: a 175-page book's contents fitted "all 31
+  // entries" on one page and the rest were simply clipped away by .pc-toc's
+  // overflow:hidden. Measure what the renderer renders.
+  style.textContent = `${scopeThemeCss(typedBlockCss, ".pc-measure")}\n${scopeThemeCss(themeSkinCss(theme), ".pc-measure")}`;
   const meas = document.createElement("div");
   meas.className = "pc-measure";
   meas.style.cssText = `position:absolute;left:-99999px;top:0;width:${Math.max(1, widthPx)}px;visibility:hidden`;
